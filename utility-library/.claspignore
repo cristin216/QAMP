@@ -1,0 +1,2 @@
+# Don't push sensitive config to Google Apps Script
+Config.gs

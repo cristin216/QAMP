@@ -935,33 +935,6 @@ END OF FUNCTION DIRECTORY
 
 var _executionCache = {};
 
-var CONFIG = {
-  test: {
-    paymentsId: '1cFj26gstCX6nGwqqC0dMOE8cVVY-UVE3mq5oV_zb_gE',
-    contactsId: '1MjDBD9NVX9TuZ0rMYFOll5NKEq2qtwuR4Bn9keUMam8',
-    billingId: '1IIs5fSsyWxa-BML9_VUpABkehltHxB8deZsLJzONhDE',
-    formResponsesId: '1qbOz_jpmyhVXYDOabPV3bK1Cj0gHvmbV7wmSl-NPyqI',
-    rosterFolderId: '1-1srnA3vcVDdJCkNU9Q--DY3Iem054sd',
-    templateFolderId: '1zeh7Kj8ky5cdcfU5wHdu6fDpUxaDd1WF', 
-    metadataSheetName: 'Semester Metadata',
-    teacherInvoicesId: '1MU0uTlzUneWA3aXAQp5GLW5ZdVmMFCyAiquZvKHW6bc',
-    teacherInterestId: '1rmWN4GlqTJHQSjN9ATxUwBs-cC4SUhZeDHxHHTwkPOs',
-    generatedDocumentsFolderId: '1njXC_lsloSrofCCu4DQOt4hD6ncDnej0'
-  },
-  prod: {
-    paymentsId: '1xF-HzGDIJQEwW1bxdY2RWXiI3GYA_VpTULnl00iRI9w',
-    contactsId: '1fGS7CY6a4IASllyJ9vOblWDB9l4D-GbuHr4SMEyuIzo',
-    billingId: '1kBZ1aKNzze-uyTtvjV-18gIaosDdDB11qih3Q3Toh1w',
-    formResponsesId: '13G5U7OCLDrdZEytGIUTks8LLRXtLEd30EdEsxnN_pes',
-    rosterFolderId: '1vVK02xiLYmiyRZa0zQ6eqbw81MToxuNR',
-    templateFolderId: '1zeh7Kj8ky5cdcfU5wHdu6fDpUxaDd1WF', 
-    metadataSheetName: 'Semester Metadata',
-    teacherInvoicesId: '1ThWe85gZXnbHG5bjMXM98h0_8rvcdp-vEOohaGeSnIU',
-    teacherInterestId: '1QOW0enzP1oqZIXeXx8oXKuKsF-0Eitcy3cW7cBTsCt0',
-    generatedDocumentsFolderId: '1njXC_lsloSrofCCu4DQOt4hD6ncDnej0'
-  }
-};
-
 var EnvironmentManager = (function () {
   var currentEnv = 'test'; // set to 'test' as default
 

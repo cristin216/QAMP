@@ -1,1 +1,8 @@
-.clasp.json 
+# Sensitive configuration with real Google IDs
+Config.gs
+
+# clasp configuration (contains your script ID)
+.clasp.json
+
+# Keep the template public
+!Config.template.gs
