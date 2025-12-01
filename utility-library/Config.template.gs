@@ -56,7 +56,7 @@ function getConfig() {
       metadataSheetName: props.getProperty('TEST_METADATA_SHEET_NAME'),
       teacherInvoicesId: props.getProperty('TEST_TEACHER_INVOICES_ID'),
       teacherInterestId: props.getProperty('TEST_TEACHER_INTEREST_ID'),
-      generatedDocumentFolderId: props.getProperty('TEST_GENERATED_DOCUMENT_FOLDER_ID')
+      generatedDocumentsFolderId: props.getProperty('TEST_GENERATED_DOCUMENT_FOLDER_ID')
     },
     prod: {
       paymentsId: props.getProperty('PROD_PAYMENTS_ID'),
@@ -68,7 +68,7 @@ function getConfig() {
       metadataSheetName: props.getProperty('PROD_METADATA_SHEET_NAME'),
       teacherInvoicesId: props.getProperty('PROD_TEACHER_INVOICES_ID'),
       teacherInterestId: props.getProperty('PROD_TEACHER_INTEREST_ID'),
-      generatedDocumentFolderId: props.getProperty('PROD_GENERATED_DOCUMENT_FOLDER_ID')
+      generatedDocumentsFolderId: props.getProperty('PROD_GENERATED_DOCUMENT_FOLDER_ID')
     }
   };
 }
