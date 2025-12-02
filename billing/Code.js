@@ -1825,11 +1825,19 @@ function convertFolderDocsToPdfUI() {
   var config = UtilityScriptLibrary.getConfig();
   var parentFolder = DriveApp.getFolderById(config[env].generatedDocumentsFolderId);
   
+  // Navigate to Student Documents folder
+  var studentDocsIterator = parentFolder.getFoldersByName('Student Documents');
+  if (!studentDocsIterator.hasNext()) {
+    SpreadsheetApp.getUi().alert('Student Documents folder not found');
+    return;
+  }
+  var studentDocsFolder = studentDocsIterator.next();
+  
   // Find the folder matching the active tab name
-  var folderIterator = parentFolder.getFoldersByName(activeTabName);
+  var folderIterator = studentDocsFolder.getFoldersByName(activeTabName);
   
   if (!folderIterator.hasNext()) {
-    SpreadsheetApp.getUi().alert('Folder "' + activeTabName + '" not found');
+    SpreadsheetApp.getUi().alert('Folder "' + activeTabName + '" not found in Student Documents');
     return;
   }
   
