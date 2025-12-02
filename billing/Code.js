@@ -1268,11 +1268,12 @@ function onOpen() {
         .addItem('Full Reconciliation', 'runFullReconciliationUI')
         .addSeparator()
         .addItem('Lessons Only', 'runWeeklyLessonReconciliationUI')
-        .addItem('Payments Only', 'runPaymentReconciliationUI')  // You'll need this UI wrapper
-        .addItem('Forms Only', 'runFormsReconciliationUI')       // You'll need this UI wrapper
+        .addItem('Payments Only', 'runPaymentReconciliationUI')
+        .addItem('Forms Only', 'runFormsReconciliationUI')
     )
     .addSeparator()
     .addItem('Generate Documents', 'runRegistrationPacketGenerationUI')
+    .addItem('Print Documents', 'convertFolderDocsToPdfUI')
     .addItem('Create New Attendance Sheets', 'createNewAttendanceSheets')
     .addToUi();
 }
@@ -1813,6 +1814,77 @@ function appendToSemesterMetadata(semesterName, startDate, endDate) {
     showUI: false,
     logLevel: 'INFO'
   }).data;
+}
+
+function convertFolderDocsToPdfUI() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var activeTabName = ss.getActiveSheet().getName();
+  
+  // Get environment automatically from EnvironmentManager
+  var env = UtilityScriptLibrary.EnvironmentManager.get();
+  var config = UtilityScriptLibrary.getConfig();
+  var parentFolder = DriveApp.getFolderById(config[env].generatedDocumentsFolderId);
+  
+  // Find the folder matching the active tab name
+  var folderIterator = parentFolder.getFoldersByName(activeTabName);
+  
+  if (!folderIterator.hasNext()) {
+    SpreadsheetApp.getUi().alert('Folder "' + activeTabName + '" not found');
+    return;
+  }
+  
+  var billingFolder = folderIterator.next();
+  
+  // Create a "[folder name] PDFs" subfolder if it doesn't exist
+  var pdfFolderName = activeTabName + ' PDFs';
+  var pdfFolder;
+  var pdfFolderIterator = billingFolder.getFoldersByName(pdfFolderName);
+  if (pdfFolderIterator.hasNext()) {
+    pdfFolder = pdfFolderIterator.next();
+  } else {
+    pdfFolder = billingFolder.createFolder(pdfFolderName);
+  }
+  
+  // Get existing PDFs to check for duplicates
+  var existingPdfs = {};
+  var pdfFiles = pdfFolder.getFiles();
+  while (pdfFiles.hasNext()) {
+    existingPdfs[pdfFiles.next().getName()] = true;
+  }
+  
+  // Get all Google Docs files in the billing folder
+  var files = billingFolder.getFilesByType(MimeType.GOOGLE_DOCS);
+  var convertedCount = 0;
+  var skippedCount = 0;
+  
+  while (files.hasNext()) {
+    var file = files.next();
+    var docId = file.getId();
+    var docName = file.getName();
+    var pdfName = docName + '.pdf';
+    
+    // Check if PDF already exists
+    if (existingPdfs[pdfName]) {
+      skippedCount++;
+      continue;
+    }
+    
+    // Get the document and convert to PDF
+    var doc = DocumentApp.openById(docId);
+    var pdfBlob = doc.getAs('application/pdf');
+    pdfBlob.setName(pdfName);
+    
+    // Save PDF to the PDFs folder
+    pdfFolder.createFile(pdfBlob);
+    convertedCount++;
+  }
+  
+  var envLabel = env.toUpperCase();
+  SpreadsheetApp.getUi().alert(
+    '[' + envLabel + '] Converted ' + convertedCount + ' new document(s) to PDF.\n' +
+    'Skipped ' + skippedCount + ' already converted.\n' +
+    'PDF folder: ' + pdfFolder.getUrl()
+  );
 }
 
 function createPaymentsTab(semesterName) {
