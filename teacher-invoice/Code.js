@@ -480,6 +480,7 @@ function onOpen() {
     ui.createMenu('Teacher Invoice Tools')
       .addItem('Collect Monthly Invoice Data', 'showInvoiceGenerationUI')
       .addItem('Generate Invoice Documents', 'generateTeacherInvoiceDocuments')
+      .addItem('Print Documents', 'convertFolderDocsToPdfUI')
       .addToUi();
     
     UtilityScriptLibrary.debugLog("✅ Teacher Invoice Tools menu created");
@@ -1119,6 +1120,85 @@ function collectUninvoicedLessonsUpToDate(cutoffDate, invoiceDate, invoicePeriod
                                   'Lesson collection failed', '', error.message);
     throw error;
   }
+}
+
+function convertFolderDocsToPdfUI() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var activeTabName = ss.getActiveSheet().getName();
+  
+  // Get environment automatically from EnvironmentManager
+  var env = UtilityScriptLibrary.EnvironmentManager.get();
+  var config = UtilityScriptLibrary.getConfig();
+  var parentFolder = DriveApp.getFolderById(config[env].generatedDocumentsFolderId);
+  
+  // Navigate to Teacher Invoices folder
+  var teacherInvoicesIterator = parentFolder.getFoldersByName('Teacher Invoices');
+  if (!teacherInvoicesIterator.hasNext()) {
+    SpreadsheetApp.getUi().alert('Teacher Invoices folder not found');
+    return;
+  }
+  var teacherInvoicesFolder = teacherInvoicesIterator.next();
+  
+  // Find the folder matching the active tab name
+  var folderIterator = teacherInvoicesFolder.getFoldersByName(activeTabName);
+  
+  if (!folderIterator.hasNext()) {
+    SpreadsheetApp.getUi().alert('Folder "' + activeTabName + '" not found in Teacher Invoices');
+    return;
+  }
+  
+  var monthFolder = folderIterator.next();
+  
+  // Create a "[folder name] PDFs" subfolder if it doesn't exist
+  var pdfFolderName = activeTabName + ' PDFs';
+  var pdfFolder;
+  var pdfFolderIterator = monthFolder.getFoldersByName(pdfFolderName);
+  if (pdfFolderIterator.hasNext()) {
+    pdfFolder = pdfFolderIterator.next();
+  } else {
+    pdfFolder = monthFolder.createFolder(pdfFolderName);
+  }
+  
+  // Get existing PDFs to check for duplicates
+  var existingPdfs = {};
+  var pdfFiles = pdfFolder.getFiles();
+  while (pdfFiles.hasNext()) {
+    existingPdfs[pdfFiles.next().getName()] = true;
+  }
+  
+  // Get all Google Docs files in the month folder
+  var files = monthFolder.getFilesByType(MimeType.GOOGLE_DOCS);
+  var convertedCount = 0;
+  var skippedCount = 0;
+  
+  while (files.hasNext()) {
+    var file = files.next();
+    var docId = file.getId();
+    var docName = file.getName();
+    var pdfName = docName + '.pdf';
+    
+    // Check if PDF already exists
+    if (existingPdfs[pdfName]) {
+      skippedCount++;
+      continue;
+    }
+    
+    // Get the document and convert to PDF
+    var doc = DocumentApp.openById(docId);
+    var pdfBlob = doc.getAs('application/pdf');
+    pdfBlob.setName(pdfName);
+    
+    // Save PDF to the PDFs folder
+    pdfFolder.createFile(pdfBlob);
+    convertedCount++;
+  }
+  
+  var envLabel = env.toUpperCase();
+  SpreadsheetApp.getUi().alert(
+    '[' + envLabel + '] Converted ' + convertedCount + ' new document(s) to PDF.\n' +
+    'Skipped ' + skippedCount + ' already converted.\n' +
+    'PDF folder: ' + pdfFolder.getUrl()
+  );
 }
 
 function createMonthlyInvoiceSheet(month) {
