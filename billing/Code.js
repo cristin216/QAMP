@@ -11460,3 +11460,303 @@ function getCumulativeHistory(studentId) {
     return null;
   }
 }
+
+function verifyCumulativeFormulas() {
+  return UtilityScriptLibrary.executeWithErrorHandling(function() {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var issues = [];
+    
+    // Define month order
+    var months = ['January', 'February', 'March', 'April', 'May', 'June', 
+                  'July', 'August', 'September', 'October', 'November', 'December'];
+    var years = [2024, 2025];
+    var allMonths = [];
+    
+    // Build ordered list of month sheets
+    for (var y = 0; y < years.length; y++) {
+      for (var m = 0; m < months.length; m++) {
+        allMonths.push(months[m] + ' ' + years[y]);
+      }
+    }
+    
+    UtilityScriptLibrary.debugLog('verifyCumulativeFormulas', 'INFO', 'Starting verification', 
+                                  'Total months to check: ' + allMonths.length, '');
+    
+    // Process each month
+    for (var i = 0; i < allMonths.length; i++) {
+      var currentMonth = allMonths[i];
+      var previousMonth = i > 0 ? allMonths[i - 1] : null;
+      
+      var sheet = ss.getSheetByName(currentMonth);
+      if (!sheet) {
+        UtilityScriptLibrary.debugLog('verifyCumulativeFormulas', 'WARNING', 
+                                      'Sheet not found', currentMonth, '');
+        continue;
+      }
+      
+      // Get header map for this sheet
+      var headerMap = UtilityScriptLibrary.getHeaderMap(sheet);
+      
+      // Find required columns
+      var studentIdCol = headerMap[UtilityScriptLibrary.normalizeHeader('Student ID')];
+      var pastCumTaughtCol = headerMap[UtilityScriptLibrary.normalizeHeader('Past Cumulative Hours Taught')];
+      var pastCumBilledCol = headerMap[UtilityScriptLibrary.normalizeHeader('Past Cumulative Hours Billed')];
+      var currentHoursTaughtCol = headerMap[UtilityScriptLibrary.normalizeHeader('Current Hours Taught This Billing Cycle')];
+      var currentCumTaughtCol = headerMap[UtilityScriptLibrary.normalizeHeader('Current Cumulative Hours Taught')];
+      var currentCumBilledCol = headerMap[UtilityScriptLibrary.normalizeHeader('Current Cumulative Hours Billed')];
+      var lessonHoursCol = headerMap[UtilityScriptLibrary.normalizeHeader('Lesson Hours')];
+      var hoursRemainingCol = headerMap[UtilityScriptLibrary.normalizeHeader('Hours Remaining')];
+      
+      if (!studentIdCol || !pastCumTaughtCol || !pastCumBilledCol || 
+          !currentHoursTaughtCol || !currentCumTaughtCol || !currentCumBilledCol || 
+          !lessonHoursCol || !hoursRemainingCol) {
+        issues.push({
+          sheet: currentMonth,
+          studentId: 'N/A',
+          column: 'Multiple',
+          issue: 'Required columns not found'
+        });
+        continue;
+      }
+      
+      // Get data range (start from row 2)
+      var lastRow = sheet.getLastRow();
+      if (lastRow < 2) continue;
+      
+      var dataRange = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn());
+      var data = dataRange.getValues();
+      
+      // Check each row
+      for (var row = 0; row < data.length; row++) {
+        var rowNum = row + 2;
+        var studentId = data[row][studentIdCol - 1];
+        
+        if (!studentId) continue;
+        
+        // Check Past Cumulative columns
+        if (i === 0) {
+          // January 2024 - should be empty or no formula
+          var pastTaughtFormula = sheet.getRange(rowNum, pastCumTaughtCol).getFormula();
+          var pastBilledFormula = sheet.getRange(rowNum, pastCumBilledCol).getFormula();
+          
+          if (pastTaughtFormula) {
+            issues.push({
+              sheet: currentMonth,
+              studentId: studentId,
+              column: 'Past Cumulative Hours Taught',
+              issue: 'Should be empty/hardcoded for first month, found formula: ' + pastTaughtFormula
+            });
+          }
+          
+          if (pastBilledFormula) {
+            issues.push({
+              sheet: currentMonth,
+              studentId: studentId,
+              column: 'Past Cumulative Hours Billed',
+              issue: 'Should be empty/hardcoded for first month, found formula: ' + pastBilledFormula
+            });
+          }
+        } else {
+          // Other months - should have VLOOKUP to previous month
+          var pastTaughtFormula = sheet.getRange(rowNum, pastCumTaughtCol).getFormula();
+          var pastBilledFormula = sheet.getRange(rowNum, pastCumBilledCol).getFormula();
+          
+          // Verify Past Cumulative Hours Taught
+          if (!pastTaughtFormula) {
+            issues.push({
+              sheet: currentMonth,
+              studentId: studentId,
+              column: 'Past Cumulative Hours Taught',
+              issue: 'Missing formula (should be VLOOKUP to previous month)'
+            });
+          } else {
+            if (pastTaughtFormula.indexOf(previousMonth) === -1) {
+              issues.push({
+                sheet: currentMonth,
+                studentId: studentId,
+                column: 'Past Cumulative Hours Taught',
+                issue: 'Formula does not reference "' + previousMonth + '". Found: ' + pastTaughtFormula
+              });
+            }
+            if (pastTaughtFormula.toUpperCase().indexOf('VLOOKUP') === -1 || 
+                pastTaughtFormula.toUpperCase().indexOf('IFNA') === -1) {
+              issues.push({
+                sheet: currentMonth,
+                studentId: studentId,
+                column: 'Past Cumulative Hours Taught',
+                issue: 'Formula pattern incorrect (expected IFNA(VLOOKUP(...))). Found: ' + pastTaughtFormula
+              });
+            }
+          }
+          
+          // Verify Past Cumulative Hours Billed
+          if (!pastBilledFormula) {
+            issues.push({
+              sheet: currentMonth,
+              studentId: studentId,
+              column: 'Past Cumulative Hours Billed',
+              issue: 'Missing formula (should be VLOOKUP to previous month)'
+            });
+          } else {
+            if (pastBilledFormula.indexOf(previousMonth) === -1) {
+              issues.push({
+                sheet: currentMonth,
+                studentId: studentId,
+                column: 'Past Cumulative Hours Billed',
+                issue: 'Formula does not reference "' + previousMonth + '". Found: ' + pastBilledFormula
+              });
+            }
+            if (pastBilledFormula.toUpperCase().indexOf('VLOOKUP') === -1 || 
+                pastBilledFormula.toUpperCase().indexOf('IFNA') === -1) {
+              issues.push({
+                sheet: currentMonth,
+                studentId: studentId,
+                column: 'Past Cumulative Hours Billed',
+                issue: 'Formula pattern incorrect (expected IFNA(VLOOKUP(...))). Found: ' + pastBilledFormula
+              });
+            }
+          }
+        }
+        
+        // Check Current Cumulative Hours Taught = Past + Current
+        var currentCumTaughtFormula = sheet.getRange(rowNum, currentCumTaughtCol).getFormula();
+        if (!currentCumTaughtFormula) {
+          issues.push({
+            sheet: currentMonth,
+            studentId: studentId,
+            column: 'Current Cumulative Hours Taught',
+            issue: 'Missing formula (should be Past + Current)'
+          });
+        } else {
+          var pastTaughtCell = UtilityScriptLibrary.columnToLetter(pastCumTaughtCol) + rowNum;
+          var currentTaughtCell = UtilityScriptLibrary.columnToLetter(currentHoursTaughtCol) + rowNum;
+          var expectedFormula = '=' + pastTaughtCell + '+' + currentTaughtCell;
+          
+          var normalizedFormula = currentCumTaughtFormula.replace(/\s/g, '').toUpperCase();
+          var normalizedExpected = expectedFormula.replace(/\s/g, '').toUpperCase();
+          
+          if (normalizedFormula !== normalizedExpected) {
+            issues.push({
+              sheet: currentMonth,
+              studentId: studentId,
+              column: 'Current Cumulative Hours Taught',
+              issue: 'Incorrect formula. Expected: ' + expectedFormula + ', Found: ' + currentCumTaughtFormula
+            });
+          }
+        }
+        
+        // Check Current Cumulative Hours Billed = Past + Lesson Hours
+        var currentCumBilledFormula = sheet.getRange(rowNum, currentCumBilledCol).getFormula();
+        if (!currentCumBilledFormula) {
+          issues.push({
+            sheet: currentMonth,
+            studentId: studentId,
+            column: 'Current Cumulative Hours Billed',
+            issue: 'Missing formula (should be Past + Lesson Hours)'
+          });
+        } else {
+          var pastBilledCell = UtilityScriptLibrary.columnToLetter(pastCumBilledCol) + rowNum;
+          var lessonHoursCell = UtilityScriptLibrary.columnToLetter(lessonHoursCol) + rowNum;
+          var expectedFormula = '=' + pastBilledCell + '+' + lessonHoursCell;
+          
+          var normalizedFormula = currentCumBilledFormula.replace(/\s/g, '').toUpperCase();
+          var normalizedExpected = expectedFormula.replace(/\s/g, '').toUpperCase();
+          
+          if (normalizedFormula !== normalizedExpected) {
+            issues.push({
+              sheet: currentMonth,
+              studentId: studentId,
+              column: 'Current Cumulative Hours Billed',
+              issue: 'Incorrect formula. Expected: ' + expectedFormula + ', Found: ' + currentCumBilledFormula
+            });
+          }
+        }
+        
+        // Check Hours Remaining = Current Cum Billed - Current Cum Taught
+        var hoursRemainingFormula = sheet.getRange(rowNum, hoursRemainingCol).getFormula();
+        if (!hoursRemainingFormula) {
+          issues.push({
+            sheet: currentMonth,
+            studentId: studentId,
+            column: 'Hours Remaining',
+            issue: 'Missing formula (should be Cum Billed - Cum Taught)'
+          });
+        } else {
+          var cumBilledCell = UtilityScriptLibrary.columnToLetter(currentCumBilledCol) + rowNum;
+          var cumTaughtCell = UtilityScriptLibrary.columnToLetter(currentCumTaughtCol) + rowNum;
+          var expectedFormula = '=' + cumBilledCell + '-' + cumTaughtCell;
+          
+          var normalizedFormula = hoursRemainingFormula.replace(/\s/g, '').toUpperCase();
+          var normalizedExpected = expectedFormula.replace(/\s/g, '').toUpperCase();
+          
+          if (normalizedFormula !== normalizedExpected) {
+            issues.push({
+              sheet: currentMonth,
+              studentId: studentId,
+              column: 'Hours Remaining',
+              issue: 'Incorrect formula. Expected: ' + expectedFormula + ', Found: ' + hoursRemainingFormula
+            });
+          }
+        }
+        
+        // Check Current Hours Taught This Billing Cycle has NO formula
+        var currentTaughtFormula = sheet.getRange(rowNum, currentHoursTaughtCol).getFormula();
+        if (currentTaughtFormula) {
+          issues.push({
+            sheet: currentMonth,
+            studentId: studentId,
+            column: 'Current Hours Taught This Billing Cycle',
+            issue: 'Should be hardcoded (no formula), found: ' + currentTaughtFormula
+          });
+        }
+      }
+    }
+    
+    // Create results sheet
+    var resultsSheetName = 'Formula Verification Results';
+    var resultsSheet = ss.getSheetByName(resultsSheetName);
+    
+    if (resultsSheet) {
+      ss.deleteSheet(resultsSheet);
+    }
+    
+    resultsSheet = ss.insertSheet(resultsSheetName);
+    
+    var headers = ['Sheet Name', 'Student ID', 'Column Name', 'Issue'];
+    resultsSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    resultsSheet.getRange(1, 1, 1, headers.length)
+      .setBackground('#4a4a4a')
+      .setFontColor('#ffffff')
+      .setFontWeight('bold');
+    
+    if (issues.length > 0) {
+      var outputData = [];
+      for (var i = 0; i < issues.length; i++) {
+        outputData.push([
+          issues[i].sheet,
+          issues[i].studentId,
+          issues[i].column,
+          issues[i].issue
+        ]);
+      }
+      resultsSheet.getRange(2, 1, outputData.length, 4).setValues(outputData);
+      resultsSheet.autoResizeColumns(1, 4);
+    } else {
+      resultsSheet.getRange(2, 1).setValue('No issues found!');
+    }
+    
+    UtilityScriptLibrary.debugLog('verifyCumulativeFormulas', 'SUCCESS', 
+                                  'Verification complete', 
+                                  'Issues found: ' + issues.length, '');
+    
+    return {
+      success: true,
+      issuesFound: issues.length,
+      issues: issues
+    };
+    
+  }, 'Formula verification completed', 'verifyCumulativeFormulas', {
+    showUI: false,
+    logLevel: 'INFO'
+  }).data;
+}
