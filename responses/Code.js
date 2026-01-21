@@ -804,7 +804,9 @@ function onOpen() {
     .addItem('Refresh Teacher Dropdown', 'refreshCurrentSemesterTeacherDropdown')
     .addItem('Update Roster Groups', 'updateAllTeacherGroupAssignments')
     .addItem('Process Teacher Assignments', 'processPendingAssignments')
-    .addItem('Reassign Student to Different Teacher', 'reassignStudentToNewTeacher') // NEW
+    .addItem('Reassign Student to Different Teacher', 'reassignStudentToNewTeacher')
+    .addItem('Clear Reports', 'clearReports')
+    .addItem('Verify by Drive ID', 'verifyByDriveIdWithPrompt') // NEW
     .addToUi();
   
   applyTeacherDropdownToCurrentSemester();
@@ -4795,47 +4797,83 @@ function validateEnhancedTeacherRosterLookup() {
   }
 }
 
-function verifyStudentIdsAcrossWorkbooks() {
+// ============================================
+// VERIFY: By Google Drive ID (folder or file)
+// ============================================
+// ============================================
+// VERIFY: By Google Drive ID (folder or file)
+// ============================================
+function verifyByDriveId(driveId) {
   try {
-    UtilityScriptLibrary.debugLog('🔍 Starting Student ID verification across all workbooks');
+    if (!driveId) {
+      Logger.log('❌ No Drive ID provided');
+      return;
+    }
     
-    // Load source of truth from Contacts
+    driveId = driveId.trim();
+    Logger.log('🔍 Processing Drive ID: ' + driveId);
+    
     var studentMap = loadStudentMapFromContacts();
-    
-    // Get folders
-    var rosterFolderId = UtilityScriptLibrary.getConfig().rosterFolderId;
-    var rosterFolder = DriveApp.getFolderById(rosterFolderId);
-    var homeFolder = rosterFolder.getParents().next();
-    
-    // Initialize report data
     var detailIssues = [];
     var summaryData = [];
     
-    // Check all workbooks in home folder (except excluded ones)
-    checkWorkbooksInFolder(homeFolder, studentMap, detailIssues, summaryData, true);
+    // Try as folder first
+    try {
+      var folder = DriveApp.getFolderById(driveId);
+      Logger.log('📁 Processing folder: ' + folder.getName());
+      checkWorkbooksInFolder(folder, studentMap, detailIssues, summaryData, false);
+    } catch (e) {
+      // Not a folder, try as file
+      try {
+        var file = DriveApp.getFileById(driveId);
+        if (file.getMimeType() !== MimeType.GOOGLE_SHEETS) {
+          throw new Error('File is not a Google Spreadsheet');
+        }
+        Logger.log('📄 Processing file: ' + file.getName());
+        var workbook = SpreadsheetApp.openById(driveId);
+        checkWorkbook(workbook, file.getName(), studentMap, detailIssues, summaryData);
+      } catch (e2) {
+        throw new Error('Invalid ID or no access: ' + e2.message);
+      }
+    }
     
-    // Check all roster workbooks in year subfolders
-    checkRosterWorkbooks(rosterFolder, studentMap, detailIssues, summaryData);
-    
-    // Create report sheets
-    createDetailReport(detailIssues);
-    createSummaryReport(summaryData);
-    
-    UtilityScriptLibrary.debugLog('✅ Verification complete. Found ' + detailIssues.length + ' issues across ' + summaryData.length + ' sheets.');
-    
-    SpreadsheetApp.getUi().alert(
-      'Verification Complete',
-      'Found ' + detailIssues.length + ' issues across ' + summaryData.length + ' sheets.\n\n' +
-      'Check "Student ID Detail Report" and "Student ID Summary Report" sheets.',
-      SpreadsheetApp.getUi().ButtonSet.OK
-    );
+    appendToReports(detailIssues, summaryData);
+    Logger.log('✅ Complete. Found ' + detailIssues.length + ' issues.');
     
   } catch (error) {
-    UtilityScriptLibrary.debugLog('❌ Error in verifyStudentIdsAcrossWorkbooks: ' + error.message);
-    SpreadsheetApp.getUi().alert('Error: ' + error.message);
-    throw error;
+    Logger.log('❌ Error: ' + error.message);
   }
 }
+
+// ============================================
+// HELPER: Clear Reports (run this first)
+// ============================================
+function clearReports() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    
+    var detailSheet = ss.getSheetByName('Student ID Detail Report');
+    if (detailSheet) {
+      ss.deleteSheet(detailSheet);
+    }
+    
+    var summarySheet = ss.getSheetByName('Student ID Summary Report');
+    if (summarySheet) {
+      ss.deleteSheet(summarySheet);
+    }
+    
+    Logger.log('✅ Reports cleared');
+    Browser.msgBox('Reports cleared. Ready for new verification run.');
+    
+  } catch (error) {
+    Logger.log('❌ Error: ' + error.message);
+    Browser.msgBox('Error: ' + error.message);
+  }
+}
+
+// ============================================
+// SHARED FUNCTIONS
+// ============================================
 
 function loadStudentMapFromContacts() {
   try {
@@ -4852,24 +4890,23 @@ function loadStudentMapFromContacts() {
       throw new Error('Required columns not found in Contacts students sheet');
     }
     
-    // Build map: "firstname|lastname" -> studentId
     var studentMap = {};
     for (var i = 1; i < data.length; i++) {
       var id = (data[i][idCol - 1] || '').toString().trim();
       var firstName = (data[i][firstNameCol - 1] || '').toString().trim().toLowerCase();
       var lastName = (data[i][lastNameCol - 1] || '').toString().trim().toLowerCase();
       
-      if (id && id.startsWith('Q') && firstName && lastName) {
+      if (id && id.charAt(0) === 'Q' && firstName && lastName) {
         var key = firstName + '|' + lastName;
         studentMap[key] = id;
       }
     }
     
-    UtilityScriptLibrary.debugLog('📚 Loaded ' + Object.keys(studentMap).length + ' students from Contacts');
+    Logger.log('📚 Loaded ' + Object.keys(studentMap).length + ' students from Contacts');
     return studentMap;
     
   } catch (error) {
-    UtilityScriptLibrary.debugLog('❌ Error loading student map: ' + error.message);
+    Logger.log('❌ Error loading student map: ' + error.message);
     throw error;
   }
 }
@@ -4878,57 +4915,50 @@ function checkWorkbooksInFolder(folder, studentMap, detailIssues, summaryData, i
   try {
     var files = folder.getFiles();
     var excludedNames = ['Contacts', 'Teacher Interest Survey Responses'];
+    var processedCount = 0;
     
     while (files.hasNext()) {
       var file = files.next();
       
-      // Skip non-spreadsheets
       if (file.getMimeType() !== MimeType.GOOGLE_SHEETS) {
         continue;
       }
       
       var workbookName = file.getName();
       
-      // Skip excluded workbooks only in home folder
       if (isHomeFolder && excludedNames.indexOf(workbookName) !== -1) {
-        UtilityScriptLibrary.debugLog('⏭️ Skipping excluded workbook: ' + workbookName);
+        Logger.log('⏭️ Skipping excluded workbook: ' + workbookName);
         continue;
       }
       
       try {
+        Logger.log('📖 Opening workbook: ' + workbookName);
         var workbook = SpreadsheetApp.openById(file.getId());
         checkWorkbook(workbook, workbookName, studentMap, detailIssues, summaryData);
+        processedCount++;
+        
+        if (processedCount % 5 === 0) {
+          Utilities.sleep(1000);
+          Logger.log('⏸️ Processed ' + processedCount + ' workbooks, pausing briefly...');
+        }
+        
       } catch (error) {
-        UtilityScriptLibrary.debugLog('⚠️ Could not access workbook ' + workbookName + ': ' + error.message);
+        Logger.log('⚠️ Could not access workbook ' + workbookName + ': ' + error.message);
+        continue;
       }
     }
     
-  } catch (error) {
-    UtilityScriptLibrary.debugLog('❌ Error checking workbooks in folder: ' + error.message);
-    throw error;
-  }
-}
-
-function checkRosterWorkbooks(rosterFolder, studentMap, detailIssues, summaryData) {
-  try {
-    var yearFolders = rosterFolder.getFolders();
-    
-    while (yearFolders.hasNext()) {
-      var yearFolder = yearFolders.next();
-      UtilityScriptLibrary.debugLog('📁 Checking roster year folder: ' + yearFolder.getName());
-      checkWorkbooksInFolder(yearFolder, studentMap, detailIssues, summaryData, false);
-    }
+    Logger.log('✅ Completed folder check. Processed ' + processedCount + ' workbooks.');
     
   } catch (error) {
-    UtilityScriptLibrary.debugLog('❌ Error checking roster workbooks: ' + error.message);
-    throw error;
+    Logger.log('❌ Error checking workbooks in folder: ' + error.message);
   }
 }
 
 function checkWorkbook(workbook, workbookName, studentMap, detailIssues, summaryData) {
   try {
     var sheets = workbook.getSheets();
-    UtilityScriptLibrary.debugLog('📖 Checking workbook: ' + workbookName + ' (' + sheets.length + ' sheets)');
+    Logger.log('  📄 Checking ' + sheets.length + ' sheets in: ' + workbookName);
     
     for (var i = 0; i < sheets.length; i++) {
       var sheet = sheets[i];
@@ -4936,7 +4966,7 @@ function checkWorkbook(workbook, workbookName, studentMap, detailIssues, summary
     }
     
   } catch (error) {
-    UtilityScriptLibrary.debugLog('❌ Error checking workbook ' + workbookName + ': ' + error.message);
+    Logger.log('❌ Error checking workbook ' + workbookName + ': ' + error.message);
   }
 }
 
@@ -4946,13 +4976,12 @@ function checkSheet(workbook, workbookName, sheet, studentMap, detailIssues, sum
     var data = sheet.getDataRange().getValues();
     
     if (data.length < 2) {
-      return; // No data to check
+      return;
     }
     
     var headers = data[0];
     var norm = UtilityScriptLibrary.normalizeHeader;
     
-    // Find ID column (try "Student ID" then "ID")
     var idCol = -1;
     var firstNameCol = -1;
     var lastNameCol = -1;
@@ -4960,44 +4989,53 @@ function checkSheet(workbook, workbookName, sheet, studentMap, detailIssues, sum
     for (var h = 0; h < headers.length; h++) {
       var normalizedHeader = norm(headers[h]);
       
+      // ID column - try "Student ID" first, then "ID"
       if (normalizedHeader === norm('Student ID')) {
         idCol = h;
       } else if (idCol === -1 && normalizedHeader === norm('ID')) {
         idCol = h;
       }
       
-      if (normalizedHeader === norm('First Name') || normalizedHeader === norm('Student First Name')) {
+      // First Name - prioritize "Student First Name" over "First Name"
+      if (normalizedHeader === norm('Student First Name')) {
+        firstNameCol = h;
+      } else if (firstNameCol === -1 && normalizedHeader === norm('First Name')) {
         firstNameCol = h;
       }
       
-      if (normalizedHeader === norm('Last Name') || normalizedHeader === norm('Student Last Name')) {
+      // Last Name - prioritize "Student Last Name" over "Last Name"
+      if (normalizedHeader === norm('Student Last Name')) {
+        lastNameCol = h;
+      } else if (lastNameCol === -1 && normalizedHeader === norm('Last Name')) {
         lastNameCol = h;
       }
     }
     
-    // Skip sheets without required columns
     if (idCol === -1 || firstNameCol === -1 || lastNameCol === -1) {
       return;
     }
     
     var sheetIssues = [];
     
-    // Check each data row
     for (var r = 1; r < data.length; r++) {
       var row = data[r];
       var foundId = (row[idCol] || '').toString().trim();
       var firstName = (row[firstNameCol] || '').toString().trim();
       var lastName = (row[lastNameCol] || '').toString().trim();
       
-      // Skip rows without Q-prefix IDs
-      if (!foundId.startsWith('Q') && !firstName && !lastName) {
-        continue; // Completely empty row
+      // Skip completely empty rows
+      if (!foundId && !firstName && !lastName) {
+        continue;
       }
       
-      // Check for issues
+      // Skip rows with non-Q IDs (P, T, G, etc.)
+      if (foundId && foundId.charAt(0) !== 'Q') {
+        continue;
+      }
+      
       var issue = null;
       
-      if (foundId.startsWith('Q') && (!firstName || !lastName)) {
+      if (foundId.charAt(0) === 'Q' && (!firstName || !lastName)) {
         // ID without name
         issue = {
           workbookName: workbookName,
@@ -5010,8 +5048,8 @@ function checkSheet(workbook, workbookName, sheet, studentMap, detailIssues, sum
           issueType: 'ID without name'
         };
         
-      } else if (firstName && lastName && !foundId.startsWith('Q')) {
-        // Name without ID (or non-Q ID)
+      } else if (firstName && lastName && !foundId) {
+        // Name without ID
         var key = firstName.toLowerCase() + '|' + lastName.toLowerCase();
         var expectedId = studentMap[key] || 'NOT FOUND';
         
@@ -5021,12 +5059,12 @@ function checkSheet(workbook, workbookName, sheet, studentMap, detailIssues, sum
           rowNumber: r + 1,
           firstName: firstName,
           lastName: lastName,
-          foundId: foundId,
+          foundId: '',
           expectedId: expectedId,
           issueType: 'Name without ID'
         };
         
-      } else if (foundId.startsWith('Q') && firstName && lastName) {
+      } else if (foundId.charAt(0) === 'Q' && firstName && lastName) {
         // Both present - check for mismatch
         var key = firstName.toLowerCase() + '|' + lastName.toLowerCase();
         var expectedId = studentMap[key];
@@ -5062,7 +5100,6 @@ function checkSheet(workbook, workbookName, sheet, studentMap, detailIssues, sum
       }
     }
     
-    // Add to summary
     summaryData.push({
       workbookName: workbookName,
       sheetName: sheetName,
@@ -5071,131 +5108,100 @@ function checkSheet(workbook, workbookName, sheet, studentMap, detailIssues, sum
     });
     
     if (sheetIssues.length > 0) {
-      UtilityScriptLibrary.debugLog('⚠️ Found ' + sheetIssues.length + ' issues in ' + workbookName + ' - ' + sheetName);
+      Logger.log('    ⚠️ Found ' + sheetIssues.length + ' issues in sheet: ' + sheetName);
     }
     
   } catch (error) {
-    UtilityScriptLibrary.debugLog('❌ Error checking sheet ' + workbookName + ' - ' + sheetName + ': ' + error.message);
+    Logger.log('❌ Error checking sheet ' + workbookName + ' - ' + sheetName + ': ' + error.message);
   }
 }
 
-function createDetailReport(detailIssues) {
+function appendToReports(detailIssues, summaryData) {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     
-    // Delete existing report if it exists
-    var existingSheet = ss.getSheetByName('Student ID Detail Report');
-    if (existingSheet) {
-      ss.deleteSheet(existingSheet);
+    // Detail Report
+    var detailSheet = ss.getSheetByName('Student ID Detail Report');
+    if (!detailSheet) {
+      detailSheet = ss.insertSheet('Student ID Detail Report');
+      var headers = ['Workbook Name', 'Sheet Name', 'Row Number', 'First Name', 'Last Name', 'Found Student ID', 'Expected Student ID', 'Issue Type'];
+      detailSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+      detailSheet.getRange(1, 1, 1, headers.length)
+        .setBackground('#37a247')
+        .setFontColor('#ffffff')
+        .setFontWeight('bold');
+      detailSheet.setColumnWidth(1, 200);
+      detailSheet.setColumnWidth(2, 180);
+      detailSheet.setColumnWidth(3, 80);
+      detailSheet.setColumnWidth(4, 120);
+      detailSheet.setColumnWidth(5, 120);
+      detailSheet.setColumnWidth(6, 120);
+      detailSheet.setColumnWidth(7, 120);
+      detailSheet.setColumnWidth(8, 150);
+      detailSheet.setFrozenRows(1);
     }
     
-    // Create new report sheet
-    var reportSheet = ss.insertSheet('Student ID Detail Report');
-    
-    // Set up headers
-    var headers = [
-      'Workbook Name',
-      'Sheet Name',
-      'Row Number',
-      'First Name',
-      'Last Name',
-      'Found Student ID',
-      'Expected Student ID',
-      'Issue Type'
-    ];
-    
-    reportSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-    reportSheet.getRange(1, 1, 1, headers.length)
-      .setBackground('#37a247')
-      .setFontColor('#ffffff')
-      .setFontWeight('bold');
-    
-    // Add data
     if (detailIssues.length > 0) {
-      var reportData = detailIssues.map(function(issue) {
-        return [
-          issue.workbookName,
-          issue.sheetName,
-          issue.rowNumber,
-          issue.firstName,
-          issue.lastName,
-          issue.foundId,
-          issue.expectedId,
-          issue.issueType
-        ];
+      var detailData = detailIssues.map(function(issue) {
+        return [issue.workbookName, issue.sheetName, issue.rowNumber, issue.firstName, issue.lastName, issue.foundId, issue.expectedId, issue.issueType];
       });
-      
-      reportSheet.getRange(2, 1, reportData.length, headers.length).setValues(reportData);
+      var lastRow = detailSheet.getLastRow();
+      detailSheet.getRange(lastRow + 1, 1, detailData.length, 8).setValues(detailData);
     }
     
-    // Format columns
-    reportSheet.setColumnWidth(1, 200); // Workbook Name
-    reportSheet.setColumnWidth(2, 180); // Sheet Name
-    reportSheet.setColumnWidth(3, 80);  // Row Number
-    reportSheet.setColumnWidth(4, 120); // First Name
-    reportSheet.setColumnWidth(5, 120); // Last Name
-    reportSheet.setColumnWidth(6, 120); // Found ID
-    reportSheet.setColumnWidth(7, 120); // Expected ID
-    reportSheet.setColumnWidth(8, 150); // Issue Type
+    // Summary Report
+    var summarySheet = ss.getSheetByName('Student ID Summary Report');
+    if (!summarySheet) {
+      summarySheet = ss.insertSheet('Student ID Summary Report');
+      var headers = ['Workbook Name', 'Sheet Name', 'Status', 'Issue Count'];
+      summarySheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+      summarySheet.getRange(1, 1, 1, headers.length)
+        .setBackground('#37a247')
+        .setFontColor('#ffffff')
+        .setFontWeight('bold');
+      summarySheet.setColumnWidth(1, 200);
+      summarySheet.setColumnWidth(2, 180);
+      summarySheet.setColumnWidth(3, 80);
+      summarySheet.setColumnWidth(4, 100);
+      summarySheet.setFrozenRows(1);
+    }
     
-    reportSheet.setFrozenRows(1);
+    if (summaryData.length > 0) {
+      var summaryRows = summaryData.map(function(item) {
+        return [item.workbookName, item.sheetName, item.status, item.issueCount];
+      });
+      var lastRow = summarySheet.getLastRow();
+      summarySheet.getRange(lastRow + 1, 1, summaryRows.length, 4).setValues(summaryRows);
+    }
     
-    UtilityScriptLibrary.debugLog('✅ Created detail report with ' + detailIssues.length + ' issues');
+    Logger.log('✅ Appended to reports');
     
   } catch (error) {
-    UtilityScriptLibrary.debugLog('❌ Error creating detail report: ' + error.message);
+    Logger.log('❌ Error appending to reports: ' + error.message);
     throw error;
   }
 }
 
-function createSummaryReport(summaryData) {
-  try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    
-    // Delete existing report if it exists
-    var existingSheet = ss.getSheetByName('Student ID Summary Report');
-    if (existingSheet) {
-      ss.deleteSheet(existingSheet);
-    }
-    
-    // Create new report sheet
-    var reportSheet = ss.insertSheet('Student ID Summary Report');
-    
-    // Set up headers
-    var headers = ['Workbook Name', 'Sheet Name', 'Status', 'Issue Count'];
-    
-    reportSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-    reportSheet.getRange(1, 1, 1, headers.length)
-      .setBackground('#37a247')
-      .setFontColor('#ffffff')
-      .setFontWeight('bold');
-    
-    // Add data
-    if (summaryData.length > 0) {
-      var reportData = summaryData.map(function(item) {
-        return [
-          item.workbookName,
-          item.sheetName,
-          item.status,
-          item.issueCount
-        ];
-      });
-      
-      reportSheet.getRange(2, 1, reportData.length, headers.length).setValues(reportData);
-    }
-    
-    // Format columns
-    reportSheet.setColumnWidth(1, 200); // Workbook Name
-    reportSheet.setColumnWidth(2, 180); // Sheet Name
-    reportSheet.setColumnWidth(3, 80);  // Status
-    reportSheet.setColumnWidth(4, 100); // Issue Count
-    
-    reportSheet.setFrozenRows(1);
-    
-    UtilityScriptLibrary.debugLog('✅ Created summary report with ' + summaryData.length + ' sheets checked');
-    
-  } catch (error) {
-    UtilityScriptLibrary.debugLog('❌ Error creating summary report: ' + error.message);
-    throw error;
+function verifyByDriveIdWithPrompt() {
+  var ui = SpreadsheetApp.getUi();
+  var response = ui.prompt(
+    'Verify Student IDs',
+    'Enter Google Drive ID (folder or spreadsheet):',
+    ui.ButtonSet.OK_CANCEL
+  );
+  
+  if (response.getSelectedButton() !== ui.Button.OK) {
+    return;
   }
+  
+  var driveId = response.getResponseText().trim();
+  if (!driveId) {
+    ui.alert('No ID provided');
+    return;
+  }
+  
+  verifyByDriveId(driveId);
+  ui.alert('Complete! Check the report sheets.');
 }
+
+
