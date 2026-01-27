@@ -806,7 +806,8 @@ function onOpen() {
     .addItem('Process Teacher Assignments', 'processPendingAssignments')
     .addItem('Reassign Student to Different Teacher', 'reassignStudentToNewTeacher')
     .addItem('Clear Reports', 'clearReports')
-    .addItem('Verify by Drive ID', 'verifyByDriveIdWithPrompt') // NEW
+    .addItem('Verify by Drive ID', 'verifyByDriveIdWithPrompt')
+    .addItem('Create New Year Workbooks with Continuing Students', 'createNewYearWorkbooksWithContinuingStudents')
     .addToUi();
   
   applyTeacherDropdownToCurrentSemester();
@@ -5204,4 +5205,385 @@ function verifyByDriveIdWithPrompt() {
   ui.alert('Complete! Check the report sheets.');
 }
 
+function createNewYearWorkbooksWithContinuingStudents() {
+  var ui = SpreadsheetApp.getUi();
+  
+  try {
+    // Step 1: Verify teacher status
+    var verifyResponse = ui.alert(
+      'Teacher Status Verification',
+      'Have you verified teacher status in Teacher Roster Lookup?\n\n' +
+      '(Only active teachers will get new workbooks)',
+      ui.ButtonSet.YES_NO
+    );
+    
+    if (verifyResponse !== ui.Button.YES) {
+      ui.alert('Cancelled', 'Please verify teacher status first.', ui.ButtonSet.OK);
+      return;
+    }
+    
+    // Step 2: Get most recent semester from Billing
+    var semesterMetadata = UtilityScriptLibrary.getSheet('semesterMetadata');
+    if (!semesterMetadata) {
+      throw new Error('Semester Metadata sheet not found in Billing');
+    }
+    
+    var semesterData = semesterMetadata.getDataRange().getValues();
+    var headers = semesterData[0];
+    
+    var nameCol = -1, startCol = -1;
+    for (var i = 0; i < headers.length; i++) {
+      var header = UtilityScriptLibrary.normalizeHeader(headers[i]);
+      if (header === 'semester name' || header === 'semestername') nameCol = i;
+      if (header === 'start date' || header === 'startdate') startCol = i;
+    }
+    
+    if (nameCol === -1 || startCol === -1) {
+      throw new Error('Required columns not found in Semester Metadata');
+    }
+    
+    // Find most recent semester (latest start date)
+    var mostRecentSemester = null;
+    var mostRecentDate = null;
+    
+    for (var i = 1; i < semesterData.length; i++) {
+      var semesterName = semesterData[i][nameCol];
+      var startDate = new Date(semesterData[i][startCol]);
+      
+      if (!semesterName || !startDate) continue;
+      
+      if (!mostRecentDate || startDate > mostRecentDate) {
+        mostRecentDate = startDate;
+        mostRecentSemester = semesterName;
+      }
+    }
+    
+    if (!mostRecentSemester) {
+      throw new Error('No valid semester found in Semester Metadata');
+    }
+    
+    UtilityScriptLibrary.debugLog('Most recent semester: ' + mostRecentSemester);
+    
+    // Step 3: Extract year from semester name
+    var yearMatch = mostRecentSemester.match(/\d{4}/);
+    if (!yearMatch) {
+      throw new Error('Could not extract year from semester name: ' + mostRecentSemester);
+    }
+    
+    var newYear = yearMatch[0];
+    var previousYear = String(parseInt(newYear) - 1);
+    
+    UtilityScriptLibrary.debugLog('New year: ' + newYear + ', Previous year: ' + previousYear);
+    
+    // Step 4: Confirm with user
+    var confirm = ui.alert(
+      'Create ' + newYear + ' Teacher Workbooks',
+      'This will:\n' +
+      '• Create new QAMP ' + newYear + ' workbooks\n' +
+      '• Copy continuing students from ' + previousYear + ' rosters\n' +
+      '• Create "' + mostRecentSemester + '" roster sheets\n' +
+      '• Update Teacher Roster Lookup URLs\n\n' +
+      'Continuing students: Lessons Remaining > 0 AND Status = active/carryover\n\n' +
+      'Continue?',
+      ui.ButtonSet.YES_NO
+    );
+    
+    if (confirm !== ui.Button.YES) {
+      return;
+    }
+    
+    // Step 5: Get roster folders
+    var rostersFolder = UtilityScriptLibrary.getRosterFolder();
+    
+    var previousYearFolderName = previousYear + ' Rosters';
+    var newYearFolderName = newYear + ' Rosters';
+    
+    var previousYearFolder = null;
+    var newYearFolder = null;
+    
+    var subfolders = rostersFolder.getFolders();
+    while (subfolders.hasNext()) {
+      var folder = subfolders.next();
+      var folderName = folder.getName();
+      
+      if (folderName === previousYearFolderName) {
+        previousYearFolder = folder;
+      }
+      if (folderName === newYearFolderName) {
+        newYearFolder = folder;
+      }
+    }
+    
+    if (!previousYearFolder) {
+      throw new Error('Previous year folder not found: ' + previousYearFolderName);
+    }
+    
+    if (!newYearFolder) {
+      throw new Error('New year folder not found: ' + newYearFolderName + '\n\nPlease run semester setup in Billing first.');
+    }
+    
+    UtilityScriptLibrary.debugLog('Found folders - Previous: ' + previousYearFolderName + ', New: ' + newYearFolderName);
+    
+    // Step 6: Get active teachers
+    var teacherLookupSheet = UtilityScriptLibrary.getSheet('teacherRosterLookup');
+    if (!teacherLookupSheet) {
+      throw new Error('Teacher Roster Lookup sheet not found');
+    }
+    
+    var teacherData = teacherLookupSheet.getDataRange().getValues();
+    var getCol = UtilityScriptLibrary.createColumnFinder(teacherLookupSheet);
+    
+    var teacherNameCol = getCol('Teacher Name') - 1;
+    var displayNameCol = getCol('Display Name') - 1;
+    var statusCol = getCol('Status') - 1;
+    var urlCol = getCol('Roster URL') - 1;
+    
+    if (teacherNameCol === -1 || displayNameCol === -1 || statusCol === -1 || urlCol === -1) {
+      throw new Error('Required columns not found in Teacher Roster Lookup');
+    }
+    
+    // Step 7: Process each active teacher
+    var stats = {
+      processed: 0,
+      created: 0,
+      skipped: 0,
+      errors: []
+    };
+    
+    for (var i = 1; i < teacherData.length; i++) {
+      var row = teacherData[i];
+      var teacherName = row[teacherNameCol];
+      var displayName = row[displayNameCol];
+      var status = row[statusCol];
+      
+      if (!teacherName || status !== 'active') {
+        if (teacherName) {
+          UtilityScriptLibrary.debugLog('Skipping ' + teacherName + ' (not active)');
+          stats.skipped++;
+        }
+        continue;
+      }
+      
+      try {
+        UtilityScriptLibrary.debugLog('Processing teacher: ' + teacherName);
+        
+        // Find previous year workbook
+        var previousYearFileName = 'QAMP ' + previousYear + ' ' + (displayName || teacherName);
+        var previousYearFiles = previousYearFolder.getFilesByName(previousYearFileName);
+        
+        if (!previousYearFiles.hasNext()) {
+          UtilityScriptLibrary.debugLog('No ' + previousYear + ' workbook found for ' + teacherName + ' - skipping');
+          stats.skipped++;
+          continue;
+        }
+        
+        var previousYearFile = previousYearFiles.next();
+        var previousYearSS = SpreadsheetApp.openById(previousYearFile.getId());
+        
+        // Get continuing students
+        var continuingStudents = getContinuingStudentsFromWorkbook(previousYearSS);
+        
+        UtilityScriptLibrary.debugLog('Found ' + continuingStudents.length + ' continuing students for ' + teacherName);
+        
+        // Create new year workbook
+        var newYearSS = getOrCreateRosterFromTemplate(
+          displayName || teacherName,
+          newYearFolder,
+          newYear,
+          mostRecentSemester
+        );
+        
+        // Populate with continuing students if any
+        if (continuingStudents.length > 0) {
+          populateRosterWithContinuingStudents(newYearSS, mostRecentSemester, continuingStudents);
+        }
+        
+        // Update Teacher Roster Lookup URL
+        var newUrl = newYearSS.getUrl();
+        teacherLookupSheet.getRange(i + 1, urlCol + 1).setValue(newUrl);
+        
+        stats.processed++;
+        stats.created++;
+        
+        UtilityScriptLibrary.debugLog('✅ Created ' + newYear + ' workbook for ' + teacherName + ' with ' + continuingStudents.length + ' students');
+        
+      } catch (error) {
+        stats.errors.push({
+          teacher: teacherName,
+          error: error.message
+        });
+        UtilityScriptLibrary.debugLog('❌ Error processing ' + teacherName + ': ' + error.message);
+      }
+    }
+    
+    // Step 8: Show summary
+    var summary = 'Workbook Creation Complete\n\n' +
+                  'Semester: ' + mostRecentSemester + '\n' +
+                  'Teachers Processed: ' + stats.processed + '\n' +
+                  'Workbooks Created: ' + stats.created + '\n' +
+                  'Skipped: ' + stats.skipped;
+    
+    if (stats.errors.length > 0) {
+      summary += '\n\nErrors (' + stats.errors.length + '):';
+      for (var j = 0; j < Math.min(stats.errors.length, 5); j++) {
+        summary += '\n• ' + stats.errors[j].teacher + ': ' + stats.errors[j].error;
+      }
+      if (stats.errors.length > 5) {
+        summary += '\n• ... and ' + (stats.errors.length - 5) + ' more';
+      }
+    }
+    
+    ui.alert('✅ Complete', summary, ui.ButtonSet.OK);
+    
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('❌ Fatal error: ' + error.message);
+    ui.alert('❌ Error', error.message, ui.ButtonSet.OK);
+  }
+}
 
+function getContinuingStudentsFromWorkbook(workbook) {
+  try {
+    // Find the most recent roster sheet
+    var rosterSheet = findMostRecentRosterSheet(workbook);
+    
+    if (!rosterSheet) {
+      UtilityScriptLibrary.debugLog('No roster sheet found in workbook');
+      return [];
+    }
+    
+    UtilityScriptLibrary.debugLog('Using roster sheet: ' + rosterSheet.getName());
+    
+    var data = rosterSheet.getDataRange().getValues();
+    var headers = data[0];
+    
+    var getCol = function(name) {
+      for (var i = 0; i < headers.length; i++) {
+        if (headers[i] && headers[i].toString().toLowerCase().indexOf(name.toLowerCase()) !== -1) {
+          return i;
+        }
+      }
+      return -1;
+    };
+    
+    var continuingStudents = [];
+    
+    for (var i = 1; i < data.length; i++) {
+      var row = data[i];
+      
+      // Skip empty rows
+      if (!row[getCol('Last Name')] || !row[getCol('First Name')]) {
+        continue;
+      }
+      
+      var status = (row[getCol('Status')] || '').toString().trim().toLowerCase();
+      var lessonsRemaining = parseFloat(row[getCol('Lessons Remaining')]) || 0;
+      
+      // Include students with: Lessons Remaining > 0 AND (Status = 'active' OR 'carryover')
+      if (lessonsRemaining > 0 && (status === 'active' || status === 'carryover')) {
+        continuingStudents.push({
+          lastName: row[getCol('Last Name')] || '',
+          firstName: row[getCol('First Name')] || '',
+          instrument: row[getCol('Instrument')] || '',
+          length: row[getCol('Length')] || 30,
+          experience: row[getCol('Experience')] || '',
+          grade: row[getCol('Grade')] || '',
+          school: row[getCol('School')] || '',
+          schoolTeacher: row[getCol('School Teacher')] || '',
+          parentLastName: row[getCol('Parent Last Name')] || '',
+          parentFirstName: row[getCol('Parent First Name')] || '',
+          phone: row[getCol('Phone')] || '',
+          email: row[getCol('Email')] || '',
+          additionalContacts: row[getCol('Additional contacts')] || '',
+          studentId: row[getCol('Student ID')] || '',
+          lessonsRemaining: lessonsRemaining
+        });
+      }
+    }
+    
+    return continuingStudents;
+    
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('Error getting continuing students: ' + error.message);
+    return [];
+  }
+}
+
+function populateRosterWithContinuingStudents(workbook, semesterName, students) {
+  try {
+    var season = UtilityScriptLibrary.extractSeasonFromSemester(semesterName);
+    var rosterSheetName = season + ' Roster';
+    var rosterSheet = workbook.getSheetByName(rosterSheetName);
+    
+    if (!rosterSheet) {
+      throw new Error('Roster sheet not found: ' + rosterSheetName);
+    }
+    
+    // Sort students alphabetically
+    students.sort(function(a, b) {
+      var lastNameCompare = (a.lastName || '').localeCompare(b.lastName || '');
+      if (lastNameCompare !== 0) {
+        return lastNameCompare;
+      }
+      return (a.firstName || '').localeCompare(b.firstName || '');
+    });
+    
+    // Prepare data rows
+    var dataRows = [];
+    for (var i = 0; i < students.length; i++) {
+      var s = students[i];
+      dataRows.push([
+        false,                      // A - Contacted checkbox
+        '',                         // B - First Lesson Date
+        '',                         // C - First Lesson Time
+        '',                         // D - Comments
+        s.lastName,                 // E - Last Name
+        s.firstName,                // F - First Name
+        s.instrument,               // G - Instrument
+        s.length,                   // H - Length
+        s.experience,               // I - Experience
+        s.grade,                    // J - Grade
+        s.school,                   // K - School
+        s.schoolTeacher,            // L - School Teacher
+        s.parentLastName,           // M - Parent Last Name
+        s.parentFirstName,          // N - Parent First Name
+        s.phone,                    // O - Phone
+        s.email,                    // P - Email
+        s.additionalContacts,       // Q - Additional contacts
+        s.lessonsRemaining,         // R - Lessons Registered (carry forward remaining)
+        0,                          // S - Lessons Completed
+        s.lessonsRemaining,         // T - Lessons Remaining
+        'Carryover',                // U - Status
+        s.studentId,                // V - Student ID
+        'Carried over from previous year', // W - Admin Comments
+        ''                          // X - System Comments
+      ]);
+    }
+    
+    // Write all data at once
+    if (dataRows.length > 0) {
+      rosterSheet.getRange(2, 1, dataRows.length, dataRows[0].length).setValues(dataRows);
+      UtilityScriptLibrary.debugLog('✅ Populated roster with ' + students.length + ' students');
+    }
+    
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('Error populating roster: ' + error.message);
+    throw error;
+  }
+}
+
+function findMostRecentRosterSheet(spreadsheet) {
+  var sheets = spreadsheet.getSheets();
+  var rosterSheets = [];
+  
+  for (var i = 0; i < sheets.length; i++) {
+    var sheetName = sheets[i].getName();
+    // Look for sheets with "Roster" in the name
+    if (sheetName.toLowerCase().indexOf('roster') !== -1) {
+      rosterSheets.push(sheets[i]);
+    }
+  }
+  
+  // Return the first roster sheet found (usually there's only one named "[Season] Roster")
+  // If multiple, they're typically in chronological order, so last one is most recent
+  return rosterSheets.length > 0 ? rosterSheets[rosterSheets.length - 1] : null;
+}
