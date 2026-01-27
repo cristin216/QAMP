@@ -1262,19 +1262,15 @@ function onOpen() {
     .createMenu('QAMP Tools')
     .addItem('Set Up New Semester', 'setupNewSemester')
     .addItem('Begin New Billing Cycle', 'runBillingCycleAutomation')
-    .addSeparator()
-    .addSubMenu(
-      SpreadsheetApp.getUi().createMenu('Reconciliation')
-        .addItem('Full Reconciliation', 'runFullReconciliationUI')
-        .addSeparator()
-        .addItem('Lessons Only', 'runWeeklyLessonReconciliationUI')
-        .addItem('Payments Only', 'runPaymentReconciliationUI')
-        .addItem('Forms Only', 'runFormsReconciliationUI')
-    )
-    .addSeparator()
+    .addItem('Full Reconciliation', 'runFullReconciliationUI')
+    .addItem('Lessons Only', 'runWeeklyLessonReconciliationUI')
+    .addItem('Payments Only', 'runPaymentReconciliationUI')
+    .addItem('Forms Only', 'runFormsReconciliationUI')
     .addItem('Generate Documents', 'runRegistrationPacketGenerationUI')
     .addItem('Print Documents', 'convertFolderDocsToPdfUI')
     .addItem('Create New Attendance Sheets', 'createNewAttendanceSheets')
+    .addItem('Verify Payments 2024-2025', 'verifyPayments2024_2025')
+    .addItem('Verify Payments (Detailed)', 'verifyPaymentsDetailed')
     .addToUi();
 }
 
@@ -11759,4 +11755,621 @@ function verifyCumulativeFormulas() {
     showUI: false,
     logLevel: 'INFO'
   }).data;
+}
+
+function verifyPayments2024_2025() {
+  try {
+    var env = UtilityScriptLibrary.EnvironmentManager.get();
+    var config = UtilityScriptLibrary.getConfig();
+    
+    var paymentsId = config[env].paymentsId;
+    
+    if (!paymentsId) {
+      throw new Error('Payments workbook ID not found in config');
+    }
+    
+    UtilityScriptLibrary.debugLog('verifyPayments2024_2025', 'INFO', 'Starting payment verification', '2024-2025', '');
+    
+    // Get current workbook (Billing) and open Payments
+    var billingWB = SpreadsheetApp.getActiveSpreadsheet();
+    var paymentsWB = SpreadsheetApp.openById(paymentsId);
+    
+    // Collect data from both workbooks
+    var paymentsData = collectPaymentsData(paymentsWB);
+    var billingData = collectBillingData(billingWB);
+    
+    // Create verification report in current workbook
+    createPaymentVerificationReport(billingWB, paymentsData, billingData);
+    
+    SpreadsheetApp.getUi().alert('✅ Payment verification complete!\n\nCheck "Payment Verification 2024-2025" sheet.');
+    
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('verifyPayments2024_2025', 'ERROR', 'Verification failed', '', error.message);
+    SpreadsheetApp.getUi().alert('❌ Error: ' + error.message);
+  }
+}
+
+function collectPaymentsData(paymentsWB) {
+  try {
+    var paymentsData = {}; // studentId -> {lastName, firstName, totalPaid, monthlyBreakdown}
+    var allSheets = paymentsWB.getSheets();
+    var sheetPattern = /^[A-Za-z]+\s+(2024|2025)$/;
+    
+    for (var i = 0; i < allSheets.length; i++) {
+      var sheet = allSheets[i];
+      var sheetName = sheet.getName();
+      
+      if (!sheetPattern.test(sheetName)) {
+        continue;
+      }
+      
+      UtilityScriptLibrary.debugLog('collectPaymentsData', 'INFO', 'Processing sheet', sheetName, '');
+      
+      var data = sheet.getDataRange().getValues();
+      if (data.length <= 1) continue;
+      
+      var headerMap = UtilityScriptLibrary.getHeaderMap(sheet);
+      
+      // Check for required columns
+      if (!headerMap['studentid'] || !headerMap['amountpaid']) {
+        UtilityScriptLibrary.debugLog('collectPaymentsData', 'WARNING', 'Missing required columns', sheetName, '');
+        continue;
+      }
+      
+      var studentIdCol = headerMap['studentid'] - 1;
+      var amountPaidCol = headerMap['amountpaid'] - 1;
+      var lastNameCol = headerMap['studentlastname'] ? headerMap['studentlastname'] - 1 : -1;
+      var firstNameCol = headerMap['studentfirstname'] ? headerMap['studentfirstname'] - 1 : -1;
+      
+      // Process each row
+      for (var row = 1; row < data.length; row++) {
+        var studentId = data[row][studentIdCol] ? data[row][studentIdCol].toString().trim() : '';
+        if (!studentId) continue;
+        
+        var amountPaid = parseFloat(data[row][amountPaidCol]) || 0;
+        if (amountPaid === 0) continue;
+        
+        // Initialize student if not exists
+        if (!paymentsData[studentId]) {
+          paymentsData[studentId] = {
+            lastName: lastNameCol !== -1 ? (data[row][lastNameCol] || '') : '',
+            firstName: firstNameCol !== -1 ? (data[row][firstNameCol] || '') : '',
+            totalPaid: 0,
+            monthlyBreakdown: {}
+          };
+        }
+        
+        // Add to total
+        paymentsData[studentId].totalPaid += amountPaid;
+        
+        // Track monthly breakdown
+        if (!paymentsData[studentId].monthlyBreakdown[sheetName]) {
+          paymentsData[studentId].monthlyBreakdown[sheetName] = 0;
+        }
+        paymentsData[studentId].monthlyBreakdown[sheetName] += amountPaid;
+      }
+    }
+    
+    UtilityScriptLibrary.debugLog('collectPaymentsData', 'SUCCESS', 
+                                  'Collected payments data', 
+                                  Object.keys(paymentsData).length + ' students', '');
+    
+    return paymentsData;
+    
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('collectPaymentsData', 'ERROR', 'Failed to collect payments', '', error.message);
+    throw error;
+  }
+}
+
+function collectBillingData(billingWB) {
+  try {
+    var billingData = {}; // studentId -> {lastName, firstName, totalReceived, monthlyBreakdown}
+    var allSheets = billingWB.getSheets();
+    var sheetPattern = /^[A-Za-z]+\s+(2024|2025)$/;
+    
+    for (var i = 0; i < allSheets.length; i++) {
+      var sheet = allSheets[i];
+      var sheetName = sheet.getName();
+      
+      if (!sheetPattern.test(sheetName)) {
+        continue;
+      }
+      
+      UtilityScriptLibrary.debugLog('collectBillingData', 'INFO', 'Processing sheet', sheetName, '');
+      
+      var data = sheet.getDataRange().getValues();
+      if (data.length <= 1) continue;
+      
+      var headerMap = UtilityScriptLibrary.getHeaderMap(sheet);
+      
+      // Check for required columns
+      if (!headerMap['studentid'] || !headerMap['paymentreceived']) {
+        UtilityScriptLibrary.debugLog('collectBillingData', 'WARNING', 'Missing required columns', sheetName, '');
+        continue;
+      }
+      
+      var studentIdCol = headerMap['studentid'] - 1;
+      var paymentReceivedCol = headerMap['paymentreceived'] - 1;
+      var lastNameCol = headerMap['studentlastname'] ? headerMap['studentlastname'] - 1 : -1;
+      var firstNameCol = headerMap['studentfirstname'] ? headerMap['studentfirstname'] - 1 : -1;
+      
+      // Process each row
+      for (var row = 1; row < data.length; row++) {
+        var studentId = data[row][studentIdCol] ? data[row][studentIdCol].toString().trim() : '';
+        if (!studentId) continue;
+        
+        var paymentReceived = parseFloat(data[row][paymentReceivedCol]) || 0;
+        
+        // Initialize student if not exists
+        if (!billingData[studentId]) {
+          billingData[studentId] = {
+            lastName: lastNameCol !== -1 ? (data[row][lastNameCol] || '') : '',
+            firstName: firstNameCol !== -1 ? (data[row][firstNameCol] || '') : '',
+            totalReceived: 0,
+            monthlyBreakdown: {}
+          };
+        }
+        
+        // Add to total
+        billingData[studentId].totalReceived += paymentReceived;
+        
+        // Track monthly breakdown
+        if (!billingData[studentId].monthlyBreakdown[sheetName]) {
+          billingData[studentId].monthlyBreakdown[sheetName] = 0;
+        }
+        billingData[studentId].monthlyBreakdown[sheetName] += paymentReceived;
+      }
+    }
+    
+    UtilityScriptLibrary.debugLog('collectBillingData', 'SUCCESS', 
+                                  'Collected billing data', 
+                                  Object.keys(billingData).length + ' students', '');
+    
+    return billingData;
+    
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('collectBillingData', 'ERROR', 'Failed to collect billing', '', error.message);
+    throw error;
+  }
+}
+
+function createPaymentVerificationReport(billingWB, paymentsData, billingData) {
+  try {
+    var sheetName = 'Payment Verification 2024-2025';
+    var sheet = billingWB.getSheetByName(sheetName);
+    
+    if (sheet) {
+      sheet.clear();
+    } else {
+      sheet = billingWB.insertSheet(sheetName);
+    }
+    
+    // Headers
+    var headers = ['Student ID', 'Last Name', 'First Name', 'Total Payments (Payments WB)', 
+                   'Total Payment Received (Billing WB)', 'Difference', 'Match', 'Issue'];
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.getRange(1, 1, 1, headers.length)
+      .setFontWeight('bold')
+      .setBackground('#4285f4')
+      .setFontColor('#ffffff');
+    
+    // Collect all student IDs
+    var allStudentIds = {};
+    for (var id in paymentsData) {
+      allStudentIds[id] = true;
+    }
+    for (var id in billingData) {
+      allStudentIds[id] = true;
+    }
+    
+    var outputData = [];
+    var totalPayments = 0;
+    var totalBilling = 0;
+    var mismatchCount = 0;
+    
+    for (var studentId in allStudentIds) {
+      var payments = paymentsData[studentId];
+      var billing = billingData[studentId];
+      
+      var lastName = '';
+      var firstName = '';
+      var paymentTotal = 0;
+      var billingTotal = 0;
+      
+      if (payments) {
+        lastName = payments.lastName;
+        firstName = payments.firstName;
+        paymentTotal = payments.totalPaid;
+      }
+      
+      if (billing) {
+        if (!lastName) lastName = billing.lastName;
+        if (!firstName) firstName = billing.firstName;
+        billingTotal = billing.totalReceived;
+      }
+      
+      var difference = Math.abs(paymentTotal - billingTotal);
+      var match = '';
+      var issue = '';
+      
+      // Check for match (within 0.01 to account for rounding)
+      if (difference < 0.01) {
+        match = '✓';
+        issue = '';
+      } else {
+        match = 'X';
+        mismatchCount++;
+        
+        if (!payments) {
+          issue = 'No payments recorded';
+        } else if (!billing) {
+          issue = 'Not in billing';
+        } else if (paymentTotal > billingTotal) {
+          issue = 'Payments > Billing';
+        } else {
+          issue = 'Billing > Payments';
+        }
+      }
+      
+      totalPayments += paymentTotal;
+      totalBilling += billingTotal;
+      
+      outputData.push([
+        studentId,
+        lastName,
+        firstName,
+        paymentTotal,
+        billingTotal,
+        paymentTotal - billingTotal,
+        match,
+        issue
+      ]);
+    }
+    
+    // Sort by student ID
+    outputData.sort(function(a, b) {
+      return a[0].toString().localeCompare(b[0].toString());
+    });
+    
+    // Write data
+    if (outputData.length > 0) {
+      sheet.getRange(2, 1, outputData.length, headers.length).setValues(outputData);
+      
+      // Format currency columns
+      sheet.getRange(2, 4, outputData.length, 3).setNumberFormat('$#,##0.00');
+      
+      // Apply conditional formatting
+      for (var row = 0; row < outputData.length; row++) {
+        var matchCell = sheet.getRange(row + 2, 7);
+        if (outputData[row][6] === '✓') {
+          matchCell.setBackground('#d9ead3');
+        } else {
+          matchCell.setBackground('#f4cccc');
+        }
+      }
+    }
+    
+    // Add totals row
+    var totalsRow = outputData.length + 2;
+    sheet.getRange(totalsRow, 1, 1, headers.length).setValues([
+      ['TOTAL', '', '', totalPayments, totalBilling, totalPayments - totalBilling, 
+       Math.abs(totalPayments - totalBilling) < 0.01 ? '✓' : 'X', '']
+    ]);
+    sheet.getRange(totalsRow, 1, 1, headers.length).setFontWeight('bold');
+    sheet.getRange(totalsRow, 4, 1, 3).setNumberFormat('$#,##0.00');
+    
+    // Add summary
+    var summaryRow = totalsRow + 2;
+    sheet.getRange(summaryRow, 1, 1, 2).setValues([['Summary:', '']]);
+    sheet.getRange(summaryRow + 1, 1, 1, 2).setValues([['Total Students:', Object.keys(allStudentIds).length]]);
+    sheet.getRange(summaryRow + 2, 1, 1, 2).setValues([['Mismatches:', mismatchCount]]);
+    sheet.getRange(summaryRow + 3, 1, 1, 2).setValues([['Match Rate:', 
+      ((Object.keys(allStudentIds).length - mismatchCount) / Object.keys(allStudentIds).length * 100).toFixed(1) + '%']]);
+    
+    UtilityScriptLibrary.debugLog('createPaymentVerificationReport', 'SUCCESS', 
+                                  'Verification report created', 
+                                  outputData.length + ' students, ' + mismatchCount + ' mismatches', '');
+    
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('createPaymentVerificationReport', 'ERROR', 
+                                  'Failed to create report', '', error.message);
+    throw error;
+  }
+}
+
+function verifyPaymentsDetailed() {
+  var ui = SpreadsheetApp.getUi();
+  var response = ui.prompt('Student IDs', 'Enter student IDs separated by commas (e.g., Q0009, Q0010):', ui.ButtonSet.OK_CANCEL);
+  
+  if (response.getSelectedButton() !== ui.Button.OK) {
+    return;
+  }
+  
+  var studentIds = response.getResponseText().split(',').map(function(id) {
+    return id.trim();
+  });
+  
+  verifyPaymentsDetailedForStudents(studentIds);
+}
+
+function verifyPaymentsDetailedForStudents(studentIds) {
+  try {
+    var env = UtilityScriptLibrary.EnvironmentManager.get();
+    var config = UtilityScriptLibrary.getConfig();
+    var paymentsId = config[env].paymentsId;
+    
+    if (!paymentsId) {
+      throw new Error('Payments workbook ID not found in config');
+    }
+    
+    UtilityScriptLibrary.debugLog('verifyPaymentsDetailedForStudents', 'INFO', 
+                                  'Starting detailed verification', studentIds.join(', '), '');
+    
+    var billingWB = SpreadsheetApp.getActiveSpreadsheet();
+    var paymentsWB = SpreadsheetApp.openById(paymentsId);
+    
+    // Collect detailed data
+    var paymentsData = collectPaymentsDataDetailed(paymentsWB, studentIds);
+    var billingData = collectBillingDataDetailed(billingWB, studentIds);
+    
+    // Create detailed report
+    createDetailedPaymentReport(billingWB, paymentsData, billingData, studentIds);
+    
+    SpreadsheetApp.getUi().alert('✅ Detailed verification complete!\n\nCheck "Payment Details - ' + studentIds.join(', ') + '" sheet.');
+    
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('verifyPaymentsDetailedForStudents', 'ERROR', 
+                                  'Verification failed', '', error.message);
+    SpreadsheetApp.getUi().alert('❌ Error: ' + error.message);
+  }
+}
+
+function collectPaymentsDataDetailed(paymentsWB, studentIds) {
+  var paymentsData = {}; // studentId -> month -> amount
+  var allSheets = paymentsWB.getSheets();
+  var sheetPattern = /^[A-Za-z]+\s+(2024|2025)$/;
+  
+  // Initialize structure
+  for (var i = 0; i < studentIds.length; i++) {
+    paymentsData[studentIds[i]] = {
+      lastName: '',
+      firstName: '',
+      months: {}
+    };
+  }
+  
+  for (var i = 0; i < allSheets.length; i++) {
+    var sheet = allSheets[i];
+    var sheetName = sheet.getName();
+    
+    if (!sheetPattern.test(sheetName)) continue;
+    
+    var data = sheet.getDataRange().getValues();
+    if (data.length <= 1) continue;
+    
+    var headerMap = UtilityScriptLibrary.getHeaderMap(sheet);
+    if (!headerMap['studentid'] || !headerMap['amountpaid']) continue;
+    
+    var studentIdCol = headerMap['studentid'] - 1;
+    var amountPaidCol = headerMap['amountpaid'] - 1;
+    var lastNameCol = headerMap['studentlastname'] ? headerMap['studentlastname'] - 1 : -1;
+    var firstNameCol = headerMap['studentfirstname'] ? headerMap['studentfirstname'] - 1 : -1;
+    
+    for (var row = 1; row < data.length; row++) {
+      var studentId = data[row][studentIdCol] ? data[row][studentIdCol].toString().trim() : '';
+      
+      if (studentIds.indexOf(studentId) === -1) continue;
+      
+      var amountPaid = parseFloat(data[row][amountPaidCol]) || 0;
+      
+      // Store name
+      if (!paymentsData[studentId].lastName && lastNameCol !== -1) {
+        paymentsData[studentId].lastName = data[row][lastNameCol] || '';
+      }
+      if (!paymentsData[studentId].firstName && firstNameCol !== -1) {
+        paymentsData[studentId].firstName = data[row][firstNameCol] || '';
+      }
+      
+      // Add to month
+      if (!paymentsData[studentId].months[sheetName]) {
+        paymentsData[studentId].months[sheetName] = 0;
+      }
+      paymentsData[studentId].months[sheetName] += amountPaid;
+    }
+  }
+  
+  return paymentsData;
+}
+
+function collectBillingDataDetailed(billingWB, studentIds) {
+  var billingData = {}; // studentId -> month -> amount
+  var allSheets = billingWB.getSheets();
+  var sheetPattern = /^[A-Za-z]+\s+(2024|2025)$/;
+  
+  // Initialize structure
+  for (var i = 0; i < studentIds.length; i++) {
+    billingData[studentIds[i]] = {
+      lastName: '',
+      firstName: '',
+      months: {}
+    };
+  }
+  
+  for (var i = 0; i < allSheets.length; i++) {
+    var sheet = allSheets[i];
+    var sheetName = sheet.getName();
+    
+    if (!sheetPattern.test(sheetName)) continue;
+    
+    var data = sheet.getDataRange().getValues();
+    if (data.length <= 1) continue;
+    
+    var headerMap = UtilityScriptLibrary.getHeaderMap(sheet);
+    if (!headerMap['studentid'] || !headerMap['paymentreceived']) continue;
+    
+    var studentIdCol = headerMap['studentid'] - 1;
+    var paymentReceivedCol = headerMap['paymentreceived'] - 1;
+    var lastNameCol = headerMap['studentlastname'] ? headerMap['studentlastname'] - 1 : -1;
+    var firstNameCol = headerMap['studentfirstname'] ? headerMap['studentfirstname'] - 1 : -1;
+    
+    for (var row = 1; row < data.length; row++) {
+      var studentId = data[row][studentIdCol] ? data[row][studentIdCol].toString().trim() : '';
+      
+      if (studentIds.indexOf(studentId) === -1) continue;
+      
+      var paymentReceived = parseFloat(data[row][paymentReceivedCol]) || 0;
+      
+      // Store name
+      if (!billingData[studentId].lastName && lastNameCol !== -1) {
+        billingData[studentId].lastName = data[row][lastNameCol] || '';
+      }
+      if (!billingData[studentId].firstName && firstNameCol !== -1) {
+        billingData[studentId].firstName = data[row][firstNameCol] || '';
+      }
+      
+      // Store month data
+      billingData[studentId].months[sheetName] = paymentReceived;
+    }
+  }
+  
+  return billingData;
+}
+
+function createDetailedPaymentReport(billingWB, paymentsData, billingData, studentIds) {
+  var sheetName = 'Payment Details - ' + studentIds.join(', ');
+  var sheet = billingWB.getSheetByName(sheetName);
+  
+  if (sheet) {
+    sheet.clear();
+  } else {
+    sheet = billingWB.insertSheet(sheetName);
+  }
+  
+  // Get all months in chronological order
+  var allMonths = {};
+  for (var studentId in paymentsData) {
+    for (var month in paymentsData[studentId].months) {
+      allMonths[month] = true;
+    }
+  }
+  for (var studentId in billingData) {
+    for (var month in billingData[studentId].months) {
+      allMonths[month] = true;
+    }
+  }
+  
+  var monthsList = Object.keys(allMonths).sort(function(a, b) {
+    var dateA = parseMonthYear(a);
+    var dateB = parseMonthYear(b);
+    return dateA - dateB;
+  });
+  
+  var currentRow = 1;
+  
+  // Process each student
+  for (var i = 0; i < studentIds.length; i++) {
+    var studentId = studentIds[i];
+    var payments = paymentsData[studentId];
+    var billing = billingData[studentId];
+    
+    var lastName = payments.lastName || billing.lastName;
+    var firstName = payments.firstName || billing.firstName;
+    
+    // Student header
+    sheet.getRange(currentRow, 1, 1, 6).merge();
+    sheet.getRange(currentRow, 1).setValue('Student: ' + studentId + ' - ' + firstName + ' ' + lastName);
+    sheet.getRange(currentRow, 1).setFontWeight('bold').setFontSize(12).setBackground('#4285f4').setFontColor('#ffffff');
+    currentRow++;
+    
+    // Column headers
+    var headers = ['Month', 'Payments (Payments WB)', 'Payment Received (Billing WB)', 'Difference', 'Match', 'Issue'];
+    sheet.getRange(currentRow, 1, 1, headers.length).setValues([headers]);
+    sheet.getRange(currentRow, 1, 1, headers.length).setFontWeight('bold').setBackground('#d9d9d9');
+    currentRow++;
+    
+    var studentTotalPayments = 0;
+    var studentTotalBilling = 0;
+    
+    // Month-by-month breakdown
+    for (var m = 0; m < monthsList.length; m++) {
+      var month = monthsList[m];
+      var paymentAmount = payments.months[month] || 0;
+      var billingAmount = billing.months[month] || 0;
+      
+      studentTotalPayments += paymentAmount;
+      studentTotalBilling += billingAmount;
+      
+      var difference = paymentAmount - billingAmount;
+      var match = Math.abs(difference) < 0.01 ? '✓' : 'X';
+      var issue = '';
+      
+      if (Math.abs(difference) >= 0.01) {
+        if (paymentAmount === 0) {
+          issue = 'No payments recorded';
+        } else if (billingAmount === 0) {
+          issue = 'Not in billing';
+        } else if (paymentAmount > billingAmount) {
+          issue = 'Payments > Billing';
+        } else {
+          issue = 'Billing > Payments';
+        }
+      }
+      
+      sheet.getRange(currentRow, 1, 1, 6).setValues([[
+        month,
+        paymentAmount,
+        billingAmount,
+        difference,
+        match,
+        issue
+      ]]);
+      
+      // Format currency
+      sheet.getRange(currentRow, 2, 1, 3).setNumberFormat('$#,##0.00');
+      
+      // Color code match
+      var matchCell = sheet.getRange(currentRow, 5);
+      if (match === '✓') {
+        matchCell.setBackground('#d9ead3');
+      } else {
+        matchCell.setBackground('#f4cccc');
+      }
+      
+      currentRow++;
+    }
+    
+    // Student totals
+    sheet.getRange(currentRow, 1, 1, 6).setValues([[
+      'TOTAL',
+      studentTotalPayments,
+      studentTotalBilling,
+      studentTotalPayments - studentTotalBilling,
+      Math.abs(studentTotalPayments - studentTotalBilling) < 0.01 ? '✓' : 'X',
+      ''
+    ]]);
+    sheet.getRange(currentRow, 1, 1, 6).setFontWeight('bold');
+    sheet.getRange(currentRow, 2, 1, 3).setNumberFormat('$#,##0.00');
+    
+    currentRow += 2; // Space before next student
+  }
+  
+  // Auto-resize columns
+  sheet.autoResizeColumns(1, 6);
+  
+  UtilityScriptLibrary.debugLog('createDetailedPaymentReport', 'SUCCESS', 
+                                'Detailed report created', studentIds.join(', '), '');
+}
+
+function parseMonthYear(monthStr) {
+  var parts = monthStr.split(' ');
+  var month = parts[0];
+  var year = parseInt(parts[1]);
+  
+  var months = {
+    'January': 0, 'February': 1, 'March': 2, 'April': 3, 'May': 4, 'June': 5,
+    'July': 6, 'August': 7, 'September': 8, 'October': 9, 'November': 10, 'December': 11
+  };
+  
+  return new Date(year, months[month], 1);
 }
