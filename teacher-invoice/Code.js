@@ -483,8 +483,10 @@ function onOpen() {
       .addItem('Print Documents', 'convertFolderDocsToPdfUI')
       .addItem('Generate & Verify Hours', 'generateAndVerifyHours')
       .addItem('Verify Logs vs Invoices', 'verifyAttendanceVsInvoices')
-      .addItem('Verify Hours (Aug-Dec 2025)', 'verifyHoursAugustDecember2025')
+      .addItem('Generate 2025 Admin Reports', 'generate2025AdminReports')
+      .addItem('Verify Invoice vs Billing 2025', 'verifyInvoiceVsBilling2025')
       .addToUi();
+
     
     UtilityScriptLibrary.debugLog("✅ Teacher Invoice Tools menu created");
     
@@ -5396,5 +5398,725 @@ function createAugDecVerificationSheet(currentWorkbook, ourData, billingData, mo
   }
   
   UtilityScriptLibrary.debugLog('createAugDecVerificationSheet', 'SUCCESS', 
+                                'Verification sheet created', outputData.length + ' students', '');
+}
+
+function generate2025AdminReports() {
+  try {
+    var ui = SpreadsheetApp.getUi();
+    var year = '2025';
+    
+    // Get rosters folder from config
+    var env = 'test';
+    var rosterFolderId = UtilityScriptLibrary.CONFIG[env].rosterFolderId;
+    
+    if (!rosterFolderId) {
+      throw new Error('Roster folder ID not found in config');
+    }
+    
+    var rostersFolder = DriveApp.getFolderById(rosterFolderId);
+    
+    // Find year subfolder
+    var yearFolderName = year + ' Rosters';
+    var yearFolder = null;
+    var subfolders = rostersFolder.getFolders();
+    
+    while (subfolders.hasNext()) {
+      var folder = subfolders.next();
+      if (folder.getName() === yearFolderName) {
+        yearFolder = folder;
+        break;
+      }
+    }
+    
+    if (!yearFolder) {
+      throw new Error('Year folder not found: ' + yearFolderName);
+    }
+    
+    UtilityScriptLibrary.debugLog('generate2025AdminReports', 'INFO', 
+                                  'Found year folder', yearFolderName, '');
+    
+    // Get Teacher Invoices workbook (current)
+    var teacherInvoicesWB = SpreadsheetApp.getActiveSpreadsheet();
+    
+    // Data structures
+    var summaryData = {}; // workbookName -> errorCount
+    var detailErrors = []; // Array of error objects
+    var studentHours = {}; // studentId -> {months: {}, missingAdminDates: {}}
+    
+    var monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 
+                      'July', 'August', 'September', 'October', 'November', 'December'];
+    
+    // Process each teacher roster file in the year folder
+    var files = yearFolder.getFilesByType(MimeType.GOOGLE_SHEETS);
+    var fileCount = 0;
+    var processedCount = 0;
+    
+    while (files.hasNext()) {
+      var file = files.next();
+      var fileName = file.getName();
+      fileCount++;
+      
+      // Check if filename matches pattern: "QAMP yyyy LastName"
+      var pattern = new RegExp('^QAMP ' + year + ' (.+)$');
+      var match = fileName.match(pattern);
+      
+      if (!match) {
+        UtilityScriptLibrary.debugLog('generate2025AdminReports', 'INFO', 
+                                      'Skipping file', fileName, 'Does not match QAMP pattern');
+        continue;
+      }
+      
+      processedCount++;
+      
+      if (processedCount % 5 === 0) {
+        UtilityScriptLibrary.debugLog('generate2025AdminReports', 'INFO', 
+                                      'Processing files', 
+                                      processedCount + ' of ' + fileCount, '');
+      }
+      
+      try {
+        var teacherWB = SpreadsheetApp.openById(file.getId());
+        var sheets = teacherWB.getSheets();
+        
+        var workbookErrorCount = 0;
+        
+        // Process each month sheet
+        for (var i = 0; i < sheets.length; i++) {
+          var sheet = sheets[i];
+          var sheetName = sheet.getName();
+          
+          // Check if this is a month sheet
+          if (monthNames.indexOf(sheetName) === -1) {
+            continue; // Skip non-month sheets
+          }
+          
+          var errors = processAttendanceSheetForAdminReports(
+            sheet, fileName, sheetName, studentHours, monthNames
+          );
+          
+          workbookErrorCount += errors.length;
+          detailErrors = detailErrors.concat(errors);
+        }
+        
+        summaryData[fileName] = workbookErrorCount;
+        
+      } catch (error) {
+        UtilityScriptLibrary.debugLog('generate2025AdminReports', 'ERROR', 
+                                      'Failed to process file', 
+                                      fileName, error.message);
+        summaryData[fileName] = -1; // Mark as error
+      }
+    }
+    
+    UtilityScriptLibrary.debugLog('generate2025AdminReports', 'INFO', 
+                                  'Processed roster files', 
+                                  processedCount + ' files processed', '');
+    
+    // Create the three report sheets
+    createAdminSummaryReport(teacherInvoicesWB, summaryData);
+    createAdminDetailReport(teacherInvoicesWB, detailErrors);
+    createStudentHoursByAdminMonthReport(teacherInvoicesWB, studentHours, monthNames);
+    
+    ui.alert('✅ 2025 Admin Reports complete!\n\n' +
+             'Files processed: ' + processedCount + '\n' +
+             'Total errors: ' + detailErrors.length + '\n\n' +
+             'Check:\n- Admin Summary\n- Admin Detail\n- 2025 Hours by Admin Month');
+    
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('generate2025AdminReports', 'ERROR', 
+                                  'Report generation failed', '', error.message);
+    SpreadsheetApp.getUi().alert('❌ Error: ' + error.message);
+  }
+}
+
+function processAttendanceSheetForAdminReports(sheet, workbookName, sheetName, studentHours, monthNames) {
+  var errors = [];
+  
+  try {
+    var data = sheet.getDataRange().getValues();
+    if (data.length <= 1) return errors;
+    
+    var headerMap = UtilityScriptLibrary.getHeaderMap(sheet);
+    
+    // Check for required columns
+    if (!headerMap['studentid']) {
+      return errors;
+    }
+    
+    var studentIdCol = headerMap['studentid'] - 1;
+    var lengthCol = headerMap['length'] ? headerMap['length'] - 1 : -1;
+    var statusCol = headerMap['status'] ? headerMap['status'] - 1 : -1;
+    var adminReviewCol = headerMap['adminreviewdate'] ? headerMap['adminreviewdate'] - 1 : -1;
+    var invoiceDateCol = headerMap['invoicedate'] ? headerMap['invoicedate'] - 1 : -1;
+    
+    for (var i = 1; i < data.length; i++) {
+      var row = data[i];
+      
+      var studentId = row[studentIdCol] ? row[studentIdCol].toString().trim() : '';
+      if (!studentId) continue;
+      
+      var length = lengthCol !== -1 ? row[lengthCol] : '';
+      var status = statusCol !== -1 ? (row[statusCol] ? row[statusCol].toString().trim() : '') : '';
+      var adminReview = adminReviewCol !== -1 ? row[adminReviewCol] : '';
+      var invoiceDate = invoiceDateCol !== -1 ? row[invoiceDateCol] : '';
+      
+      // Determine what should be present
+      var hasStatus = (status !== '');
+      var hasAdminReview = (adminReview !== '' && adminReview !== null);
+      var hasInvoiceDate = (invoiceDate !== '' && invoiceDate !== null);
+      
+      var isLesson = (status === 'Lesson');
+      var isNoShow = (status === 'No Show');
+      var isNoLesson = (status === 'No Lesson');
+      
+      var hasError = false;
+      var missingStatus = '';
+      var missingAdmin = '';
+      var missingInvoice = '';
+      
+      // Validation logic based on status
+      if (isLesson || isNoShow) {
+        // Must have all three: Status, Admin Review, Invoice
+        if (!hasStatus || !hasAdminReview || !hasInvoiceDate) {
+          hasError = true;
+          missingStatus = hasStatus ? '' : 'X';
+          missingAdmin = hasAdminReview ? '' : 'X';
+          missingInvoice = hasInvoiceDate ? '' : 'X';
+        }
+      } else if (isNoLesson) {
+        // Must have Status + Admin Review, Invoice should be blank
+        if (!hasStatus || !hasAdminReview || hasInvoiceDate) {
+          hasError = true;
+          missingStatus = hasStatus ? '' : 'X';
+          missingAdmin = hasAdminReview ? '' : 'X';
+          missingInvoice = hasInvoiceDate ? 'X' : ''; // X means it shouldn't be there
+        }
+      } else {
+        // No recognized status - check if anything is present that shouldn't be
+        if (hasAdminReview || hasInvoiceDate) {
+          hasError = true;
+          missingStatus = 'X'; // Missing proper status
+          missingAdmin = hasAdminReview ? '' : 'X';
+          missingInvoice = hasInvoiceDate ? '' : 'X';
+        }
+      }
+      
+      if (hasError) {
+        errors.push({
+          workbookName: workbookName,
+          sheetName: sheetName,
+          studentId: studentId,
+          missingStatus: missingStatus,
+          missingAdmin: missingAdmin,
+          missingInvoice: missingInvoice
+        });
+      }
+      
+      // For Report 2: Count hours if Status = Lesson or No Show
+      if ((isLesson || isNoShow) && length) {
+        var hours = parseFloat(length) / 60 || 0; // Convert minutes to hours
+        
+        if (hours > 0) {
+          // Initialize student if needed
+          if (!studentHours[studentId]) {
+            studentHours[studentId] = {
+              months: {},
+              missingAdminDates: {}
+            };
+          }
+          
+          // Determine which month to count this in
+          var targetMonth = '';
+          
+          if (hasAdminReview) {
+            // Use Admin Review Date month
+            var adminDate = new Date(adminReview);
+            targetMonth = monthNames[adminDate.getMonth()];
+          } else {
+            // Use sheet name as month
+            targetMonth = sheetName;
+            
+            // Track that this student has missing admin dates in this month
+            if (!studentHours[studentId].missingAdminDates[targetMonth]) {
+              studentHours[studentId].missingAdminDates[targetMonth] = 0;
+            }
+            studentHours[studentId].missingAdminDates[targetMonth]++;
+          }
+          
+          // Add hours to the appropriate month
+          if (!studentHours[studentId].months[targetMonth]) {
+            studentHours[studentId].months[targetMonth] = 0;
+          }
+          studentHours[studentId].months[targetMonth] += hours;
+        }
+      }
+    }
+    
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('processAttendanceSheetForAdminReports', 'ERROR', 
+                                  'Error processing sheet', 
+                                  workbookName + ' - ' + sheetName, error.message);
+  }
+  
+  return errors;
+}
+
+function createAdminSummaryReport(workbook, summaryData) {
+  var sheetName = 'Admin Summary';
+  var sheet = workbook.getSheetByName(sheetName);
+  
+  if (sheet) {
+    sheet.clear();
+  } else {
+    sheet = workbook.insertSheet(sheetName);
+  }
+  
+  var headers = ['Workbook Name', 'Error Count'];
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+  
+  var outputData = [];
+  
+  for (var workbookName in summaryData) {
+    var errorCount = summaryData[workbookName];
+    outputData.push([workbookName, errorCount]);
+  }
+  
+  // Sort by workbook name
+  outputData.sort(function(a, b) {
+    return a[0].localeCompare(b[0]);
+  });
+  
+  if (outputData.length > 0) {
+    sheet.getRange(2, 1, outputData.length, headers.length).setValues(outputData);
+  }
+  
+  UtilityScriptLibrary.debugLog('createAdminSummaryReport', 'SUCCESS', 
+                                'Summary report created', outputData.length + ' workbooks', '');
+}
+
+function createAdminDetailReport(workbook, detailErrors) {
+  var sheetName = 'Admin Detail';
+  var sheet = workbook.getSheetByName(sheetName);
+  
+  if (sheet) {
+    sheet.clear();
+  } else {
+    sheet = workbook.insertSheet(sheetName);
+  }
+  
+  var headers = ['Workbook Name', 'Sheet Name', 'Student ID', 'Missing Status', 'Missing Admin', 'Missing Invoice'];
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+  
+  var outputData = [];
+  
+  for (var i = 0; i < detailErrors.length; i++) {
+    var error = detailErrors[i];
+    outputData.push([
+      error.workbookName,
+      error.sheetName,
+      error.studentId,
+      error.missingStatus,
+      error.missingAdmin,
+      error.missingInvoice
+    ]);
+  }
+  
+  // Sort by workbook, then sheet, then student ID
+  outputData.sort(function(a, b) {
+    if (a[0] !== b[0]) return a[0].localeCompare(b[0]);
+    if (a[1] !== b[1]) return a[1].localeCompare(b[1]);
+    return a[2].localeCompare(b[2]);
+  });
+  
+  if (outputData.length > 0) {
+    sheet.getRange(2, 1, outputData.length, headers.length).setValues(outputData);
+    
+    // Highlight X's in red
+    for (var row = 0; row < outputData.length; row++) {
+      for (var col = 3; col < 6; col++) { // Columns D, E, F (Missing Status, Admin, Invoice)
+        if (outputData[row][col] === 'X') {
+          sheet.getRange(row + 2, col + 1).setBackground('#ffcccc');
+        }
+      }
+    }
+  }
+  
+  UtilityScriptLibrary.debugLog('createAdminDetailReport', 'SUCCESS', 
+                                'Detail report created', outputData.length + ' errors', '');
+}
+
+function createStudentHoursByAdminMonthReport(workbook, studentHours, monthNames) {
+  var sheetName = '2025 Hours by Admin Month';
+  var sheet = workbook.getSheetByName(sheetName);
+  
+  if (sheet) {
+    sheet.clear();
+  } else {
+    sheet = workbook.insertSheet(sheetName);
+  }
+  
+  // Build headers
+  var headers = ['Student ID'];
+  for (var i = 0; i < monthNames.length; i++) {
+    headers.push(monthNames[i]);
+  }
+  headers.push('Total');
+  headers.push('Error Comments');
+  
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+  
+  var outputData = [];
+  
+  for (var studentId in studentHours) {
+    var row = [studentId];
+    var studentTotal = 0;
+    
+    // Add monthly hours
+    for (var i = 0; i < monthNames.length; i++) {
+      var month = monthNames[i];
+      var hours = studentHours[studentId].months[month] || 0;
+      row.push(hours > 0 ? hours : '');
+      studentTotal += hours;
+    }
+    
+    // Add total
+    row.push(studentTotal);
+    
+    // Build error comments
+    var errorComments = [];
+    var missingDates = studentHours[studentId].missingAdminDates;
+    
+    for (var month in missingDates) {
+      var count = missingDates[month];
+      errorComments.push(month + ' (' + count + ')');
+    }
+    
+    if (errorComments.length > 0) {
+      row.push('Missing admin dates: ' + errorComments.join(', '));
+    } else {
+      row.push('');
+    }
+    
+    outputData.push(row);
+  }
+  
+  // Sort by student ID
+  outputData.sort(function(a, b) {
+    return a[0].localeCompare(b[0]);
+  });
+  
+  if (outputData.length > 0) {
+    sheet.getRange(2, 1, outputData.length, headers.length).setValues(outputData);
+    
+    // Highlight error comments column if not empty
+    for (var row = 0; row < outputData.length; row++) {
+      if (outputData[row][headers.length - 1] !== '') {
+        sheet.getRange(row + 2, headers.length).setBackground('#fff3cd');
+      }
+    }
+  }
+  
+  UtilityScriptLibrary.debugLog('createStudentHoursByAdminMonthReport', 'SUCCESS', 
+                                'Hours report created', outputData.length + ' students', '');
+}
+
+function verifyInvoiceVsBilling2025() {
+  try {
+    var env = 'test';
+    var billingWorkbookId = UtilityScriptLibrary.CONFIG[env].billingId;
+    
+    if (!billingWorkbookId) {
+      throw new Error('Billing workbook ID not found in config');
+    }
+    
+    var currentWorkbook = SpreadsheetApp.getActiveSpreadsheet();
+    var invoiceHoursSheet = currentWorkbook.getSheetByName('2025 Hours by Admin Month');
+    
+    if (!invoiceHoursSheet) {
+      throw new Error('2025 Hours by Admin Month sheet not found. Please run Generate 2025 Admin Reports first.');
+    }
+    
+    // Read invoice hours data
+    var invoiceData = invoiceHoursSheet.getDataRange().getValues();
+    var invoiceHeaders = invoiceData[0];
+    
+    var monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 
+                      'July', 'August', 'September', 'October', 'November', 'December'];
+    
+    // Find column indices for months
+    var monthColumns = {};
+    for (var col = 0; col < invoiceHeaders.length; col++) {
+      var header = invoiceHeaders[col].toString().trim();
+      if (monthNames.indexOf(header) !== -1) {
+        monthColumns[header] = col;
+      }
+    }
+    
+    // Load invoice hours data
+    var ourData = {};
+    for (var row = 1; row < invoiceData.length; row++) {
+      var studentId = invoiceData[row][0] ? invoiceData[row][0].toString().trim() : '';
+      if (!studentId) continue;
+      
+      ourData[studentId] = {
+        months: {}
+      };
+      
+      for (var i = 0; i < monthNames.length; i++) {
+        var month = monthNames[i];
+        var col = monthColumns[month];
+        if (col !== undefined) {
+          var hours = invoiceData[row][col];
+          if (hours !== '' && hours !== null && hours !== undefined) {
+            ourData[studentId].months[month] = parseFloat(hours) || 0;
+          } else {
+            ourData[studentId].months[month] = 0;
+          }
+        } else {
+          ourData[studentId].months[month] = 0;
+        }
+      }
+    }
+    
+    UtilityScriptLibrary.debugLog('verifyInvoiceVsBilling2025', 'INFO', 
+                                  'Loaded invoice hours', Object.keys(ourData).length + ' students', '');
+    
+    // Open billing workbook and load data
+    var billingWorkbook = SpreadsheetApp.openById(billingWorkbookId);
+    var billingData = {};
+    
+    // Process each month's billing sheet
+    for (var i = 0; i < monthNames.length; i++) {
+      var month = monthNames[i];
+      var sheetName = month + ' 2025';
+      var sheet = billingWorkbook.getSheetByName(sheetName);
+      
+      if (!sheet) {
+        UtilityScriptLibrary.debugLog('verifyInvoiceVsBilling2025', 'WARNING', 
+                                      'Billing sheet not found', sheetName, '');
+        continue;
+      }
+      
+      processBillingSheetFor2025(sheet, month, billingData);
+    }
+    
+    // Create verification sheet
+    createInvoiceVsBillingSheet(currentWorkbook, ourData, billingData, monthNames);
+    
+    SpreadsheetApp.getUi().alert('✅ Invoice vs Billing 2025 verification complete. Check "Invoice vs Billing 2025" sheet.');
+    
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('verifyInvoiceVsBilling2025', 'ERROR', 
+                                  'Verification failed', '', error.message);
+    SpreadsheetApp.getUi().alert('❌ Error: ' + error.message);
+  }
+}
+
+function processBillingSheetFor2025(sheet, month, billingData) {
+  var data = sheet.getDataRange().getValues();
+  if (data.length < 2) return;
+  
+  var headers = data[0];
+  var studentIdCol = -1;
+  var currentHoursCol = -1;
+  
+  for (var col = 0; col < headers.length; col++) {
+    var header = headers[col].toString().toLowerCase();
+    if (header.indexOf('student id') !== -1) {
+      studentIdCol = col;
+    } else if (header.indexOf('current hours taught this billing cycle') !== -1) {
+      currentHoursCol = col;
+    }
+  }
+  
+  if (studentIdCol === -1 || currentHoursCol === -1) {
+    UtilityScriptLibrary.debugLog('processBillingSheetFor2025', 'WARNING', 
+                                  'Missing required columns', sheet.getName(), '');
+    return;
+  }
+  
+  for (var row = 1; row < data.length; row++) {
+    var studentId = data[row][studentIdCol] ? data[row][studentIdCol].toString().trim() : '';
+    if (!studentId) continue;
+    if (studentId.charAt(0).toUpperCase() === 'G') continue; // Skip group lessons
+    
+    var currentHours = parseFloat(data[row][currentHoursCol]) || 0;
+    
+    if (!billingData[studentId]) {
+      billingData[studentId] = {
+        months: {}
+      };
+    }
+    
+    billingData[studentId].months[month] = currentHours;
+  }
+}
+
+function createInvoiceVsBillingSheet(currentWorkbook, ourData, billingData, monthNames) {
+  var sheetName = 'Invoice vs Billing 2025';
+  var sheet = currentWorkbook.getSheetByName(sheetName);
+  
+  if (sheet) {
+    sheet.clear();
+  } else {
+    sheet = currentWorkbook.insertSheet(sheetName);
+  }
+  
+  // Build headers
+  var headers = ['Student ID'];
+  
+  for (var i = 0; i < monthNames.length; i++) {
+    var month = monthNames[i];
+    headers.push(month + ' (Invoice Hours)');
+    headers.push(month + ' (Billing Hours)');
+    headers.push(month + ' (Match)');
+  }
+  
+  headers.push('Total (Invoice Hours)');
+  headers.push('Total (Billing Hours)');
+  headers.push('Total Match');
+  
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+  
+  // Collect all student IDs
+  var allStudentIds = {};
+  for (var id in ourData) {
+    allStudentIds[id] = true;
+  }
+  for (var id in billingData) {
+    allStudentIds[id] = true;
+  }
+  
+  // Build output data
+  var outputData = [];
+  var totals = ['TOTAL'];
+  var errorCounts = ['ERROR COUNT'];
+  var monthlyTotals = [];
+  var monthlyErrorCounts = [];
+  
+  for (var i = 0; i < monthNames.length; i++) {
+    monthlyTotals.push({invoice: 0, billing: 0});
+    monthlyErrorCounts.push(0);
+  }
+  var yearlyTotalInvoice = 0;
+  var yearlyTotalBilling = 0;
+  var yearlyErrorCount = 0;
+  
+  for (var studentId in allStudentIds) {
+    var row = [studentId];
+    var student = ourData[studentId];
+    var billing = billingData[studentId];
+    
+    var studentYearlyInvoice = 0;
+    var studentYearlyBilling = 0;
+    
+    for (var i = 0; i < monthNames.length; i++) {
+      var month = monthNames[i];
+      var invoiceHours = student && student.months[month] ? student.months[month] : 0;
+      var billingHours = billing && billing.months[month] ? billing.months[month] : 0;
+      
+      row.push(invoiceHours > 0 ? invoiceHours : '');
+      row.push(billingHours > 0 ? billingHours : '');
+      
+      var diff = Math.abs(invoiceHours - billingHours);
+      var match = diff < 0.01 ? '✓' : 'X';
+      row.push(match);
+      
+      // Count errors for this month
+      if (match === 'X') {
+        monthlyErrorCounts[i]++;
+      }
+      
+      monthlyTotals[i].invoice += invoiceHours;
+      monthlyTotals[i].billing += billingHours;
+      
+      studentYearlyInvoice += invoiceHours;
+      studentYearlyBilling += billingHours;
+    }
+    
+    row.push(studentYearlyInvoice > 0 ? studentYearlyInvoice : '');
+    row.push(studentYearlyBilling > 0 ? studentYearlyBilling : '');
+    
+    var yearlyDiff = Math.abs(studentYearlyInvoice - studentYearlyBilling);
+    var yearlyMatch = yearlyDiff < 0.01 ? '✓' : 'X';
+    row.push(yearlyMatch);
+    
+    if (yearlyMatch === 'X') {
+      yearlyErrorCount++;
+    }
+    
+    yearlyTotalInvoice += studentYearlyInvoice;
+    yearlyTotalBilling += studentYearlyBilling;
+    
+    outputData.push(row);
+  }
+  
+  // Build totals row
+  for (var i = 0; i < monthNames.length; i++) {
+    totals.push(monthlyTotals[i].invoice);
+    totals.push(monthlyTotals[i].billing);
+    var diff = Math.abs(monthlyTotals[i].invoice - monthlyTotals[i].billing);
+    totals.push(diff < 0.01 ? '✓' : 'X');
+    
+    // Build error counts row
+    errorCounts.push(''); // Empty for invoice hours column
+    errorCounts.push(''); // Empty for billing hours column
+    errorCounts.push(monthlyErrorCounts[i]); // Error count in match column
+  }
+  
+  totals.push(yearlyTotalInvoice);
+  totals.push(yearlyTotalBilling);
+  var totalDiff = Math.abs(yearlyTotalInvoice - yearlyTotalBilling);
+  totals.push(totalDiff < 0.01 ? '✓' : 'X');
+  
+  errorCounts.push(''); // Empty for invoice hours column
+  errorCounts.push(''); // Empty for billing hours column
+  errorCounts.push(yearlyErrorCount); // Error count in match column
+  
+  // Sort by student ID
+  outputData.sort(function(a, b) {
+    return a[0].localeCompare(b[0]);
+  });
+  
+  // Write data
+  if (outputData.length > 0) {
+    sheet.getRange(2, 1, outputData.length, headers.length).setValues(outputData);
+    
+    for (var row = 0; row < outputData.length; row++) {
+      for (var col = 0; col < outputData[row].length; col++) {
+        if (outputData[row][col] === 'X') {
+          sheet.getRange(row + 2, col + 1).setBackground('#ffcccc');
+        } else if (outputData[row][col] === '✓') {
+          sheet.getRange(row + 2, col + 1).setBackground('#ccffcc');
+        }
+      }
+    }
+  }
+  
+  // Write totals row
+  var totalsRowNumber = outputData.length + 2;
+  sheet.getRange(totalsRowNumber, 1, 1, totals.length).setValues([totals]);
+  sheet.getRange(totalsRowNumber, 1, 1, totals.length).setFontWeight('bold');
+  
+  for (var col = 0; col < totals.length; col++) {
+    if (totals[col] === 'X') {
+      sheet.getRange(totalsRowNumber, col + 1).setBackground('#ffcccc');
+    } else if (totals[col] === '✓') {
+      sheet.getRange(totalsRowNumber, col + 1).setBackground('#ccffcc');
+    }
+  }
+  
+  // Write error counts row
+  var errorCountsRowNumber = totalsRowNumber + 1;
+  sheet.getRange(errorCountsRowNumber, 1, 1, errorCounts.length).setValues([errorCounts]);
+  sheet.getRange(errorCountsRowNumber, 1, 1, errorCounts.length).setFontWeight('bold');
+  sheet.getRange(errorCountsRowNumber, 1, 1, errorCounts.length).setBackground('#fff3cd'); // Light yellow
+  
+  UtilityScriptLibrary.debugLog('createInvoiceVsBillingSheet', 'SUCCESS', 
                                 'Verification sheet created', outputData.length + ' students', '');
 }
