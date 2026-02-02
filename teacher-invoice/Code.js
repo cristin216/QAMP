@@ -1129,7 +1129,42 @@ function collectUninvoicedLessonsUpToDate(cutoffDate, invoiceDate, invoicePeriod
 
 function convertFolderDocsToPdfUI() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var activeTabName = ss.getActiveSheet().getName();
+  var activeSheet = ss.getActiveSheet();
+  var activeTabName = activeSheet.getName();
+  
+  // Validate that this is a monthly invoice sheet
+  if (!isMonthlyInvoiceSheet(activeSheet)) {
+    SpreadsheetApp.getUi().alert('This does not appear to be a monthly invoice sheet. Please select the correct sheet.');
+    return;
+  }
+  
+  // Get metadata for this invoice month
+  var metadata;
+  try {
+    metadata = getTeacherInvoicingMetadata(activeTabName);
+    UtilityScriptLibrary.debugLog("convertFolderDocsToPdfUI", "INFO", 
+                                  "Loaded metadata", 
+                                  "Month: " + activeTabName, "");
+  } catch (metadataError) {
+    UtilityScriptLibrary.debugLog("convertFolderDocsToPdfUI", "WARNING", 
+                                  "Could not load metadata (will proceed without)", 
+                                  "Month: " + activeTabName, metadataError.message);
+    metadata = null;
+  }
+  
+  // Extract teacher data from sheet to match PDFs back to teachers
+  var teacherData = extractTeachersFromFormattedSheet(activeSheet);
+  var teacherMap = {};
+  
+  // Build a map of "FirstName LastName - InvoiceNumber" to teacher data
+  for (var i = 0; i < teacherData.length; i++) {
+    var teacher = teacherData[i];
+    var teacherName = teacher.teacherFirstName && teacher.teacherLastName ? 
+                      teacher.teacherFirstName + ' ' + teacher.teacherLastName : 
+                      teacher.teacherName;
+    var key = teacherName + ' - ' + teacher.invoiceNumber;
+    teacherMap[key] = teacher;
+  }
   
   // Get environment automatically from EnvironmentManager
   var env = UtilityScriptLibrary.EnvironmentManager.get();
@@ -1175,6 +1210,7 @@ function convertFolderDocsToPdfUI() {
   var files = monthFolder.getFilesByType(MimeType.GOOGLE_DOCS);
   var convertedCount = 0;
   var skippedCount = 0;
+  var rosterUpdateCount = 0;
   
   while (files.hasNext()) {
     var file = files.next();
@@ -1194,14 +1230,42 @@ function convertFolderDocsToPdfUI() {
     pdfBlob.setName(pdfName);
     
     // Save PDF to the PDFs folder
-    pdfFolder.createFile(pdfBlob);
+    var pdfFile = pdfFolder.createFile(pdfBlob);
     convertedCount++;
+    
+    // Update teacher roster with PDF URL
+    var teacher = teacherMap[docName];
+    if (teacher) {
+      try {
+        var pdfResult = {
+          success: true,
+          fileId: pdfFile.getId(),
+          url: pdfFile.getUrl()
+        };
+        
+        updateTeacherInvoiceHistory(teacher, pdfResult, metadata);
+        rosterUpdateCount++;
+        
+        UtilityScriptLibrary.debugLog("convertFolderDocsToPdfUI", "SUCCESS", 
+                                      "Updated roster with PDF URL", 
+                                      "Teacher: " + teacher.teacherName, "");
+      } catch (error) {
+        UtilityScriptLibrary.debugLog("convertFolderDocsToPdfUI", "ERROR", 
+                                      "Failed to update roster", 
+                                      "Teacher: " + teacher.teacherName, error.message);
+      }
+    } else {
+      UtilityScriptLibrary.debugLog("convertFolderDocsToPdfUI", "WARNING", 
+                                    "Could not match PDF to teacher data", 
+                                    "Document name: " + docName, "");
+    }
   }
   
   var envLabel = env.toUpperCase();
   SpreadsheetApp.getUi().alert(
     '[' + envLabel + '] Converted ' + convertedCount + ' new document(s) to PDF.\n' +
     'Skipped ' + skippedCount + ' already converted.\n' +
+    'Updated ' + rosterUpdateCount + ' teacher roster(s) with PDF URLs.\n' +
     'PDF folder: ' + pdfFolder.getUrl()
   );
 }
@@ -1955,8 +2019,7 @@ function generateTeacherInvoiceDocuments() {
                                         "Generated invoice for teacher", 
                                         "Teacher: " + teacher.teacherName, "");
           
-          // Update teacher's invoice history (pass metadata for date range)
-          updateTeacherInvoiceHistory(teacher, result, metadata);
+          // NOTE: Roster update removed - will be done during PDF conversion
           
         } else {
           results.skipped++;
