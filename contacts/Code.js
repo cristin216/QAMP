@@ -1,5 +1,3 @@
-// ✅ REFACTORED: Cleaned up to use consistent centralized UtilityScriptLibrary methods
-
 // === MAIN FUNCTIONS ===
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
