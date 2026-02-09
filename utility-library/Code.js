@@ -1881,7 +1881,6 @@ function getCurrentAcademicYearInfo() {
   }
 }
 
-
 function getCurrentSemesterMonth(semesterName) {
   try {
     var semesterMetadataSheet = getSheet('semesterMetadata');
@@ -1923,6 +1922,37 @@ function getCurrentSemesterMonth(semesterName) {
     
   } catch (error) {
     return "January";
+  }
+}
+
+function getCurrentSemesterName() {
+  try {
+    var semesterSheet = getSheet('semesterMetadata');
+    if (!semesterSheet) {
+      debugLog('getCurrentSemesterName', 'WARNING', 'Semester Metadata sheet not found', '', '');
+      return null;
+    }
+    
+    var data = semesterSheet.getDataRange().getValues();
+    if (data.length < 2) {
+      debugLog('getCurrentSemesterName', 'WARNING', 'No semester data found in metadata', '', '');
+      return null;
+    }
+    
+    // Get the most recent semester (last row, column A)
+    var currentSemester = data[data.length - 1][0];
+    
+    if (!currentSemester || String(currentSemester).trim() === '') {
+      debugLog('getCurrentSemesterName', 'WARNING', 'Empty semester name in metadata', '', '');
+      return null;
+    }
+    
+    debugLog('getCurrentSemesterName', 'INFO', 'Found current semester', String(currentSemester).trim(), '');
+    return String(currentSemester).trim();
+    
+  } catch (error) {
+    debugLog('getCurrentSemesterName', 'ERROR', 'Failed to get current semester', '', error.message);
+    return null;
   }
 }
 
