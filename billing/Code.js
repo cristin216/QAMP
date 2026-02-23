@@ -319,7 +319,7 @@ function runPaymentReconciliation() {
     var paymentsSS = UtilityScriptLibrary.getWorkbook('payments');
     UtilityScriptLibrary.debugLog('runPaymentReconciliation', 'DEBUG', 'Got payments workbook', '', '');
     
-    var currentSemester = getCurrentSemesterName();
+    var currentSemester = UtilityScriptLibrary.getCurrentSemesterName();
     UtilityScriptLibrary.debugLog('runPaymentReconciliation', 'DEBUG', 'Current semester', currentSemester, '');
     
     var paymentSheet = paymentsSS.getSheetByName(currentSemester);
@@ -455,7 +455,7 @@ function setupNewSemester() {
     UtilityScriptLibrary.debugLog('setupNewSemester', 'INFO', 'Starting setup for semester', semesterName, '');
 
     // Process previous semester credits before creating new semester
-    var creditBalances = processSemesterEndCredits(getCurrentSemesterName());
+    var creditBalances = processSemesterEndCredits(UtilityScriptLibrary.getCurrentSemesterName());
     
     // FIXED: Handle null return value safely
     if (creditBalances && creditBalances.length > 0) {
@@ -6363,7 +6363,7 @@ function runCombinedReconciliation() {
     
     // Get payment workbook and current semester sheet
     var paymentsSS = UtilityScriptLibrary.getWorkbook('payments');
-    var currentSemester = getCurrentSemesterName();
+    var currentSemester = UtilityScriptLibrary.getCurrentSemesterName();
     var paymentSheet = paymentsSS.getSheetByName(currentSemester);
     
     if (!paymentSheet) {
@@ -6567,7 +6567,7 @@ function runWeeklyLessonReconciliation(customDate) {
     var billingCycleDates = getCurrentBillingCycleDates();
     
     // Get current semester name for roster sheet lookup
-    var currentSemester = getCurrentSemesterName();
+    var currentSemester = UtilityScriptLibrary.getCurrentSemesterName();
     if (!currentSemester || currentSemester === 'Unknown Semester') {
       throw new Error('Could not determine current semester name');
     }
@@ -7693,34 +7693,6 @@ function getCurrentSemesterFromBillingMetadata(billingSheetName) {
   }
 }
 
-function getCurrentSemesterName() {
-  return UtilityScriptLibrary.executeWithErrorHandling(function() {
-    UtilityScriptLibrary.debugLog('📋 getCurrentSemesterName - Getting current semester name');
-    
-    var semesterSheet = UtilityScriptLibrary.getSheet('semesterMetadata');
-    if (!semesterSheet) {
-      UtilityScriptLibrary.debugLog('📋 getCurrentSemesterName - Semester Metadata sheet not found');
-      return 'Unknown Semester';
-    }
-    
-    var data = semesterSheet.getDataRange().getValues();
-    if (data.length < 2) {
-      UtilityScriptLibrary.debugLog('📋 getCurrentSemesterName - No semester data found in metadata');
-      return 'Unknown Semester';
-    }
-    
-    // Get the most recent semester (last row)
-    var currentSemester = data[data.length - 1][0] || 'Unknown Semester';
-    UtilityScriptLibrary.debugLog('📋 getCurrentSemesterName - Found current semester: ' + currentSemester);
-    
-    return currentSemester;
-    
-  }, 'Current semester name retrieved successfully', 'getCurrentSemesterName', {
-    showUI: false,
-    logLevel: 'INFO'
-  }).data;
-}
-
 function getCurrentSemesterInfo() {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -8489,7 +8461,7 @@ function getStudentsNeedingPackets() {
       
       // Extract billing data for this student
       var billingData = extractBillingDataFromRow(row, headerMap);
-      var currentSemester = getCurrentSemesterName();
+      var currentSemester = UtilityScriptLibrary.getCurrentSemesterName();
       
       studentsNeedingPackets.push({
         studentData: studentData,
