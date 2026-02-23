@@ -100,33 +100,6 @@ function showInvoiceGenerationUI() {
   }
 }
 
-function showLessonCollectionUI() {
-  try {
-    UtilityScriptLibrary.debugLog("showLessonCollectionUI - Starting lesson collection UI");
-    
-    var ui = SpreadsheetApp.getUi();
-    
-    // Collect the data using the improved prompts
-    var results = collectUninvoicedLessonsUpToDate();
-    
-    if (!results) {
-      ui.alert('❌ Data collection was cancelled or failed.');
-      return;
-    }
-    
-    // Show comprehensive results summary
-    showResultsSummaryUI(results);
-    
-    UtilityScriptLibrary.debugLog("showLessonCollectionUI - UI workflow completed successfully");
-    
-  } catch (error) {
-    UtilityScriptLibrary.debugLog("showLessonCollectionUI - ERROR: UI workflow failed - " + error.message);
-    
-    var ui = SpreadsheetApp.getUi();
-    ui.alert('❌ Error: ' + error.message + '\n\nCheck the Teacher_Invoice_Debug sheet for details.');
-  }
-}
-
 function showResultsSummaryUI(results) {
   try {
     var ui = SpreadsheetApp.getUi();
@@ -1671,37 +1644,6 @@ function getAttendanceSheetsFromWorkbook(spreadsheet) {
   }
 }
 
-function getCurrentSemesterName() {
-  try {
-    var billingWorkbook = UtilityScriptLibrary.getWorkbook('billing');
-    var semesterSheet = billingWorkbook.getSheetByName('Semester Metadata');
-    
-    if (!semesterSheet) {
-      throw new Error('Semester Metadata sheet not found');
-    }
-    
-    var data = semesterSheet.getDataRange().getValues();
-    if (data.length < 2) {
-      throw new Error('No semester data found');
-    }
-    
-    // Get the most recent semester (last row)
-    var currentSemester = data[data.length - 1][0];
-    
-    UtilityScriptLibrary.debugLog("getCurrentSemesterName", "INFO", 
-                                  "Found current semester", 
-                                  "Semester: " + currentSemester, "");
-    
-    return currentSemester;
-    
-  } catch (error) {
-    UtilityScriptLibrary.debugLog("getCurrentSemesterName", "ERROR", 
-                                  "Failed to get current semester", 
-                                  "", error.message);
-    return "Unknown Semester";
-  }
-}
-
 function getRateForSemester(semesterName, rateType, ratesCache) {
   try {
     UtilityScriptLibrary.debugLog("getRateForSemester", "DEBUG", 
@@ -3193,7 +3135,7 @@ function writeTeacherInvoicingMetadata(month, cutoffDate, invoiceDate, invoicePe
     }
     
     // Get current semester
-    var semesterName = getCurrentSemesterName();
+    var semesterName = UtilityScriptLibrary.getCurrentSemesterName();
     
     // Get rates lookup for semester
     var ratesLookup = getRatesLookupForSemester(semesterName);
