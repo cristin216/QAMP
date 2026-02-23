@@ -1032,6 +1032,9 @@ function extractStudentDataFromRoster(studentRow, headerMap) {
   };
 }
 
+function addStudentToRosterFromData(rosterSheet, studentInfo, headerMap) {
+}
+
 function addStudentToAttendanceSheetsFromDate(workbook, studentInfo, effectiveDate) {
   try {
     UtilityScriptLibrary.debugLog("addStudentToAttendanceSheetsFromDate", "INFO",

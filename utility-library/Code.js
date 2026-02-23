@@ -20,7 +20,7 @@ var EnvironmentManager = (function () {
 
 // Set to true for historical data import
 // Set to false for normal system generation
-var HISTORICAL_DATA_MODE = true;  // 👈 Just change this one line!
+var HISTORICAL_DATA_MODE = false;  // 👈 Just change this one line!
 
 var SHEET_MAP = {
   // Teacher Interest Workbook
