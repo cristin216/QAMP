@@ -2512,6 +2512,24 @@ function isMonthSheet(sheetName) {
   return setCached(cacheKey, result);
 }
 
+function logAllSheetHeaders() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheets = ss.getSheets();
+  
+  for (var i = 0; i < sheets.length; i++) {
+    var sheet = sheets[i];
+    var lastCol = sheet.getLastColumn();
+    
+    if (lastCol === 0) {
+      Logger.log(sheet.getName() + ': (empty)');
+      continue;
+    }
+    
+    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    Logger.log(sheet.getName() + ': ' + headers.join(' | '));
+  }
+}
+
 function normalizeHeader(header) {
   if (!header) return '';
   var str = header.toString();
