@@ -815,8 +815,9 @@ function updateDisplayNameInRosterLookup(teacherFullName, newDisplayName) {
     var teacherRow = findTeacherInRosterLookup(lookupSheet, teacherFullName);
     
     if (teacherRow !== -1) {
-      lookupSheet.getRange(teacherRow, 4).setValue(newDisplayName); // Column D: Display Name
-      lookupSheet.getRange(teacherRow, 6).setValue(new Date());     // Column F: Last Updated
+      var getCol = UtilityScriptLibrary.createColumnFinder(lookupSheet);
+      lookupSheet.getRange(teacherRow, getCol("Display Name")).setValue(newDisplayName);
+      lookupSheet.getRange(teacherRow, getCol("Last Updated")).setValue(new Date());
       UtilityScriptLibrary.debugLog("✅ Updated display name in Teacher Roster Lookup: " + newDisplayName);
     }
     
