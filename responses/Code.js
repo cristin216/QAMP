@@ -1136,18 +1136,26 @@ function convertStudentInfoToAttendanceObject(studentInfo) {
 function studentExistsInAttendanceSheet(attendanceSheet, studentId) {
   try {
     var data = attendanceSheet.getDataRange().getValues();
-    
-    // Check column A (Student ID column) for matching ID
+    var headers = data[0];
+    var studentIdCol = -1;
+    for (var i = 0; i < headers.length; i++) {
+      if (UtilityScriptLibrary.normalizeHeader(headers[i]) === 'studentid') {
+        studentIdCol = i;
+        break;
+      }
+    }
+    if (studentIdCol === -1) {
+      UtilityScriptLibrary.debugLog('studentExistsInAttendanceSheet', 'ERROR', 'Student ID column not found', '', '');
+      return false;
+    }
     for (var i = 1; i < data.length; i++) {
-      if (data[i][0] && data[i][0].toString().trim() === studentId.toString().trim()) {
+      if (data[i][studentIdCol] && data[i][studentIdCol].toString().trim() === studentId.toString().trim()) {
         return true;
       }
     }
-    
     return false;
-    
   } catch (error) {
-    UtilityScriptLibrary.debugLog("Error checking if student exists in attendance sheet: " + error.message);
+    UtilityScriptLibrary.debugLog('studentExistsInAttendanceSheet', 'ERROR', 'Error checking if student exists', '', error.message);
     return false;
   }
 }
@@ -2138,31 +2146,27 @@ function extractFormData(sheet, row, headerMap, fieldMap) {
 function findPreviousSemesterRoster(spreadsheet, currentSemesterName) {
   try {
     UtilityScriptLibrary.debugLog("findPreviousSemesterRoster - Looking for previous semester roster. Current: " + currentSemesterName);
-    
-    // Get Semester Metadata
+
     var semesterSheet = UtilityScriptLibrary.getSheet('semesterMetadata');
     if (!semesterSheet) {
       UtilityScriptLibrary.debugLog("findPreviousSemesterRoster - Semester Metadata sheet not found");
       return null;
     }
-    
+
     var data = semesterSheet.getDataRange().getValues();
     var headers = data[0];
-    
-    // Find column indices
     var nameCol = -1, startDateCol = -1;
     for (var i = 0; i < headers.length; i++) {
-      var header = headers[i].toString().toLowerCase().trim();
-      if (header === 'semester name') nameCol = i;
-      if (header === 'start date') startDateCol = i;
+      var norm = UtilityScriptLibrary.normalizeHeader(headers[i]);
+      if (norm === 'semestername') nameCol = i;
+      if (norm === 'startdate') startDateCol = i;
     }
-    
+
     if (nameCol === -1 || startDateCol === -1) {
       UtilityScriptLibrary.debugLog("findPreviousSemesterRoster - Required columns not found in Semester Metadata");
       return null;
     }
-    
-    // Find current semester's start date
+
     var currentStartDate = null;
     for (var i = 1; i < data.length; i++) {
       if (data[i][nameCol] === currentSemesterName) {
@@ -2170,15 +2174,14 @@ function findPreviousSemesterRoster(spreadsheet, currentSemesterName) {
         break;
       }
     }
-    
+
     if (!currentStartDate) {
       UtilityScriptLibrary.debugLog("findPreviousSemesterRoster - Current semester not found in metadata: " + currentSemesterName);
       return null;
     }
-    
+
     UtilityScriptLibrary.debugLog("findPreviousSemesterRoster - Current semester start date: " + currentStartDate);
-    
-    // Get all sheets in workbook
+
     var sheets = spreadsheet.getSheets();
     var existingRosterSheets = [];
     for (var i = 0; i < sheets.length; i++) {
@@ -2187,22 +2190,16 @@ function findPreviousSemesterRoster(spreadsheet, currentSemesterName) {
         existingRosterSheets.push(sheetName);
       }
     }
-    
+
     UtilityScriptLibrary.debugLog("findPreviousSemesterRoster - Found " + existingRosterSheets.length + " roster sheets in workbook");
-    
-    // Find all previous semesters that have roster sheets in this workbook
+
     var candidates = [];
     for (var i = 1; i < data.length; i++) {
       var semesterName = data[i][nameCol];
       var startDate = new Date(data[i][startDateCol]);
-      
-      // Must be before current semester
       if (startDate >= currentStartDate) continue;
-      
-      // Must have a roster sheet in this workbook
       var season = UtilityScriptLibrary.extractSeasonFromSemester(semesterName);
       if (!season) continue;
-      
       var expectedSheetName = season + " Roster";
       var hasSheet = false;
       for (var j = 0; j < existingRosterSheets.length; j++) {
@@ -2211,31 +2208,21 @@ function findPreviousSemesterRoster(spreadsheet, currentSemesterName) {
           break;
         }
       }
-      
       if (hasSheet) {
-        candidates.push({
-          semesterName: semesterName,
-          startDate: startDate,
-          sheetName: expectedSheetName
-        });
+        candidates.push({ semesterName: semesterName, startDate: startDate, sheetName: expectedSheetName });
       }
     }
-    
+
     if (candidates.length === 0) {
       UtilityScriptLibrary.debugLog("findPreviousSemesterRoster - No previous semester rosters found in this workbook");
       return null;
     }
-    
-    // Sort by start date descending and pick most recent
-    candidates.sort(function(a, b) {
-      return b.startDate - a.startDate;
-    });
-    
+
+    candidates.sort(function(a, b) { return b.startDate - a.startDate; });
     var previousSemester = candidates[0];
     UtilityScriptLibrary.debugLog("findPreviousSemesterRoster - Found previous semester: " + previousSemester.semesterName + " (Sheet: " + previousSemester.sheetName + ")");
-    
     return previousSemester.sheetName;
-    
+
   } catch (error) {
     UtilityScriptLibrary.debugLog("findPreviousSemesterRoster - ERROR: " + error.message);
     return null;
@@ -3089,13 +3076,22 @@ function getCurrentSemesterName() {
 function getExistingGroupIds(sheet) {
   try {
     var data = sheet.getDataRange().getValues();
+    var headers = data[0];
+    var studentIdCol = -1;
+    for (var i = 0; i < headers.length; i++) {
+      if (UtilityScriptLibrary.normalizeHeader(headers[i]) === 'studentid') {
+        studentIdCol = i;
+        break;
+      }
+    }
+    if (studentIdCol === -1) {
+      UtilityScriptLibrary.debugLog('getExistingGroupIds', 'ERROR', 'Student ID column not found', '', '');
+      return [];
+    }
     var existingGroupIds = [];
-    
-    // Check Student ID column (column A, index 0)
     for (var i = 1; i < data.length; i++) {
-      var studentId = data[i][0];
+      var studentId = data[i][studentIdCol];
       if (studentId && String(studentId).match(/^G\d{4}$/)) {
-        // This is a group ID (G followed by exactly 4 digits)
         var groupIdStr = String(studentId).trim();
         var alreadyInList = false;
         for (var j = 0; j < existingGroupIds.length; j++) {
@@ -3109,12 +3105,8 @@ function getExistingGroupIds(sheet) {
         }
       }
     }
-    
-    UtilityScriptLibrary.debugLog('getExistingGroupIds', 'DEBUG', 'Found existing group IDs', 
-                                 'Count: ' + existingGroupIds.length + ', IDs: ' + existingGroupIds.join(', '), '');
-    
+    UtilityScriptLibrary.debugLog('getExistingGroupIds', 'DEBUG', 'Found existing group IDs', existingGroupIds.join(', '), '');
     return existingGroupIds;
-    
   } catch (error) {
     UtilityScriptLibrary.debugLog('getExistingGroupIds', 'ERROR', 'Error getting existing group IDs', '', error.message);
     return [];
