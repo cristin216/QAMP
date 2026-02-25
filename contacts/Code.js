@@ -8,117 +8,43 @@ function onOpen() {
 
 function syncContactsAndInstruments() {
   try {
-    addToContacts();
-    updateInstrumentList();
+    processTeacherResponses();
     Logger.log("✅ Sync completed successfully.");
   } catch (e) {
     Logger.log("❌ Error during sync: " + e.message);
   }
 }
 
-function addToContacts() {
-  // ✅ CONSISTENT: Using centralized getSheet method
-  const responsesSheet = UtilityScriptLibrary.getSheet('teacherResponses');
-  const contactsSheet = UtilityScriptLibrary.getSheet('teachersAndAdmin');
+function addFutureProspect(entry, futureSheet) {
+  const existingKeys = getExistingFutureKeys(futureSheet);
+  const key = UtilityScriptLibrary.generateKey(entry.FirstName, entry.LastName);
 
-  const headers = getNormalizedHeaders(responsesSheet);
-  const keyIndexMap = headers.reduce((acc, header, i) => {
-    acc[header] = i;
-    return acc;
-  }, {});
+  if (existingKeys.includes(key)) {
+    Logger.log(`Skipped duplicate future prospect: ${key}`);
+    return;
+  }
 
-  const entries = responsesSheet.getRange(2, 1, responsesSheet.getLastRow() - 1, responsesSheet.getLastColumn()).getValues();
-  entries.forEach(row => {
-    const rawPhone = row[keyIndexMap['phone number']];
-    Logger.log(`📞 Raw phone from form: ${rawPhone}`);
-    const entry = {
-      FirstName: row[keyIndexMap['first name']],
-      LastName: row[keyIndexMap['last name']],
-      Salutation: row[keyIndexMap['salutation']],
-      Email: row[keyIndexMap['email']],
-      SecondaryEmail: row[keyIndexMap['e-mail 2']],
-      Phone: rawPhone,
-      RawAddress: row[keyIndexMap['mailing address, including city and zip']],
-      Role: row[keyIndexMap['role']] ?? 'Teacher'
-    };
-    const formattedPhone = UtilityScriptLibrary.formatPhoneNumber(entry.Phone ?? '');
-    Logger.log(`📞 Formatted phone: ${formattedPhone}`);
-    const contactObj = transformToContact({ ...entry, Phone: formattedPhone }, contactsSheet);
-    appendContactRow(contactObj, contactsSheet);
-  });
-}
+  const headers = futureSheet.getRange(1, 1, 1, futureSheet.getLastColumn()).getValues()[0];
+  const rowObj = {
+    'Timestamp': entry.Timestamp || '',
+    'Last Name': entry.LastName || '',
+    'First Name': entry.FirstName || '',
+    'Salutation': entry.Salutation || '',
+    'Email': entry.Email || '',
+    'Phone': UtilityScriptLibrary.formatPhoneNumber(entry.Phone || ''),
+    'Notes': ''
+  };
 
-function updateInstrumentList() {
-  // ✅ CONSISTENT: Using centralized getSheet method
-  const responsesSheet = UtilityScriptLibrary.getSheet('teacherResponses');
-  const fieldMapSheet = UtilityScriptLibrary.getSheet('teacherFieldMap');
-  const contactsSheet = UtilityScriptLibrary.getSheet('teachersAndAdmin');
-  const instrumentSheet = UtilityScriptLibrary.getSheet('instrumentList');
-
-  const fieldMap = UtilityScriptLibrary.getFieldMappingFromSheet(fieldMapSheet);
-  const headerMap = UtilityScriptLibrary.getHeaderMap(responsesSheet);
-  const instrumentHeaders = UtilityScriptLibrary.getColumnHeaders(instrumentSheet);
-  const existingKeys = getExistingInstrumentKeys(instrumentSheet);
-
-  const rows = responsesSheet.getRange(2, 1, responsesSheet.getLastRow() - 1, responsesSheet.getLastColumn()).getValues();
-  rows.forEach(row => {
-    const get = (internalField) => {
-      const formHeader = Object.keys(fieldMap).find(key => fieldMap[key] === internalField);
-      if (!formHeader) return '';
-      const normHeader = UtilityScriptLibrary.normalizeHeader(formHeader);
-      const colIndex = headerMap[normHeader] - 1;
-      return row[colIndex] ?? '';
-    };
-
-    const firstName = get('First Name');
-    const lastName = get('Last Name');
-    const contact = getContactByKey(contactsSheet, firstName, lastName);
-    if (!contact || !contact['teacher id']) return;
-
-    const teacherId = contact['teacher id'];
-    const instrumentRaw = get('InstrumentsLevels');
-    const summer = get('Interest').toString().toLowerCase().startsWith('y');
-    const schoolYear = get('SchoolYear').toString().toLowerCase().startsWith('y');
-    const future = get('FutureOpps').toString().toLowerCase().startsWith('y');
-    const teachAtOP = get('OPCheck').toString().toLowerCase().startsWith('y');
-
-    const parsedInstruments = parseInstrumentsWithLevels(instrumentRaw);
-    parsedInstruments.forEach(({ instrument, levels }) => {
-      const rowObj = buildInstrumentRow({
-        instrument,
-        level: levels,
-        firstName,
-        lastName,
-        teacherId,
-        teachAtOP,
-        summer,
-        schoolYear,
-        future
-      });
-      updateOrInsertRow(instrumentSheet, rowObj, existingKeys);
-    });
-  });
-
-  setCheckboxColumns(instrumentSheet, ['Teach at OP', 'Summer', 'School Year', 'Future']);
+  const row = headers.map(h => rowObj[h] || '');
+  futureSheet.appendRow(row);
 }
 
 // === HELPER FUNCTIONS ===
 
 function appendContactRow(contactObj, contactsSheet) {
-  const headers = [
-    'Teacher ID',
-    'Last Name',
-    'First Name',
-    'Salutation',
-    'Email',
-    'E-mail 2',
-    'Phone',
-    'Address Formatted',
-    'Role',
-    'Key'
-  ];
-
+  const headers = contactsSheet.getRange(1, 1, 1, contactsSheet.getLastColumn()).getValues()[0];
   const existingKeys = getExistingKeys(contactsSheet);
+
   if (existingKeys.includes(contactObj['Key'])) {
     Logger.log(`Skipped duplicate contact with key: ${contactObj['Key']}`);
     return;
@@ -136,8 +62,7 @@ function buildInstrumentRow({
   teacherId,
   teachAtOP,
   summer,
-  schoolYear,
-  future
+  schoolYear
   }) {
   return {
     Instrument: instrument,
@@ -149,7 +74,6 @@ function buildInstrumentRow({
     'Teach at OP': !!teachAtOP,
     Summer: !!summer,
     'School Year': !!schoolYear,
-    Future: !!future,
     Notes: '',
     Comments: ''
   };
@@ -173,6 +97,21 @@ function getContactByKey(contactsSheet, firstName, lastName) {
   }
 
   return null;
+}
+
+function getExistingFutureKeys(futureSheet) {
+  const data = futureSheet.getDataRange().getValues();
+  const headers = data[0].map(h => h.toString().toLowerCase().trim());
+  const firstIndex = headers.indexOf('first name');
+  const lastIndex = headers.indexOf('last name');
+  if (firstIndex === -1 || lastIndex === -1) return [];
+
+  return data.slice(1).map(row => {
+    return UtilityScriptLibrary.generateKey(
+      (row[firstIndex] || '').toString(),
+      (row[lastIndex] || '').toString()
+    );
+  }).filter(k => k);
 }
 
 function getExistingInstrumentKeys(sheet) {
@@ -285,6 +224,97 @@ function parseInstrumentsWithLevels(rawString) {
   return results;
 }
 
+function processTeacherResponses() {
+  const responsesSheet = UtilityScriptLibrary.getSheet('teacherResponses');
+  const fieldMapSheet = UtilityScriptLibrary.getSheet('teacherFieldMap');
+  const contactsSheet = UtilityScriptLibrary.getSheet('teachersAndAdmin');
+  const instrumentSheet = UtilityScriptLibrary.getSheet('instrumentList');
+  const futureSheet = UtilityScriptLibrary.getSheet('futureTeachers');
+
+  const fieldMap = UtilityScriptLibrary.getFieldMappingFromSheet(fieldMapSheet);
+  const headerMap = UtilityScriptLibrary.getHeaderMap(responsesSheet);
+  const existingInstrumentKeys = getExistingInstrumentKeys(instrumentSheet);
+
+  const rows = responsesSheet.getRange(2, 1, responsesSheet.getLastRow() - 1, responsesSheet.getLastColumn()).getValues();
+
+  rows.forEach(row => {
+    const get = (internalField) => {
+      const formHeader = Object.keys(fieldMap).find(key => fieldMap[key] === internalField);
+      if (!formHeader) return '';
+      const normHeader = UtilityScriptLibrary.normalizeHeader(formHeader);
+      const colIndex = headerMap[normHeader] - 1;
+      return row[colIndex] ?? '';
+    };
+
+    const interest = get('Interest').toString().trim().toLowerCase();
+    const teachAtOP = get('Teach at OP').toString().trim().toLowerCase();
+
+    if (interest === 'no') {
+      addFutureProspect({
+        Timestamp: get('Timestamp'),
+        FirstName: get('First Name'),
+        LastName: get('Last Name'),
+        Salutation: get('Salutation'),
+        Email: get('Email'),
+        Phone: get('Phone')
+      }, futureSheet);
+      return;
+    }
+
+    // Yes or Maybe
+    if (!teachAtOP.startsWith('y')) {
+      Logger.log(`Discarded: ${get('First Name')} ${get('Last Name')} — unwilling to teach at OP`);
+      return;
+    }
+
+    const entry = {
+      FirstName: get('First Name'),
+      LastName: get('Last Name'),
+      Salutation: get('Salutation'),
+      Email: get('Email'),
+      SecondaryEmail: get('E-mail 2'),
+      Phone: get('Phone'),
+      Street: get('Street'),
+      City: get('City'),
+      Zip: get('Zip'),
+      Role: 'Teacher'
+    };
+
+    const contactObj = transformToContact(entry, contactsSheet);
+    appendContactRow(contactObj, contactsSheet);
+
+    const contact = getContactByKey(contactsSheet, entry.FirstName, entry.LastName);
+    if (!contact || !contact['teacher id']) return;
+
+    const teacherId = contact['teacher id'];
+    const instrumentRaw = get('Instruments');
+    const summer = get('Summer').toString().toLowerCase().startsWith('y');
+    const schoolYear = get('School Year').toString().toLowerCase().startsWith('y');
+    const teachAtOPBool = true; // already filtered above
+
+    const parsedInstruments = parseInstrumentsWithLevels(instrumentRaw);
+    parsedInstruments.forEach(({ instrument, levels }) => {
+      const rowObj = buildInstrumentRow({
+        instrument,
+        level: levels,
+        firstName: entry.FirstName,
+        lastName: entry.LastName,
+        teacherId,
+        teachAtOP: teachAtOPBool,
+        summer,
+        schoolYear
+      });
+      updateOrInsertRow(instrumentSheet, rowObj, existingInstrumentKeys);
+    });
+  });
+
+  setCheckboxColumns(instrumentSheet, ['Teach at OP', 'Summer', 'School Year']);
+}
+
+function runLogHeaders() {
+  UtilityScriptLibrary.logAllSheetHeaders();
+}
+
 function setCheckboxColumns(sheet, headerNames) {
   const headers = UtilityScriptLibrary.getColumnHeaders(sheet);
   headerNames.forEach(name => {
@@ -315,7 +345,7 @@ function transformToContact(entry, contactsSheet) {
     'Email': entry.Email || '',
     'E-mail 2': entry.SecondaryEmail || '',
     'Phone': UtilityScriptLibrary.formatPhoneNumber(entry.Phone || ''),
-    'Address Formatted': UtilityScriptLibrary.parseAndFormatAddress(entry.RawAddress || ''),
+    'Address': UtilityScriptLibrary.formatAddress(entry.Street || '', entry.City || '', entry.Zip || ''),
     'Role': role,
     'Key': contactKey
   };
@@ -331,7 +361,7 @@ function updateOrInsertRow(sheet, rowObj, existingKeys) {
   if (rowIndex) {
     const existingRow = sheet.getRange(rowIndex, 1, 1, headers.length).getValues()[0];
     const changed = headers.some((h, i) => {
-      if (['Level', 'Teach at OP', 'Summer', 'School Year', 'Future'].includes(h)) {
+      if (['Level', 'Teach at OP', 'Summer', 'School Year'].includes(h)) {
         return existingRow[i] !== rowObj[h];
       }
       return false;
