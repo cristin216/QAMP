@@ -512,7 +512,7 @@ function updateAllTeacherGroupAssignments() {
     UtilityScriptLibrary.debugLog('updateAllTeacherGroupAssignments', 'INFO', 'Starting batch group assignment update', '', '');
     
     // Get current semester from Calendar sheet (D2)
-    var semesterName = getCurrentSemesterName();
+    var semesterName = UtilityScriptLibrary.getCurrentSemesterName();
     if (!semesterName) {
       ui.alert('Error: Could not determine current semester from Calendar sheet.');
       return;
@@ -1348,17 +1348,10 @@ function processParent(formData, parentsSheet, studentId, existingParentId) {
 
     var cityZipRaw = formData["CityZip"];
     if (cityZipRaw) {
-      var cleaned = String(cityZipRaw).trim().replace(/\s+/g, ' ').replace(/[.]/g, ',');
-      var zipMatch = cleaned.match(/(\d{5})(?!.*\d)/);
-      var zip = zipMatch ? zipMatch[1] : '';
-      var cityPart = zip ? cleaned.substring(0, cleaned.lastIndexOf(zip)).trim() : cleaned;
-      cityPart = cityPart.replace(/,\s*(NY|New York)?$/i, '').trim().replace(/,+$/, '');
-      var city = cityPart.toLowerCase().split(' ').map(function(w) {
-        return w.charAt(0).toUpperCase() + w.slice(1);
-      }).join(' ');
-      formData["Address City"] = city;
-      formData["Address Zip Code"] = zip;
-      formData["Address Formatted"] = (formData["Address Street"] || '') + '\n' + city + ', NY ' + zip;
+      var parsed = UtilityScriptLibrary.parseCityZipMessy(cityZipRaw);
+      formData["Address City"] = parsed.city;
+      formData["Address Zip Code"] = parsed.zip;
+      formData["Address Formatted"] = UtilityScriptLibrary.formatAddress(formData["Address Street"] || '', parsed.city, parsed.zip);
     }
 
     // Generate parent key based on current form data
@@ -1425,7 +1418,6 @@ function processParent(formData, parentsSheet, studentId, existingParentId) {
         var currentStudentIds = String(rowValues[studentIdsCol - 1] || '');
         var studentIdArray = currentStudentIds ? currentStudentIds.split(',').map(function(id) { return id.trim(); }) : [];
         
-        // ES5 compatible check - use indexOf instead of includes
         if (studentIdArray.indexOf(studentId) === -1) {
           studentIdArray.push(studentId);
           var updatedStudentIds = studentIdArray.join(', ');
@@ -1866,7 +1858,7 @@ function applyTeacherDropdownToCurrentSemester() {
     UtilityScriptLibrary.debugLog('applyTeacherDropdownToCurrentSemester', 'INFO', 'Starting auto-apply teacher dropdown', '', '');
     
     // Get current semester name from calendar
-    var currentSemester = getCurrentSemesterName();
+    var currentSemester = UtilityScriptLibrary.getCurrentSemesterName();
     if (!currentSemester) {
       UtilityScriptLibrary.debugLog('applyTeacherDropdownToCurrentSemester', 'WARNING', 'No current semester found', '', '');
       return;
@@ -2303,7 +2295,7 @@ function reassignStudentToNewTeacher() {
     UtilityScriptLibrary.debugLog("=== STARTING STUDENT REASSIGNMENT ===");
     
     // Get current semester
-    var currentSemester = getCurrentSemesterName();
+    var currentSemester = UtilityScriptLibrary.getCurrentSemesterName();
     if (!currentSemester) {
       ui.alert('Error', 'Could not determine current semester from Calendar sheet.', ui.ButtonSet.OK);
       return;
@@ -2335,7 +2327,7 @@ function reassignStudentToNewTeacher() {
       'Reassign Students - Step 1 of 4',
       'Select the OLD teacher (current teacher):',
       activeTeachers,
-      'reassignStep2_selectStudents'
+      'selectStudents'
     );
     
   } catch (error) {
@@ -2345,7 +2337,7 @@ function reassignStudentToNewTeacher() {
 }
 
 // === STEP 2: SELECT STUDENTS (UPDATED WITH CHECKBOX DIALOG) ===
-function reassignStep2_selectStudents(oldTeacherDisplay) {
+function selectStudents(oldTeacherDisplay) {
   try {
     var ui = SpreadsheetApp.getUi();
     var scriptProps = PropertiesService.getScriptProperties();
@@ -2402,17 +2394,17 @@ function reassignStep2_selectStudents(oldTeacherDisplay) {
       'Reassign Students - Step 2 of 4',
       'Select students to transfer:',
       studentList,
-      'reassignStep2b_processStudentSelection'
+      'processStudentSelection'
     );
     
   } catch (error) {
-    UtilityScriptLibrary.debugLog("ERROR in reassignStep2_selectStudents: " + error.message);
+    UtilityScriptLibrary.debugLog("ERROR in selectStudents: " + error.message);
     SpreadsheetApp.getUi().alert('Error', 'Step 2 failed: ' + error.message, SpreadsheetApp.getUi().ButtonSet.OK);
   }
 }
 
 // === STEP 2B: PROCESS STUDENT SELECTION ===
-function reassignStep2b_processStudentSelection(selectedIndices) {
+function processStudentSelection(selectedIndices) {
   try {
     var ui = SpreadsheetApp.getUi();
     var scriptProps = PropertiesService.getScriptProperties();
@@ -2444,10 +2436,10 @@ function reassignStep2b_processStudentSelection(selectedIndices) {
     scriptProps.setProperty('reassign_selectedStudents', JSON.stringify(selectedStudents));
     
     // Move to step 3: select new teacher
-    reassignStep3_selectNewTeacher();
+    selectNewTeacher();
     
   } catch (error) {
-    UtilityScriptLibrary.debugLog("ERROR in reassignStep2b_processStudentSelection: " + error.message);
+    UtilityScriptLibrary.debugLog("ERROR in processStudentSelection: " + error.message);
     SpreadsheetApp.getUi().alert('Error', 'Student selection failed: ' + error.message, SpreadsheetApp.getUi().ButtonSet.OK);
   }
 }
@@ -2549,7 +2541,7 @@ function showStudentCheckboxDialog(title, message, studentList, callbackFunction
 }
 
 // === STEP 3: SELECT NEW TEACHER ===
-function reassignStep3_selectNewTeacher() {
+function selectNewTeacher() {
   try {
     var ui = SpreadsheetApp.getUi();
     var scriptProps = PropertiesService.getScriptProperties();
@@ -2570,17 +2562,17 @@ function reassignStep3_selectNewTeacher() {
       'Reassign Students - Step 3 of 4',
       'Select the NEW teacher:',
       availableTeachers,
-      'reassignStep4_enterEffectiveDate'
+      'enterEffectiveDate'
     );
     
   } catch (error) {
-    UtilityScriptLibrary.debugLog("ERROR in reassignStep3_selectNewTeacher: " + error.message);
+    UtilityScriptLibrary.debugLog("ERROR in selectNewTeacher: " + error.message);
     SpreadsheetApp.getUi().alert('Error', 'Step 3 failed: ' + error.message, SpreadsheetApp.getUi().ButtonSet.OK);
   }
 }
 
 // === STEP 4: ENTER EFFECTIVE DATE ===
-function reassignStep4_enterEffectiveDate(newTeacherDisplay) {
+function enterEffectiveDate(newTeacherDisplay) {
   try {
     var ui = SpreadsheetApp.getUi();
     var scriptProps = PropertiesService.getScriptProperties();
@@ -2632,16 +2624,16 @@ function reassignStep4_enterEffectiveDate(newTeacherDisplay) {
     scriptProps.setProperty('reassign_effectiveDate', effectiveDate.toISOString());
     
     // Move to final step: process reassignment
-    reassignStep5_processReassignment();
+    processReassignment();
     
   } catch (error) {
-    UtilityScriptLibrary.debugLog("ERROR in reassignStep4_enterEffectiveDate: " + error.message);
+    UtilityScriptLibrary.debugLog("ERROR in enterEffectiveDate: " + error.message);
     SpreadsheetApp.getUi().alert('Error', 'Step 4 failed: ' + error.message, SpreadsheetApp.getUi().ButtonSet.OK);
   }
 }
 
 // === STEP 5: PROCESS REASSIGNMENT ===
-function reassignStep5_processReassignment() {
+function processReassignment() {
   try {
     var ui = SpreadsheetApp.getUi();
     var scriptProps = PropertiesService.getScriptProperties();
@@ -2815,74 +2807,559 @@ function reassignStep5_processReassignment() {
     ui.alert('Success', message, ui.ButtonSet.OK);
     
   } catch (error) {
-    UtilityScriptLibrary.debugLog("ERROR in reassignStep5_processReassignment: " + error.message);
+    UtilityScriptLibrary.debugLog("ERROR in processReassignment: " + error.message);
     SpreadsheetApp.getUi().alert('Error', 'Step 5 failed: ' + error.message, SpreadsheetApp.getUi().ButtonSet.OK);
   }
 }
 
 // === DIALOG FUNCTION ===
-function showTeacherDropdownDialog(title, message, teacherList, callbackFunctionName) {
-  var html = HtmlService.createHtmlOutput()
-    .setWidth(400)
-    .setHeight(300);
+
+
+function appendToReports(detailIssues, summaryData) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    
+    // Detail Report
+    var detailSheet = ss.getSheetByName('Student ID Detail Report');
+    if (!detailSheet) {
+      detailSheet = ss.insertSheet('Student ID Detail Report');
+      var headers = ['Workbook Name', 'Sheet Name', 'Row Number', 'First Name', 'Last Name', 'Found Student ID', 'Expected Student ID', 'Issue Type'];
+      detailSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+      detailSheet.getRange(1, 1, 1, headers.length)
+        .setBackground('#37a247')
+        .setFontColor('#ffffff')
+        .setFontWeight('bold');
+      detailSheet.setColumnWidth(1, 200);
+      detailSheet.setColumnWidth(2, 180);
+      detailSheet.setColumnWidth(3, 80);
+      detailSheet.setColumnWidth(4, 120);
+      detailSheet.setColumnWidth(5, 120);
+      detailSheet.setColumnWidth(6, 120);
+      detailSheet.setColumnWidth(7, 120);
+      detailSheet.setColumnWidth(8, 150);
+      detailSheet.setFrozenRows(1);
+    }
+    
+    if (detailIssues.length > 0) {
+      var detailData = detailIssues.map(function(issue) {
+        return [issue.workbookName, issue.sheetName, issue.rowNumber, issue.firstName, issue.lastName, issue.foundId, issue.expectedId, issue.issueType];
+      });
+      var lastRow = detailSheet.getLastRow();
+      detailSheet.getRange(lastRow + 1, 1, detailData.length, 8).setValues(detailData);
+    }
+    
+    // Summary Report
+    var summarySheet = ss.getSheetByName('Student ID Summary Report');
+    if (!summarySheet) {
+      summarySheet = ss.insertSheet('Student ID Summary Report');
+      var headers = ['Workbook Name', 'Sheet Name', 'Status', 'Issue Count'];
+      summarySheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+      summarySheet.getRange(1, 1, 1, headers.length)
+        .setBackground('#37a247')
+        .setFontColor('#ffffff')
+        .setFontWeight('bold');
+      summarySheet.setColumnWidth(1, 200);
+      summarySheet.setColumnWidth(2, 180);
+      summarySheet.setColumnWidth(3, 80);
+      summarySheet.setColumnWidth(4, 100);
+      summarySheet.setFrozenRows(1);
+    }
+    
+    if (summaryData.length > 0) {
+      var summaryRows = summaryData.map(function(item) {
+        return [item.workbookName, item.sheetName, item.status, item.issueCount];
+      });
+      var lastRow = summarySheet.getLastRow();
+      summarySheet.getRange(lastRow + 1, 1, summaryRows.length, 4).setValues(summaryRows);
+    }
+    
+    Logger.log('✅ Appended to reports');
+    
+  } catch (error) {
+    Logger.log('❌ Error appending to reports: ' + error.message);
+    throw error;
+  }
+}
+
+function checkSheet(workbook, workbookName, sheet, studentMap, detailIssues, summaryData) {
+  try {
+    var sheetName = sheet.getName();
+    var data = sheet.getDataRange().getValues();
+    
+    if (data.length < 2) {
+      return;
+    }
+    
+    var headers = data[0];
+    var norm = UtilityScriptLibrary.normalizeHeader;
+    
+    var idCol = -1;
+    var firstNameCol = -1;
+    var lastNameCol = -1;
+    
+    for (var h = 0; h < headers.length; h++) {
+      var normalizedHeader = norm(headers[h]);
+      
+      // ID column - try "Student ID" first, then "ID"
+      if (normalizedHeader === norm('Student ID')) {
+        idCol = h;
+      } else if (idCol === -1 && normalizedHeader === norm('ID')) {
+        idCol = h;
+      }
+      
+      // First Name - prioritize "Student First Name" over "First Name"
+      if (normalizedHeader === norm('Student First Name')) {
+        firstNameCol = h;
+      } else if (firstNameCol === -1 && normalizedHeader === norm('First Name')) {
+        firstNameCol = h;
+      }
+      
+      // Last Name - prioritize "Student Last Name" over "Last Name"
+      if (normalizedHeader === norm('Student Last Name')) {
+        lastNameCol = h;
+      } else if (lastNameCol === -1 && normalizedHeader === norm('Last Name')) {
+        lastNameCol = h;
+      }
+    }
+    
+    if (idCol === -1 || firstNameCol === -1 || lastNameCol === -1) {
+      return;
+    }
+    
+    var sheetIssues = [];
+    
+    for (var r = 1; r < data.length; r++) {
+      var row = data[r];
+      var foundId = (row[idCol] || '').toString().trim();
+      var firstName = (row[firstNameCol] || '').toString().trim();
+      var lastName = (row[lastNameCol] || '').toString().trim();
+      
+      // Skip completely empty rows
+      if (!foundId && !firstName && !lastName) {
+        continue;
+      }
+      
+      // Skip rows with non-Q IDs (P, T, G, etc.)
+      if (foundId && foundId.charAt(0) !== 'Q') {
+        continue;
+      }
+      
+      var issue = null;
+      
+      if (foundId.charAt(0) === 'Q' && (!firstName || !lastName)) {
+        // ID without name
+        issue = {
+          workbookName: workbookName,
+          sheetName: sheetName,
+          rowNumber: r + 1,
+          firstName: firstName,
+          lastName: lastName,
+          foundId: foundId,
+          expectedId: '',
+          issueType: 'ID without name'
+        };
+        
+      } else if (firstName && lastName && !foundId) {
+        // Name without ID
+        var key = firstName.toLowerCase() + '|' + lastName.toLowerCase();
+        var expectedId = studentMap[key] || 'NOT FOUND';
+        
+        issue = {
+          workbookName: workbookName,
+          sheetName: sheetName,
+          rowNumber: r + 1,
+          firstName: firstName,
+          lastName: lastName,
+          foundId: '',
+          expectedId: expectedId,
+          issueType: 'Name without ID'
+        };
+        
+      } else if (foundId.charAt(0) === 'Q' && firstName && lastName) {
+        // Both present - check for mismatch
+        var key = firstName.toLowerCase() + '|' + lastName.toLowerCase();
+        var expectedId = studentMap[key];
+        
+        if (!expectedId) {
+          issue = {
+            workbookName: workbookName,
+            sheetName: sheetName,
+            rowNumber: r + 1,
+            firstName: firstName,
+            lastName: lastName,
+            foundId: foundId,
+            expectedId: 'NOT FOUND IN CONTACTS',
+            issueType: 'Student not in Contacts'
+          };
+        } else if (foundId !== expectedId) {
+          issue = {
+            workbookName: workbookName,
+            sheetName: sheetName,
+            rowNumber: r + 1,
+            firstName: firstName,
+            lastName: lastName,
+            foundId: foundId,
+            expectedId: expectedId,
+            issueType: 'ID Mismatch'
+          };
+        }
+      }
+      
+      if (issue) {
+        sheetIssues.push(issue);
+        detailIssues.push(issue);
+      }
+    }
+    
+    summaryData.push({
+      workbookName: workbookName,
+      sheetName: sheetName,
+      status: sheetIssues.length === 0 ? '✓' : '✗',
+      issueCount: sheetIssues.length
+    });
+    
+    if (sheetIssues.length > 0) {
+      Logger.log('    ⚠️ Found ' + sheetIssues.length + ' issues in sheet: ' + sheetName);
+    }
+    
+  } catch (error) {
+    Logger.log('❌ Error checking sheet ' + workbookName + ' - ' + sheetName + ': ' + error.message);
+  }
+}
+
+function checkWorkbook(workbook, workbookName, studentMap, detailIssues, summaryData) {
+  try {
+    var sheets = workbook.getSheets();
+    Logger.log('  📄 Checking ' + sheets.length + ' sheets in: ' + workbookName);
+    
+    for (var i = 0; i < sheets.length; i++) {
+      var sheet = sheets[i];
+      checkSheet(workbook, workbookName, sheet, studentMap, detailIssues, summaryData);
+    }
+    
+  } catch (error) {
+    Logger.log('❌ Error checking workbook ' + workbookName + ': ' + error.message);
+  }
+}
+
+function checkWorkbooksInFolder(folder, studentMap, detailIssues, summaryData, isHomeFolder) {
+  try {
+    var files = folder.getFiles();
+    var excludedNames = ['Contacts', 'Teacher Interest Survey Responses'];
+    var processedCount = 0;
+    
+    while (files.hasNext()) {
+      var file = files.next();
+      
+      if (file.getMimeType() !== MimeType.GOOGLE_SHEETS) {
+        continue;
+      }
+      
+      var workbookName = file.getName();
+      
+      if (isHomeFolder && excludedNames.indexOf(workbookName) !== -1) {
+        Logger.log('⏭️ Skipping excluded workbook: ' + workbookName);
+        continue;
+      }
+      
+      try {
+        Logger.log('📖 Opening workbook: ' + workbookName);
+        var workbook = SpreadsheetApp.openById(file.getId());
+        checkWorkbook(workbook, workbookName, studentMap, detailIssues, summaryData);
+        processedCount++;
+        
+        if (processedCount % 5 === 0) {
+          Utilities.sleep(1000);
+          Logger.log('⏸️ Processed ' + processedCount + ' workbooks, pausing briefly...');
+        }
+        
+      } catch (error) {
+        Logger.log('⚠️ Could not access workbook ' + workbookName + ': ' + error.message);
+        continue;
+      }
+    }
+    
+    Logger.log('✅ Completed folder check. Processed ' + processedCount + ' workbooks.');
+    
+  } catch (error) {
+    Logger.log('❌ Error checking workbooks in folder: ' + error.message);
+  }
+}
+
+function clearReports() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    
+    var detailSheet = ss.getSheetByName('Student ID Detail Report');
+    if (detailSheet) {
+      ss.deleteSheet(detailSheet);
+    }
+    
+    var summarySheet = ss.getSheetByName('Student ID Summary Report');
+    if (summarySheet) {
+      ss.deleteSheet(summarySheet);
+    }
+    
+    Logger.log('✅ Reports cleared');
+    Browser.msgBox('Reports cleared. Ready for new verification run.');
+    
+  } catch (error) {
+    Logger.log('❌ Error: ' + error.message);
+    Browser.msgBox('Error: ' + error.message);
+  }
+}
+
+function createNewYearWorkbooksWithContinuingStudents() {
+  var ui = SpreadsheetApp.getUi();
   
-  var htmlContent = '<style>' +
-    'body { font-family: Arial, sans-serif; padding: 20px; margin: 0; }' +
-    'h3 { margin-top: 0; color: #333; }' +
-    'p { color: #666; margin-bottom: 15px; }' +
-    'select { width: 100%; padding: 10px; font-size: 14px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; }' +
-    'select option { padding: 8px; }' +
-    'button { padding: 10px 20px; margin: 5px; font-size: 14px; cursor: pointer; border-radius: 4px; border: none; }' +
-    '.ok-btn { background-color: #4CAF50; color: white; }' +
-    '.ok-btn:hover { background-color: #45a049; }' +
-    '.cancel-btn { background-color: #f44336; color: white; }' +
-    '.cancel-btn:hover { background-color: #da190b; }' +
-    '.button-container { margin-top: 20px; text-align: right; }' +
-    '</style>' +
-    '<div>' +
-    '<h3>' + title + '</h3>' +
-    '<p>' + message + '</p>' +
-    '<select id="teacherSelect" size="10">';
+  try {
+    // Step 1: Verify teacher status
+    var verifyResponse = ui.alert(
+      'Teacher Status Verification',
+      'Have you verified teacher status in Teacher Roster Lookup?\n\n' +
+      '(Only active teachers will get new workbooks)',
+      ui.ButtonSet.YES_NO
+    );
+    
+    if (verifyResponse !== ui.Button.YES) {
+      ui.alert('Cancelled', 'Please verify teacher status first.', ui.ButtonSet.OK);
+      return;
+    }
+    
+    // Step 2: Get most recent semester from Billing
+    var semesterMetadata = UtilityScriptLibrary.getSheet('semesterMetadata');
+    if (!semesterMetadata) {
+      throw new Error('Semester Metadata sheet not found in Billing');
+    }
+    
+    var semesterData = semesterMetadata.getDataRange().getValues();
+    var headers = semesterData[0];
+    
+    var nameCol = -1, startCol = -1;
+    for (var i = 0; i < headers.length; i++) {
+      var header = UtilityScriptLibrary.normalizeHeader(headers[i]);
+      if (header === 'semester name' || header === 'semestername') nameCol = i;
+      if (header === 'start date' || header === 'startdate') startCol = i;
+    }
+    
+    if (nameCol === -1 || startCol === -1) {
+      throw new Error('Required columns not found in Semester Metadata');
+    }
+    
+    // Find most recent semester (latest start date)
+    var mostRecentSemester = null;
+    var mostRecentDate = null;
+    
+    for (var i = 1; i < semesterData.length; i++) {
+      var semesterName = semesterData[i][nameCol];
+      var startDate = new Date(semesterData[i][startCol]);
+      
+      if (!semesterName || !startDate) continue;
+      
+      if (!mostRecentDate || startDate > mostRecentDate) {
+        mostRecentDate = startDate;
+        mostRecentSemester = semesterName;
+      }
+    }
+    
+    if (!mostRecentSemester) {
+      throw new Error('No valid semester found in Semester Metadata');
+    }
+    
+    UtilityScriptLibrary.debugLog('Most recent semester: ' + mostRecentSemester);
+    
+    // Step 3: Extract year from semester name
+    var yearMatch = mostRecentSemester.match(/\d{4}/);
+    if (!yearMatch) {
+      throw new Error('Could not extract year from semester name: ' + mostRecentSemester);
+    }
+    
+    var newYear = yearMatch[0];
+    var previousYear = String(parseInt(newYear) - 1);
+    
+    UtilityScriptLibrary.debugLog('New year: ' + newYear + ', Previous year: ' + previousYear);
+    
+    // Step 4: Confirm with user
+    var confirm = ui.alert(
+      'Create ' + newYear + ' Teacher Workbooks',
+      'This will:\n' +
+      '• Create new QAMP ' + newYear + ' workbooks\n' +
+      '• Copy continuing students from ' + previousYear + ' rosters\n' +
+      '• Create "' + mostRecentSemester + '" roster sheets\n' +
+      '• Update Teacher Roster Lookup URLs\n\n' +
+      'Continuing students: Lessons Remaining > 0 AND Status = active/carryover\n\n' +
+      'Continue?',
+      ui.ButtonSet.YES_NO
+    );
+    
+    if (confirm !== ui.Button.YES) {
+      return;
+    }
+    
+    // Step 5: Get roster folders
+    var rostersFolder = UtilityScriptLibrary.getRosterFolder();
+    
+    var previousYearFolderName = previousYear + ' Rosters';
+    var newYearFolderName = newYear + ' Rosters';
+    
+    var previousYearFolder = null;
+    var newYearFolder = null;
+    
+    var subfolders = rostersFolder.getFolders();
+    while (subfolders.hasNext()) {
+      var folder = subfolders.next();
+      var folderName = folder.getName();
+      
+      if (folderName === previousYearFolderName) {
+        previousYearFolder = folder;
+      }
+      if (folderName === newYearFolderName) {
+        newYearFolder = folder;
+      }
+    }
+    
+    if (!previousYearFolder) {
+      throw new Error('Previous year folder not found: ' + previousYearFolderName);
+    }
+    
+    if (!newYearFolder) {
+      throw new Error('New year folder not found: ' + newYearFolderName + '\n\nPlease run semester setup in Billing first.');
+    }
+    
+    UtilityScriptLibrary.debugLog('Found folders - Previous: ' + previousYearFolderName + ', New: ' + newYearFolderName);
+    
+    // Step 6: Get active teachers
+    var teacherLookupSheet = UtilityScriptLibrary.getSheet('teacherRosterLookup');
+    if (!teacherLookupSheet) {
+      throw new Error('Teacher Roster Lookup sheet not found');
+    }
+    
+    var teacherData = teacherLookupSheet.getDataRange().getValues();
+    var getCol = UtilityScriptLibrary.createColumnFinder(teacherLookupSheet);
+    
+    var teacherNameCol = getCol('Teacher Name') - 1;
+    var displayNameCol = getCol('Display Name') - 1;
+    var statusCol = getCol('Status') - 1;
+    var urlCol = getCol('Roster URL') - 1;
+    
+    if (teacherNameCol === -1 || displayNameCol === -1 || statusCol === -1 || urlCol === -1) {
+      throw new Error('Required columns not found in Teacher Roster Lookup');
+    }
+    
+    // Step 7: Process each active teacher
+    var stats = {
+      processed: 0,
+      created: 0,
+      skipped: 0,
+      errors: []
+    };
+    
+    for (var i = 1; i < teacherData.length; i++) {
+      var row = teacherData[i];
+      var teacherName = row[teacherNameCol];
+      var displayName = row[displayNameCol];
+      var status = row[statusCol];
+      
+      if (!teacherName || status !== 'active') {
+        if (teacherName) {
+          UtilityScriptLibrary.debugLog('Skipping ' + teacherName + ' (not active)');
+          stats.skipped++;
+        }
+        continue;
+      }
+      
+      try {
+        UtilityScriptLibrary.debugLog('Processing teacher: ' + teacherName);
+        
+        // Find previous year workbook
+        var previousYearFileName = 'QAMP ' + previousYear + ' ' + (displayName || teacherName);
+        var previousYearFiles = previousYearFolder.getFilesByName(previousYearFileName);
+        
+        if (!previousYearFiles.hasNext()) {
+          UtilityScriptLibrary.debugLog('No ' + previousYear + ' workbook found for ' + teacherName + ' - skipping');
+          stats.skipped++;
+          continue;
+        }
+        
+        var previousYearFile = previousYearFiles.next();
+        var previousYearSS = SpreadsheetApp.openById(previousYearFile.getId());
+        
+        // Get continuing students
+        var continuingStudents = getContinuingStudentsFromWorkbook(previousYearSS);
+        
+        UtilityScriptLibrary.debugLog('Found ' + continuingStudents.length + ' continuing students for ' + teacherName);
+        
+        // Create new year workbook
+        var newYearSS = getOrCreateRosterFromTemplate(
+          displayName || teacherName,
+          newYearFolder,
+          newYear,
+          mostRecentSemester
+        );
+        
+        // Populate with continuing students if any
+        if (continuingStudents.length > 0) {
+          populateRosterWithContinuingStudents(newYearSS, mostRecentSemester, continuingStudents);
+        }
+        
+        // Update Teacher Roster Lookup URL
+        var newUrl = newYearSS.getUrl();
+        teacherLookupSheet.getRange(i + 1, urlCol + 1).setValue(newUrl);
+        
+        stats.processed++;
+        stats.created++;
+        
+        UtilityScriptLibrary.debugLog('✅ Created ' + newYear + ' workbook for ' + teacherName + ' with ' + continuingStudents.length + ' students');
+        
+      } catch (error) {
+        stats.errors.push({
+          teacher: teacherName,
+          error: error.message
+        });
+        UtilityScriptLibrary.debugLog('❌ Error processing ' + teacherName + ': ' + error.message);
+      }
+    }
+    
+    // Step 8: Show summary
+    var summary = 'Workbook Creation Complete\n\n' +
+                  'Semester: ' + mostRecentSemester + '\n' +
+                  'Teachers Processed: ' + stats.processed + '\n' +
+                  'Workbooks Created: ' + stats.created + '\n' +
+                  'Skipped: ' + stats.skipped;
+    
+    if (stats.errors.length > 0) {
+      summary += '\n\nErrors (' + stats.errors.length + '):';
+      for (var j = 0; j < Math.min(stats.errors.length, 5); j++) {
+        summary += '\n• ' + stats.errors[j].teacher + ': ' + stats.errors[j].error;
+      }
+      if (stats.errors.length > 5) {
+        summary += '\n• ... and ' + (stats.errors.length - 5) + ' more';
+      }
+    }
+    
+    ui.alert('✅ Complete', summary, ui.ButtonSet.OK);
+    
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('❌ Fatal error: ' + error.message);
+    ui.alert('❌ Error', error.message, ui.ButtonSet.OK);
+  }
+}
+
+function findMostRecentRosterSheet(spreadsheet) {
+  var sheets = spreadsheet.getSheets();
+  var rosterSheets = [];
   
-  for (var i = 0; i < teacherList.length; i++) {
-    htmlContent += '<option value="' + teacherList[i] + '">' + teacherList[i] + '</option>';
+  for (var i = 0; i < sheets.length; i++) {
+    var sheetName = sheets[i].getName();
+    // Look for sheets with "Roster" in the name
+    if (sheetName.toLowerCase().indexOf('roster') !== -1) {
+      rosterSheets.push(sheets[i]);
+    }
   }
   
-  htmlContent += '</select>' +
-    '<div class="button-container">' +
-    '<button class="cancel-btn" onclick="handleCancel()">Cancel</button>' +
-    '<button class="ok-btn" onclick="handleOk()">OK</button>' +
-    '</div>' +
-    '</div>' +
-    '<script>' +
-    'document.getElementById("teacherSelect").focus();' +
-    'document.getElementById("teacherSelect").selectedIndex = 0;' +
-    'document.getElementById("teacherSelect").addEventListener("dblclick", function() { handleOk(); });' +
-    'document.getElementById("teacherSelect").addEventListener("keydown", function(e) {' +
-    '  if (e.key === "Enter") handleOk();' +
-    '  if (e.key === "Escape") handleCancel();' +
-    '});' +
-    'function handleOk() {' +
-    '  var select = document.getElementById("teacherSelect");' +
-    '  if (select.selectedIndex >= 0) {' +
-    '    google.script.run' +
-    '      .withSuccessHandler(function() {' +
-    '        google.script.host.close();' +
-    '      })' +
-    '      .' + callbackFunctionName + '(select.value);' +
-    '  }' +
-    '}' +
-    'function handleCancel() {' +
-    '  google.script.run' +
-    '    .withSuccessHandler(function() {' +
-    '      google.script.host.close();' +
-    '    })' +
-    '    .' + callbackFunctionName + '(null);' +
-    '}' +
-    '</script>';
-  
-  html.setContent(htmlContent);
-  SpreadsheetApp.getUi().showModalDialog(html, title);
+  // Return the first roster sheet found (usually there's only one named "[Season] Roster")
+  // If multiple, they're typically in chronological order, so last one is most recent
+  return rosterSheets.length > 0 ? rosterSheets[rosterSheets.length - 1] : null;
 }
 
 function getActiveTeachersForDropdown() {
@@ -2932,29 +3409,70 @@ function getActiveTeachersForDropdown() {
   }
 }
 
-function getCurrentSemesterName() {
+function getContinuingStudentsFromWorkbook(workbook) {
   try {
-    var calendarSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Calendar');
-    if (!calendarSheet || calendarSheet.getLastRow() < 2) {
-      UtilityScriptLibrary.debugLog('getCurrentSemesterName', 'WARNING', 'Calendar sheet not found or empty', '', '');
-      return null;
+    // Find the most recent roster sheet
+    var rosterSheet = findMostRecentRosterSheet(workbook);
+    
+    if (!rosterSheet) {
+      UtilityScriptLibrary.debugLog('No roster sheet found in workbook');
+      return [];
     }
     
-    // Current semester is always in D2 (column 4, row 2)
-    var currentSemester = calendarSheet.getRange(2, 4).getValue();
+    UtilityScriptLibrary.debugLog('Using roster sheet: ' + rosterSheet.getName());
     
-    if (!currentSemester || String(currentSemester).trim() === '') {
-      UtilityScriptLibrary.debugLog('getCurrentSemesterName', 'WARNING', 'No current semester in calendar', '', '');
-      return null;
+    var data = rosterSheet.getDataRange().getValues();
+    var headers = data[0];
+    
+    var getCol = function(name) {
+      for (var i = 0; i < headers.length; i++) {
+        if (headers[i] && headers[i].toString().toLowerCase().indexOf(name.toLowerCase()) !== -1) {
+          return i;
+        }
+      }
+      return -1;
+    };
+    
+    var continuingStudents = [];
+    
+    for (var i = 1; i < data.length; i++) {
+      var row = data[i];
+      
+      // Skip empty rows
+      if (!row[getCol('Last Name')] || !row[getCol('First Name')]) {
+        continue;
+      }
+      
+      var status = (row[getCol('Status')] || '').toString().trim().toLowerCase();
+      var lessonsRemaining = parseFloat(row[getCol('Lessons Remaining')]) || 0;
+      
+      // Include students with: Lessons Remaining > 0 AND (Status = 'active' OR 'carryover')
+      if (lessonsRemaining > 0 && (status === 'active' || status === 'carryover')) {
+        continuingStudents.push({
+          lastName: row[getCol('Last Name')] || '',
+          firstName: row[getCol('First Name')] || '',
+          instrument: row[getCol('Instrument')] || '',
+          length: row[getCol('Length')] || 30,
+          experience: row[getCol('Experience')] || '',
+          grade: row[getCol('Grade')] || '',
+          school: row[getCol('School')] || '',
+          schoolTeacher: row[getCol('School Teacher')] || '',
+          parentLastName: row[getCol('Parent Last Name')] || '',
+          parentFirstName: row[getCol('Parent First Name')] || '',
+          phone: row[getCol('Phone')] || '',
+          email: row[getCol('Email')] || '',
+          additionalContacts: row[getCol('Additional contacts')] || '',
+          studentId: row[getCol('Student ID')] || '',
+          lessonsRemaining: lessonsRemaining
+        });
+      }
     }
     
-    var semesterName = String(currentSemester).trim();
-    UtilityScriptLibrary.debugLog('getCurrentSemesterName', 'INFO', 'Found current semester', semesterName, '');
-    return semesterName;
+    return continuingStudents;
     
   } catch (error) {
-    UtilityScriptLibrary.debugLog('getCurrentSemesterName', 'ERROR', 'Failed to get current semester', '', error.message);
-    return null;
+    UtilityScriptLibrary.debugLog('Error getting continuing students: ' + error.message);
+    return [];
   }
 }
 
@@ -3214,6 +3732,102 @@ function hasMonthBeenInvoiced(sheet) {
   }
 }
 
+function loadStudentMapFromContacts() {
+  try {
+    var contactsSheet = UtilityScriptLibrary.getSheet('students');
+    var data = contactsSheet.getDataRange().getValues();
+    var headers = data[0];
+    
+    var getCol = UtilityScriptLibrary.createColumnFinder(contactsSheet);
+    var idCol = getCol('Student ID');
+    var firstNameCol = getCol('Student First Name');
+    var lastNameCol = getCol('Student Last Name');
+    
+    if (!idCol || !firstNameCol || !lastNameCol) {
+      throw new Error('Required columns not found in Contacts students sheet');
+    }
+    
+    var studentMap = {};
+    for (var i = 1; i < data.length; i++) {
+      var id = (data[i][idCol - 1] || '').toString().trim();
+      var firstName = (data[i][firstNameCol - 1] || '').toString().trim().toLowerCase();
+      var lastName = (data[i][lastNameCol - 1] || '').toString().trim().toLowerCase();
+      
+      if (id && id.charAt(0) === 'Q' && firstName && lastName) {
+        var key = firstName + '|' + lastName;
+        studentMap[key] = id;
+      }
+    }
+    
+    Logger.log('📚 Loaded ' + Object.keys(studentMap).length + ' students from Contacts');
+    return studentMap;
+    
+  } catch (error) {
+    Logger.log('❌ Error loading student map: ' + error.message);
+    throw error;
+  }
+}
+
+function populateRosterWithContinuingStudents(workbook, semesterName, students) {
+  try {
+    var season = UtilityScriptLibrary.extractSeasonFromSemester(semesterName);
+    var rosterSheetName = season + ' Roster';
+    var rosterSheet = workbook.getSheetByName(rosterSheetName);
+
+    if (!rosterSheet) {
+      throw new Error('Roster sheet not found: ' + rosterSheetName);
+    }
+
+    // Sort students alphabetically by last name then first name
+    students.sort(function(a, b) {
+      var lastNameCompare = (a.lastName || '').localeCompare(b.lastName || '');
+      if (lastNameCompare !== 0) return lastNameCompare;
+      return (a.firstName || '').localeCompare(b.firstName || '');
+    });
+
+    var dataRows = [];
+    for (var i = 0; i < students.length; i++) {
+      var s = students[i];
+      dataRows.push([
+        false,                               // A - Contacted checkbox
+        '',                                  // B - First Lesson Date
+        '',                                  // C - First Lesson Time
+        '',                                  // D - Comments
+        s.lastName,                          // E - Last Name
+        s.firstName,                         // F - First Name
+        s.instrument,                        // G - Instrument
+        s.length,                            // H - Length
+        s.experience,                        // I - Experience
+        s.grade,                             // J - Grade
+        s.school,                            // K - School
+        s.schoolTeacher,                     // L - School Teacher
+        s.parentLastName,                    // M - Parent Last Name
+        s.parentFirstName,                   // N - Parent First Name
+        s.phone,                             // O - Phone
+        s.email,                             // P - Email
+        s.additionalContacts,                // Q - Additional contacts
+        0,                                   // R - Hours Remaining (reset; updated by sync)
+        s.lessonsRemaining,                  // S - Lessons Remaining (carry forward)
+        'Carryover',                         // T - Status
+        s.studentId,                         // U - Student ID
+        '',                                  // V - Admin Comments
+        'Carried over from previous year'    // W - System Comments
+      ]);
+    }
+
+    if (dataRows.length > 0) {
+      rosterSheet.getRange(2, 1, dataRows.length, 23).setValues(dataRows);
+      // Insert checkboxes for Contacted column (A)
+      rosterSheet.getRange(2, 1, dataRows.length, 1).insertCheckboxes();
+      UtilityScriptLibrary.debugLog('✅ Populated roster with ' + students.length + ' continuing students');
+    }
+
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('Error populating roster: ' + error.message);
+    throw error;
+  }
+}
+
 function processRoster(formData, sheet, editedRow, headerMap, fieldMap, studentId, rosterFolder, year, semesterName) {
   try {
     var teacher = formData["Teacher"];
@@ -3260,7 +3874,7 @@ function refreshCurrentSemesterTeacherDropdown() {
   try {
     UtilityScriptLibrary.debugLog('refreshCurrentSemesterTeacherDropdown', 'INFO', 'Manual refresh triggered', '', '');
     
-    var currentSemester = getCurrentSemesterName();
+    var currentSemester = UtilityScriptLibrary.getCurrentSemesterName();
     if (!currentSemester) {
       SpreadsheetApp.getUi().alert('❌ No current semester found. Please ensure calendar is set up correctly.');
       return;
@@ -3285,6 +3899,10 @@ function refreshCurrentSemesterTeacherDropdown() {
     UtilityScriptLibrary.debugLog('refreshCurrentSemesterTeacherDropdown', 'ERROR', 'Manual refresh failed', '', error.message);
     SpreadsheetApp.getUi().alert('❌ Error refreshing teacher dropdown: ' + error.message);
   }
+}
+
+function runLogHeaders() {
+  UtilityScriptLibrary.logAllSheetHeaders();
 }
 
 function shouldProcessEdit(e, sheet) {
@@ -3337,6 +3955,70 @@ function shouldProcessEdit(e, sheet) {
     UtilityScriptLibrary.debugLog("❌ Error in shouldProcessEdit: " + error.message);
     return false;
   }
+}
+
+function showTeacherDropdownDialog(title, message, teacherList, callbackFunctionName) {
+  var html = HtmlService.createHtmlOutput()
+    .setWidth(400)
+    .setHeight(300);
+  
+  var htmlContent = '<style>' +
+    'body { font-family: Arial, sans-serif; padding: 20px; margin: 0; }' +
+    'h3 { margin-top: 0; color: #333; }' +
+    'p { color: #666; margin-bottom: 15px; }' +
+    'select { width: 100%; padding: 10px; font-size: 14px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; }' +
+    'select option { padding: 8px; }' +
+    'button { padding: 10px 20px; margin: 5px; font-size: 14px; cursor: pointer; border-radius: 4px; border: none; }' +
+    '.ok-btn { background-color: #4CAF50; color: white; }' +
+    '.ok-btn:hover { background-color: #45a049; }' +
+    '.cancel-btn { background-color: #f44336; color: white; }' +
+    '.cancel-btn:hover { background-color: #da190b; }' +
+    '.button-container { margin-top: 20px; text-align: right; }' +
+    '</style>' +
+    '<div>' +
+    '<h3>' + title + '</h3>' +
+    '<p>' + message + '</p>' +
+    '<select id="teacherSelect" size="10">';
+  
+  for (var i = 0; i < teacherList.length; i++) {
+    htmlContent += '<option value="' + teacherList[i] + '">' + teacherList[i] + '</option>';
+  }
+  
+  htmlContent += '</select>' +
+    '<div class="button-container">' +
+    '<button class="cancel-btn" onclick="handleCancel()">Cancel</button>' +
+    '<button class="ok-btn" onclick="handleOk()">OK</button>' +
+    '</div>' +
+    '</div>' +
+    '<script>' +
+    'document.getElementById("teacherSelect").focus();' +
+    'document.getElementById("teacherSelect").selectedIndex = 0;' +
+    'document.getElementById("teacherSelect").addEventListener("dblclick", function() { handleOk(); });' +
+    'document.getElementById("teacherSelect").addEventListener("keydown", function(e) {' +
+    '  if (e.key === "Enter") handleOk();' +
+    '  if (e.key === "Escape") handleCancel();' +
+    '});' +
+    'function handleOk() {' +
+    '  var select = document.getElementById("teacherSelect");' +
+    '  if (select.selectedIndex >= 0) {' +
+    '    google.script.run' +
+    '      .withSuccessHandler(function() {' +
+    '        google.script.host.close();' +
+    '      })' +
+    '      .' + callbackFunctionName + '(select.value);' +
+    '  }' +
+    '}' +
+    'function handleCancel() {' +
+    '  google.script.run' +
+    '    .withSuccessHandler(function() {' +
+    '      google.script.host.close();' +
+    '    })' +
+    '    .' + callbackFunctionName + '(null);' +
+    '}' +
+    '</script>';
+  
+  html.setContent(htmlContent);
+  SpreadsheetApp.getUi().showModalDialog(html, title);
 }
 
 function updateGroupAssignmentsForCurrentMonth(teacherName, semesterName) {
@@ -3486,9 +4168,6 @@ function updateTeacherRosterLookup(teacherName, fileUrl) {
   }
 }
 
-// ============================================
-// VERIFY: By Google Drive ID (folder or file)
-// ============================================
 function verifyByDriveId(driveId) {
   try {
     if (!driveId) {
@@ -3529,729 +4208,6 @@ function verifyByDriveId(driveId) {
   } catch (error) {
     Logger.log('❌ Error: ' + error.message);
   }
-}
-
-// ============================================
-// HELPER: Clear Reports (run this first)
-// ============================================
-function clearReports() {
-  try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    
-    var detailSheet = ss.getSheetByName('Student ID Detail Report');
-    if (detailSheet) {
-      ss.deleteSheet(detailSheet);
-    }
-    
-    var summarySheet = ss.getSheetByName('Student ID Summary Report');
-    if (summarySheet) {
-      ss.deleteSheet(summarySheet);
-    }
-    
-    Logger.log('✅ Reports cleared');
-    Browser.msgBox('Reports cleared. Ready for new verification run.');
-    
-  } catch (error) {
-    Logger.log('❌ Error: ' + error.message);
-    Browser.msgBox('Error: ' + error.message);
-  }
-}
-
-// ============================================
-// SHARED FUNCTIONS
-// ============================================
-
-function loadStudentMapFromContacts() {
-  try {
-    var contactsSheet = UtilityScriptLibrary.getSheet('students');
-    var data = contactsSheet.getDataRange().getValues();
-    var headers = data[0];
-    
-    var getCol = UtilityScriptLibrary.createColumnFinder(contactsSheet);
-    var idCol = getCol('Student ID');
-    var firstNameCol = getCol('Student First Name');
-    var lastNameCol = getCol('Student Last Name');
-    
-    if (!idCol || !firstNameCol || !lastNameCol) {
-      throw new Error('Required columns not found in Contacts students sheet');
-    }
-    
-    var studentMap = {};
-    for (var i = 1; i < data.length; i++) {
-      var id = (data[i][idCol - 1] || '').toString().trim();
-      var firstName = (data[i][firstNameCol - 1] || '').toString().trim().toLowerCase();
-      var lastName = (data[i][lastNameCol - 1] || '').toString().trim().toLowerCase();
-      
-      if (id && id.charAt(0) === 'Q' && firstName && lastName) {
-        var key = firstName + '|' + lastName;
-        studentMap[key] = id;
-      }
-    }
-    
-    Logger.log('📚 Loaded ' + Object.keys(studentMap).length + ' students from Contacts');
-    return studentMap;
-    
-  } catch (error) {
-    Logger.log('❌ Error loading student map: ' + error.message);
-    throw error;
-  }
-}
-
-function checkWorkbooksInFolder(folder, studentMap, detailIssues, summaryData, isHomeFolder) {
-  try {
-    var files = folder.getFiles();
-    var excludedNames = ['Contacts', 'Teacher Interest Survey Responses'];
-    var processedCount = 0;
-    
-    while (files.hasNext()) {
-      var file = files.next();
-      
-      if (file.getMimeType() !== MimeType.GOOGLE_SHEETS) {
-        continue;
-      }
-      
-      var workbookName = file.getName();
-      
-      if (isHomeFolder && excludedNames.indexOf(workbookName) !== -1) {
-        Logger.log('⏭️ Skipping excluded workbook: ' + workbookName);
-        continue;
-      }
-      
-      try {
-        Logger.log('📖 Opening workbook: ' + workbookName);
-        var workbook = SpreadsheetApp.openById(file.getId());
-        checkWorkbook(workbook, workbookName, studentMap, detailIssues, summaryData);
-        processedCount++;
-        
-        if (processedCount % 5 === 0) {
-          Utilities.sleep(1000);
-          Logger.log('⏸️ Processed ' + processedCount + ' workbooks, pausing briefly...');
-        }
-        
-      } catch (error) {
-        Logger.log('⚠️ Could not access workbook ' + workbookName + ': ' + error.message);
-        continue;
-      }
-    }
-    
-    Logger.log('✅ Completed folder check. Processed ' + processedCount + ' workbooks.');
-    
-  } catch (error) {
-    Logger.log('❌ Error checking workbooks in folder: ' + error.message);
-  }
-}
-
-function checkWorkbook(workbook, workbookName, studentMap, detailIssues, summaryData) {
-  try {
-    var sheets = workbook.getSheets();
-    Logger.log('  📄 Checking ' + sheets.length + ' sheets in: ' + workbookName);
-    
-    for (var i = 0; i < sheets.length; i++) {
-      var sheet = sheets[i];
-      checkSheet(workbook, workbookName, sheet, studentMap, detailIssues, summaryData);
-    }
-    
-  } catch (error) {
-    Logger.log('❌ Error checking workbook ' + workbookName + ': ' + error.message);
-  }
-}
-
-
-
-function appendToReports(detailIssues, summaryData) {
-  try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    
-    // Detail Report
-    var detailSheet = ss.getSheetByName('Student ID Detail Report');
-    if (!detailSheet) {
-      detailSheet = ss.insertSheet('Student ID Detail Report');
-      var headers = ['Workbook Name', 'Sheet Name', 'Row Number', 'First Name', 'Last Name', 'Found Student ID', 'Expected Student ID', 'Issue Type'];
-      detailSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-      detailSheet.getRange(1, 1, 1, headers.length)
-        .setBackground('#37a247')
-        .setFontColor('#ffffff')
-        .setFontWeight('bold');
-      detailSheet.setColumnWidth(1, 200);
-      detailSheet.setColumnWidth(2, 180);
-      detailSheet.setColumnWidth(3, 80);
-      detailSheet.setColumnWidth(4, 120);
-      detailSheet.setColumnWidth(5, 120);
-      detailSheet.setColumnWidth(6, 120);
-      detailSheet.setColumnWidth(7, 120);
-      detailSheet.setColumnWidth(8, 150);
-      detailSheet.setFrozenRows(1);
-    }
-    
-    if (detailIssues.length > 0) {
-      var detailData = detailIssues.map(function(issue) {
-        return [issue.workbookName, issue.sheetName, issue.rowNumber, issue.firstName, issue.lastName, issue.foundId, issue.expectedId, issue.issueType];
-      });
-      var lastRow = detailSheet.getLastRow();
-      detailSheet.getRange(lastRow + 1, 1, detailData.length, 8).setValues(detailData);
-    }
-    
-    // Summary Report
-    var summarySheet = ss.getSheetByName('Student ID Summary Report');
-    if (!summarySheet) {
-      summarySheet = ss.insertSheet('Student ID Summary Report');
-      var headers = ['Workbook Name', 'Sheet Name', 'Status', 'Issue Count'];
-      summarySheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-      summarySheet.getRange(1, 1, 1, headers.length)
-        .setBackground('#37a247')
-        .setFontColor('#ffffff')
-        .setFontWeight('bold');
-      summarySheet.setColumnWidth(1, 200);
-      summarySheet.setColumnWidth(2, 180);
-      summarySheet.setColumnWidth(3, 80);
-      summarySheet.setColumnWidth(4, 100);
-      summarySheet.setFrozenRows(1);
-    }
-    
-    if (summaryData.length > 0) {
-      var summaryRows = summaryData.map(function(item) {
-        return [item.workbookName, item.sheetName, item.status, item.issueCount];
-      });
-      var lastRow = summarySheet.getLastRow();
-      summarySheet.getRange(lastRow + 1, 1, summaryRows.length, 4).setValues(summaryRows);
-    }
-    
-    Logger.log('✅ Appended to reports');
-    
-  } catch (error) {
-    Logger.log('❌ Error appending to reports: ' + error.message);
-    throw error;
-  }
-}
-
-function checkSheet(workbook, workbookName, sheet, studentMap, detailIssues, summaryData) {
-  try {
-    var sheetName = sheet.getName();
-    var data = sheet.getDataRange().getValues();
-    
-    if (data.length < 2) {
-      return;
-    }
-    
-    var headers = data[0];
-    var norm = UtilityScriptLibrary.normalizeHeader;
-    
-    var idCol = -1;
-    var firstNameCol = -1;
-    var lastNameCol = -1;
-    
-    for (var h = 0; h < headers.length; h++) {
-      var normalizedHeader = norm(headers[h]);
-      
-      // ID column - try "Student ID" first, then "ID"
-      if (normalizedHeader === norm('Student ID')) {
-        idCol = h;
-      } else if (idCol === -1 && normalizedHeader === norm('ID')) {
-        idCol = h;
-      }
-      
-      // First Name - prioritize "Student First Name" over "First Name"
-      if (normalizedHeader === norm('Student First Name')) {
-        firstNameCol = h;
-      } else if (firstNameCol === -1 && normalizedHeader === norm('First Name')) {
-        firstNameCol = h;
-      }
-      
-      // Last Name - prioritize "Student Last Name" over "Last Name"
-      if (normalizedHeader === norm('Student Last Name')) {
-        lastNameCol = h;
-      } else if (lastNameCol === -1 && normalizedHeader === norm('Last Name')) {
-        lastNameCol = h;
-      }
-    }
-    
-    if (idCol === -1 || firstNameCol === -1 || lastNameCol === -1) {
-      return;
-    }
-    
-    var sheetIssues = [];
-    
-    for (var r = 1; r < data.length; r++) {
-      var row = data[r];
-      var foundId = (row[idCol] || '').toString().trim();
-      var firstName = (row[firstNameCol] || '').toString().trim();
-      var lastName = (row[lastNameCol] || '').toString().trim();
-      
-      // Skip completely empty rows
-      if (!foundId && !firstName && !lastName) {
-        continue;
-      }
-      
-      // Skip rows with non-Q IDs (P, T, G, etc.)
-      if (foundId && foundId.charAt(0) !== 'Q') {
-        continue;
-      }
-      
-      var issue = null;
-      
-      if (foundId.charAt(0) === 'Q' && (!firstName || !lastName)) {
-        // ID without name
-        issue = {
-          workbookName: workbookName,
-          sheetName: sheetName,
-          rowNumber: r + 1,
-          firstName: firstName,
-          lastName: lastName,
-          foundId: foundId,
-          expectedId: '',
-          issueType: 'ID without name'
-        };
-        
-      } else if (firstName && lastName && !foundId) {
-        // Name without ID
-        var key = firstName.toLowerCase() + '|' + lastName.toLowerCase();
-        var expectedId = studentMap[key] || 'NOT FOUND';
-        
-        issue = {
-          workbookName: workbookName,
-          sheetName: sheetName,
-          rowNumber: r + 1,
-          firstName: firstName,
-          lastName: lastName,
-          foundId: '',
-          expectedId: expectedId,
-          issueType: 'Name without ID'
-        };
-        
-      } else if (foundId.charAt(0) === 'Q' && firstName && lastName) {
-        // Both present - check for mismatch
-        var key = firstName.toLowerCase() + '|' + lastName.toLowerCase();
-        var expectedId = studentMap[key];
-        
-        if (!expectedId) {
-          issue = {
-            workbookName: workbookName,
-            sheetName: sheetName,
-            rowNumber: r + 1,
-            firstName: firstName,
-            lastName: lastName,
-            foundId: foundId,
-            expectedId: 'NOT FOUND IN CONTACTS',
-            issueType: 'Student not in Contacts'
-          };
-        } else if (foundId !== expectedId) {
-          issue = {
-            workbookName: workbookName,
-            sheetName: sheetName,
-            rowNumber: r + 1,
-            firstName: firstName,
-            lastName: lastName,
-            foundId: foundId,
-            expectedId: expectedId,
-            issueType: 'ID Mismatch'
-          };
-        }
-      }
-      
-      if (issue) {
-        sheetIssues.push(issue);
-        detailIssues.push(issue);
-      }
-    }
-    
-    summaryData.push({
-      workbookName: workbookName,
-      sheetName: sheetName,
-      status: sheetIssues.length === 0 ? '✓' : '✗',
-      issueCount: sheetIssues.length
-    });
-    
-    if (sheetIssues.length > 0) {
-      Logger.log('    ⚠️ Found ' + sheetIssues.length + ' issues in sheet: ' + sheetName);
-    }
-    
-  } catch (error) {
-    Logger.log('❌ Error checking sheet ' + workbookName + ' - ' + sheetName + ': ' + error.message);
-  }
-}
-
-function createNewYearWorkbooksWithContinuingStudents() {
-  var ui = SpreadsheetApp.getUi();
-  
-  try {
-    // Step 1: Verify teacher status
-    var verifyResponse = ui.alert(
-      'Teacher Status Verification',
-      'Have you verified teacher status in Teacher Roster Lookup?\n\n' +
-      '(Only active teachers will get new workbooks)',
-      ui.ButtonSet.YES_NO
-    );
-    
-    if (verifyResponse !== ui.Button.YES) {
-      ui.alert('Cancelled', 'Please verify teacher status first.', ui.ButtonSet.OK);
-      return;
-    }
-    
-    // Step 2: Get most recent semester from Billing
-    var semesterMetadata = UtilityScriptLibrary.getSheet('semesterMetadata');
-    if (!semesterMetadata) {
-      throw new Error('Semester Metadata sheet not found in Billing');
-    }
-    
-    var semesterData = semesterMetadata.getDataRange().getValues();
-    var headers = semesterData[0];
-    
-    var nameCol = -1, startCol = -1;
-    for (var i = 0; i < headers.length; i++) {
-      var header = UtilityScriptLibrary.normalizeHeader(headers[i]);
-      if (header === 'semester name' || header === 'semestername') nameCol = i;
-      if (header === 'start date' || header === 'startdate') startCol = i;
-    }
-    
-    if (nameCol === -1 || startCol === -1) {
-      throw new Error('Required columns not found in Semester Metadata');
-    }
-    
-    // Find most recent semester (latest start date)
-    var mostRecentSemester = null;
-    var mostRecentDate = null;
-    
-    for (var i = 1; i < semesterData.length; i++) {
-      var semesterName = semesterData[i][nameCol];
-      var startDate = new Date(semesterData[i][startCol]);
-      
-      if (!semesterName || !startDate) continue;
-      
-      if (!mostRecentDate || startDate > mostRecentDate) {
-        mostRecentDate = startDate;
-        mostRecentSemester = semesterName;
-      }
-    }
-    
-    if (!mostRecentSemester) {
-      throw new Error('No valid semester found in Semester Metadata');
-    }
-    
-    UtilityScriptLibrary.debugLog('Most recent semester: ' + mostRecentSemester);
-    
-    // Step 3: Extract year from semester name
-    var yearMatch = mostRecentSemester.match(/\d{4}/);
-    if (!yearMatch) {
-      throw new Error('Could not extract year from semester name: ' + mostRecentSemester);
-    }
-    
-    var newYear = yearMatch[0];
-    var previousYear = String(parseInt(newYear) - 1);
-    
-    UtilityScriptLibrary.debugLog('New year: ' + newYear + ', Previous year: ' + previousYear);
-    
-    // Step 4: Confirm with user
-    var confirm = ui.alert(
-      'Create ' + newYear + ' Teacher Workbooks',
-      'This will:\n' +
-      '• Create new QAMP ' + newYear + ' workbooks\n' +
-      '• Copy continuing students from ' + previousYear + ' rosters\n' +
-      '• Create "' + mostRecentSemester + '" roster sheets\n' +
-      '• Update Teacher Roster Lookup URLs\n\n' +
-      'Continuing students: Lessons Remaining > 0 AND Status = active/carryover\n\n' +
-      'Continue?',
-      ui.ButtonSet.YES_NO
-    );
-    
-    if (confirm !== ui.Button.YES) {
-      return;
-    }
-    
-    // Step 5: Get roster folders
-    var rostersFolder = UtilityScriptLibrary.getRosterFolder();
-    
-    var previousYearFolderName = previousYear + ' Rosters';
-    var newYearFolderName = newYear + ' Rosters';
-    
-    var previousYearFolder = null;
-    var newYearFolder = null;
-    
-    var subfolders = rostersFolder.getFolders();
-    while (subfolders.hasNext()) {
-      var folder = subfolders.next();
-      var folderName = folder.getName();
-      
-      if (folderName === previousYearFolderName) {
-        previousYearFolder = folder;
-      }
-      if (folderName === newYearFolderName) {
-        newYearFolder = folder;
-      }
-    }
-    
-    if (!previousYearFolder) {
-      throw new Error('Previous year folder not found: ' + previousYearFolderName);
-    }
-    
-    if (!newYearFolder) {
-      throw new Error('New year folder not found: ' + newYearFolderName + '\n\nPlease run semester setup in Billing first.');
-    }
-    
-    UtilityScriptLibrary.debugLog('Found folders - Previous: ' + previousYearFolderName + ', New: ' + newYearFolderName);
-    
-    // Step 6: Get active teachers
-    var teacherLookupSheet = UtilityScriptLibrary.getSheet('teacherRosterLookup');
-    if (!teacherLookupSheet) {
-      throw new Error('Teacher Roster Lookup sheet not found');
-    }
-    
-    var teacherData = teacherLookupSheet.getDataRange().getValues();
-    var getCol = UtilityScriptLibrary.createColumnFinder(teacherLookupSheet);
-    
-    var teacherNameCol = getCol('Teacher Name') - 1;
-    var displayNameCol = getCol('Display Name') - 1;
-    var statusCol = getCol('Status') - 1;
-    var urlCol = getCol('Roster URL') - 1;
-    
-    if (teacherNameCol === -1 || displayNameCol === -1 || statusCol === -1 || urlCol === -1) {
-      throw new Error('Required columns not found in Teacher Roster Lookup');
-    }
-    
-    // Step 7: Process each active teacher
-    var stats = {
-      processed: 0,
-      created: 0,
-      skipped: 0,
-      errors: []
-    };
-    
-    for (var i = 1; i < teacherData.length; i++) {
-      var row = teacherData[i];
-      var teacherName = row[teacherNameCol];
-      var displayName = row[displayNameCol];
-      var status = row[statusCol];
-      
-      if (!teacherName || status !== 'active') {
-        if (teacherName) {
-          UtilityScriptLibrary.debugLog('Skipping ' + teacherName + ' (not active)');
-          stats.skipped++;
-        }
-        continue;
-      }
-      
-      try {
-        UtilityScriptLibrary.debugLog('Processing teacher: ' + teacherName);
-        
-        // Find previous year workbook
-        var previousYearFileName = 'QAMP ' + previousYear + ' ' + (displayName || teacherName);
-        var previousYearFiles = previousYearFolder.getFilesByName(previousYearFileName);
-        
-        if (!previousYearFiles.hasNext()) {
-          UtilityScriptLibrary.debugLog('No ' + previousYear + ' workbook found for ' + teacherName + ' - skipping');
-          stats.skipped++;
-          continue;
-        }
-        
-        var previousYearFile = previousYearFiles.next();
-        var previousYearSS = SpreadsheetApp.openById(previousYearFile.getId());
-        
-        // Get continuing students
-        var continuingStudents = getContinuingStudentsFromWorkbook(previousYearSS);
-        
-        UtilityScriptLibrary.debugLog('Found ' + continuingStudents.length + ' continuing students for ' + teacherName);
-        
-        // Create new year workbook
-        var newYearSS = getOrCreateRosterFromTemplate(
-          displayName || teacherName,
-          newYearFolder,
-          newYear,
-          mostRecentSemester
-        );
-        
-        // Populate with continuing students if any
-        if (continuingStudents.length > 0) {
-          populateRosterWithContinuingStudents(newYearSS, mostRecentSemester, continuingStudents);
-        }
-        
-        // Update Teacher Roster Lookup URL
-        var newUrl = newYearSS.getUrl();
-        teacherLookupSheet.getRange(i + 1, urlCol + 1).setValue(newUrl);
-        
-        stats.processed++;
-        stats.created++;
-        
-        UtilityScriptLibrary.debugLog('✅ Created ' + newYear + ' workbook for ' + teacherName + ' with ' + continuingStudents.length + ' students');
-        
-      } catch (error) {
-        stats.errors.push({
-          teacher: teacherName,
-          error: error.message
-        });
-        UtilityScriptLibrary.debugLog('❌ Error processing ' + teacherName + ': ' + error.message);
-      }
-    }
-    
-    // Step 8: Show summary
-    var summary = 'Workbook Creation Complete\n\n' +
-                  'Semester: ' + mostRecentSemester + '\n' +
-                  'Teachers Processed: ' + stats.processed + '\n' +
-                  'Workbooks Created: ' + stats.created + '\n' +
-                  'Skipped: ' + stats.skipped;
-    
-    if (stats.errors.length > 0) {
-      summary += '\n\nErrors (' + stats.errors.length + '):';
-      for (var j = 0; j < Math.min(stats.errors.length, 5); j++) {
-        summary += '\n• ' + stats.errors[j].teacher + ': ' + stats.errors[j].error;
-      }
-      if (stats.errors.length > 5) {
-        summary += '\n• ... and ' + (stats.errors.length - 5) + ' more';
-      }
-    }
-    
-    ui.alert('✅ Complete', summary, ui.ButtonSet.OK);
-    
-  } catch (error) {
-    UtilityScriptLibrary.debugLog('❌ Fatal error: ' + error.message);
-    ui.alert('❌ Error', error.message, ui.ButtonSet.OK);
-  }
-}
-
-function findMostRecentRosterSheet(spreadsheet) {
-  var sheets = spreadsheet.getSheets();
-  var rosterSheets = [];
-  
-  for (var i = 0; i < sheets.length; i++) {
-    var sheetName = sheets[i].getName();
-    // Look for sheets with "Roster" in the name
-    if (sheetName.toLowerCase().indexOf('roster') !== -1) {
-      rosterSheets.push(sheets[i]);
-    }
-  }
-  
-  // Return the first roster sheet found (usually there's only one named "[Season] Roster")
-  // If multiple, they're typically in chronological order, so last one is most recent
-  return rosterSheets.length > 0 ? rosterSheets[rosterSheets.length - 1] : null;
-}
-
-function getContinuingStudentsFromWorkbook(workbook) {
-  try {
-    // Find the most recent roster sheet
-    var rosterSheet = findMostRecentRosterSheet(workbook);
-    
-    if (!rosterSheet) {
-      UtilityScriptLibrary.debugLog('No roster sheet found in workbook');
-      return [];
-    }
-    
-    UtilityScriptLibrary.debugLog('Using roster sheet: ' + rosterSheet.getName());
-    
-    var data = rosterSheet.getDataRange().getValues();
-    var headers = data[0];
-    
-    var getCol = function(name) {
-      for (var i = 0; i < headers.length; i++) {
-        if (headers[i] && headers[i].toString().toLowerCase().indexOf(name.toLowerCase()) !== -1) {
-          return i;
-        }
-      }
-      return -1;
-    };
-    
-    var continuingStudents = [];
-    
-    for (var i = 1; i < data.length; i++) {
-      var row = data[i];
-      
-      // Skip empty rows
-      if (!row[getCol('Last Name')] || !row[getCol('First Name')]) {
-        continue;
-      }
-      
-      var status = (row[getCol('Status')] || '').toString().trim().toLowerCase();
-      var lessonsRemaining = parseFloat(row[getCol('Lessons Remaining')]) || 0;
-      
-      // Include students with: Lessons Remaining > 0 AND (Status = 'active' OR 'carryover')
-      if (lessonsRemaining > 0 && (status === 'active' || status === 'carryover')) {
-        continuingStudents.push({
-          lastName: row[getCol('Last Name')] || '',
-          firstName: row[getCol('First Name')] || '',
-          instrument: row[getCol('Instrument')] || '',
-          length: row[getCol('Length')] || 30,
-          experience: row[getCol('Experience')] || '',
-          grade: row[getCol('Grade')] || '',
-          school: row[getCol('School')] || '',
-          schoolTeacher: row[getCol('School Teacher')] || '',
-          parentLastName: row[getCol('Parent Last Name')] || '',
-          parentFirstName: row[getCol('Parent First Name')] || '',
-          phone: row[getCol('Phone')] || '',
-          email: row[getCol('Email')] || '',
-          additionalContacts: row[getCol('Additional contacts')] || '',
-          studentId: row[getCol('Student ID')] || '',
-          lessonsRemaining: lessonsRemaining
-        });
-      }
-    }
-    
-    return continuingStudents;
-    
-  } catch (error) {
-    UtilityScriptLibrary.debugLog('Error getting continuing students: ' + error.message);
-    return [];
-  }
-}
-
-function populateRosterWithContinuingStudents(workbook, semesterName, students) {
-  try {
-    var season = UtilityScriptLibrary.extractSeasonFromSemester(semesterName);
-    var rosterSheetName = season + ' Roster';
-    var rosterSheet = workbook.getSheetByName(rosterSheetName);
-
-    if (!rosterSheet) {
-      throw new Error('Roster sheet not found: ' + rosterSheetName);
-    }
-
-    // Sort students alphabetically by last name then first name
-    students.sort(function(a, b) {
-      var lastNameCompare = (a.lastName || '').localeCompare(b.lastName || '');
-      if (lastNameCompare !== 0) return lastNameCompare;
-      return (a.firstName || '').localeCompare(b.firstName || '');
-    });
-
-    var dataRows = [];
-    for (var i = 0; i < students.length; i++) {
-      var s = students[i];
-      dataRows.push([
-        false,                               // A - Contacted checkbox
-        '',                                  // B - First Lesson Date
-        '',                                  // C - First Lesson Time
-        '',                                  // D - Comments
-        s.lastName,                          // E - Last Name
-        s.firstName,                         // F - First Name
-        s.instrument,                        // G - Instrument
-        s.length,                            // H - Length
-        s.experience,                        // I - Experience
-        s.grade,                             // J - Grade
-        s.school,                            // K - School
-        s.schoolTeacher,                     // L - School Teacher
-        s.parentLastName,                    // M - Parent Last Name
-        s.parentFirstName,                   // N - Parent First Name
-        s.phone,                             // O - Phone
-        s.email,                             // P - Email
-        s.additionalContacts,                // Q - Additional contacts
-        0,                                   // R - Hours Remaining (reset; updated by sync)
-        s.lessonsRemaining,                  // S - Lessons Remaining (carry forward)
-        'Carryover',                         // T - Status
-        s.studentId,                         // U - Student ID
-        '',                                  // V - Admin Comments
-        'Carried over from previous year'    // W - System Comments
-      ]);
-    }
-
-    if (dataRows.length > 0) {
-      rosterSheet.getRange(2, 1, dataRows.length, 23).setValues(dataRows);
-      // Insert checkboxes for Contacted column (A)
-      rosterSheet.getRange(2, 1, dataRows.length, 1).insertCheckboxes();
-      UtilityScriptLibrary.debugLog('✅ Populated roster with ' + students.length + ' continuing students');
-    }
-
-  } catch (error) {
-    UtilityScriptLibrary.debugLog('Error populating roster: ' + error.message);
-    throw error;
-  }
-}
-
-function runLogHeaders() {
-  UtilityScriptLibrary.logAllSheetHeaders();
 }
 
 function verifyByDriveIdWithPrompt() {
