@@ -251,20 +251,7 @@ function setupCompleteRosterWorkbook(spreadsheet, teacher, year, semesterName, r
     setupNewRosterTemplate(rosterSheet);
     UtilityScriptLibrary.debugLog("setupCompleteRosterWorkbook - Created season roster sheet: " + rosterSheetName);
     
-    // 1.5 ADD CARRYOVER STUDENTS FROM PREVIOUS SEMESTER
-    try {
-      var carryoverCount = addCarryoverStudentsToNewRoster(spreadsheet, rosterSheet, semesterName);
-      if (carryoverCount > 0) {
-        UtilityScriptLibrary.debugLog("setupCompleteRosterWorkbook - Added " + carryoverCount + " carryover students from previous semester");
-      } else {
-        UtilityScriptLibrary.debugLog("setupCompleteRosterWorkbook - No carryover students found or no previous semester roster");
-      }
-    } catch (carryoverError) {
-      UtilityScriptLibrary.debugLog("setupCompleteRosterWorkbook - WARNING: Error adding carryover students: " + carryoverError.message);
-      // Non-critical - continue with roster creation
-    }
-    
-    // 2. Create attendance sheet for CURRENT SEMESTER MONTH (empty)
+    // 2. Create attendance sheet for current semester month (empty)
     var currentSemesterMonth = UtilityScriptLibrary.getCurrentSemesterMonth(semesterName);
     if (!currentSemesterMonth) {
       throw new Error("Could not determine current semester month for: " + semesterName);
@@ -295,8 +282,9 @@ function setupCompleteRosterWorkbook(spreadsheet, teacher, year, semesterName, r
     // 5. Set sheet order (Roster first, then current month)
     try {
       spreadsheet.setActiveSheet(rosterSheet);
-    } catch (activeError) {
-      UtilityScriptLibrary.debugLog("setupCompleteRosterWorkbook - WARNING: Could not set active sheet: " + activeError.message);
+      spreadsheet.moveActiveSheet(1);
+    } catch (orderError) {
+      UtilityScriptLibrary.debugLog("setupCompleteRosterWorkbook - WARNING: Could not set sheet order: " + orderError.message);
       // Non-critical error, continue
     }
     
@@ -2632,188 +2620,6 @@ function enterEffectiveDate(newTeacherDisplay) {
   }
 }
 
-// === STEP 5: PROCESS REASSIGNMENT ===
-function processReassignment() {
-  try {
-    var ui = SpreadsheetApp.getUi();
-    var scriptProps = PropertiesService.getScriptProperties();
-    
-    // Retrieve all stored data
-    var currentSemester = scriptProps.getProperty('reassign_currentSemester');
-    var year = scriptProps.getProperty('reassign_year');
-    var season = scriptProps.getProperty('reassign_season');
-    var oldTeacherDisplay = scriptProps.getProperty('reassign_oldTeacherDisplay');
-    var newTeacherDisplay = scriptProps.getProperty('reassign_newTeacherDisplay');
-    var oldTeacherInfo = JSON.parse(scriptProps.getProperty('reassign_oldTeacherInfo'));
-    var selectedStudents = JSON.parse(scriptProps.getProperty('reassign_selectedStudents'));
-    var effectiveDate = new Date(scriptProps.getProperty('reassign_effectiveDate'));
-    var oldRosterWorkbookId = scriptProps.getProperty('reassign_oldRosterWorkbookId');
-    var oldRosterSheetName = scriptProps.getProperty('reassign_oldRosterSheetName');
-    
-    UtilityScriptLibrary.debugLog("Processing reassignment: " + selectedStudents.length + " students from " + oldTeacherDisplay + " to " + newTeacherDisplay);
-    
-    // Get roster folder from Year Metadata
-    var yearMetadataSheet = UtilityScriptLibrary.getSheet('yearMetadata');
-    if (!yearMetadataSheet) {
-      throw new Error("Year Metadata sheet not found");
-    }
-    
-    var metadataRows = yearMetadataSheet.getDataRange().getValues();
-    var headerRow = metadataRows[0];
-    var yearColIndex = -1;
-    var folderIdColIndex = -1;
-    
-    for (var i = 0; i < headerRow.length; i++) {
-      if (UtilityScriptLibrary.normalizeHeader(headerRow[i]) === UtilityScriptLibrary.normalizeHeader("Year")) {
-        yearColIndex = i;
-      }
-      if (UtilityScriptLibrary.normalizeHeader(headerRow[i]) === UtilityScriptLibrary.normalizeHeader("Roster Folder ID")) {
-        folderIdColIndex = i;
-      }
-    }
-    
-    if (yearColIndex === -1 || folderIdColIndex === -1) {
-      throw new Error("Required columns not found in Year Metadata sheet");
-    }
-    
-    var yearRow = null;
-    for (var i = 0; i < metadataRows.length; i++) {
-      if (metadataRows[i][yearColIndex] && metadataRows[i][yearColIndex].toString() === year) {
-        yearRow = metadataRows[i];
-        break;
-      }
-    }
-    
-    if (!yearRow) {
-      throw new Error("No roster folder found for year: " + year);
-    }
-    
-    var rosterFolderId = yearRow[folderIdColIndex];
-    var rosterFolder = DriveApp.getFolderById(rosterFolderId);
-    UtilityScriptLibrary.debugLog("✅ Found roster folder for year " + year);
-    
-    // Get new teacher info
-    var newTeacherInfo = getTeacherInfoByDisplayName(newTeacherDisplay);
-    if (!newTeacherInfo) {
-      throw new Error("Could not find new teacher info in Teacher Roster Lookup");
-    }
-    
-    // FIXED: Use displayName instead of teacherName for roster file lookup
-    var newRosterWorkbook = getOrCreateRosterFromTemplate(newTeacherInfo.displayName, rosterFolder, year, currentSemester);
-    var newRosterSheet = findSemesterRoster(newRosterWorkbook, currentSemester);
-    
-    if (!newRosterSheet) {
-      throw new Error("Could not find or create roster sheet for " + currentSemester + " in new teacher's workbook");
-    }
-    
-    UtilityScriptLibrary.debugLog("✅ Got/created new teacher roster: " + newRosterSheet.getName());
-    
-    // Update Teacher Roster Lookup with URL - FIXED: use displayName instead of teacherName
-    var newRosterFile = DriveApp.getFileById(newRosterWorkbook.getId());
-    var newRosterUrl = newRosterFile.getUrl();
-    
-    UtilityScriptLibrary.debugLog("📝 Updating Teacher Roster Lookup for display name: " + newTeacherInfo.displayName);
-    updateTeacherRosterLookup(newTeacherInfo.displayName, newRosterUrl);
-    UtilityScriptLibrary.debugLog("✅ Teacher Roster Lookup update completed");
-    
-    // Open old teacher's roster
-    var oldRosterWorkbook = SpreadsheetApp.openById(oldRosterWorkbookId);
-    var oldRosterSheet = oldRosterWorkbook.getSheetByName(oldRosterSheetName);
-    
-    if (!oldRosterSheet) {
-      throw new Error("Could not find old roster sheet: " + oldRosterSheetName);
-    }
-    
-    // Process each selected student
-    var successCount = 0;
-    var skipCount = 0;
-    var errorCount = 0;
-    var errors = [];
-    
-    for (var i = 0; i < selectedStudents.length; i++) {
-      var student = selectedStudents[i];
-      
-      try {
-        UtilityScriptLibrary.debugLog("Processing student: " + student.firstName + " " + student.lastName + " (" + student.studentId + ")");
-        
-        // Mark student as "Transferred" in old roster and clear warning color
-        var oldHeaderMap = UtilityScriptLibrary.getHeaderMap(oldRosterSheet);
-        var statusCol = oldHeaderMap['status'];
-        oldRosterSheet.getRange(student.rowNumber, statusCol).setValue('Transferred');
-        
-        // Apply normal alternating row style (background + text color) for columns A-W (23 columns)
-        var rowRange = oldRosterSheet.getRange(student.rowNumber, 1, 1, 23);
-        if (student.rowNumber % 2 === 0) {
-          rowRange.setBackground(UtilityScriptLibrary.STYLES.ALTERNATING_DARK.background);
-          rowRange.setFontColor(UtilityScriptLibrary.STYLES.ALTERNATING_DARK.text);
-        } else {
-          rowRange.setBackground(UtilityScriptLibrary.STYLES.ALTERNATING_LIGHT.background);
-          rowRange.setFontColor(UtilityScriptLibrary.STYLES.ALTERNATING_LIGHT.text);
-        }
-        
-        UtilityScriptLibrary.debugLog("Marked as 'Transferred' in old teacher's roster and cleared warning color");
-        
-        // Check if student already exists in new roster
-        var newHeaderMap = UtilityScriptLibrary.getHeaderMap(newRosterSheet);
-        var studentExists = checkIfStudentExists(newRosterSheet, student.studentId, newHeaderMap);
-        
-        if (studentExists) {
-          UtilityScriptLibrary.debugLog("Student already exists in new roster - skipping roster addition");
-          skipCount++;
-        } else {
-          // Add to new roster
-          addStudentToRosterFromData(newRosterSheet, student, newHeaderMap);
-          UtilityScriptLibrary.debugLog("Added to new teacher's roster");
-        }
-        
-        // Add to attendance sheets
-        addStudentToAttendanceSheetsFromDate(newRosterWorkbook, student, effectiveDate);
-        
-        successCount++;
-        UtilityScriptLibrary.debugLog("Successfully processed student: " + student.studentId);
-        
-      } catch (error) {
-        errorCount++;
-        var errorMsg = student.firstName + ' ' + student.lastName + ' (' + student.studentId + '): ' + error.message;
-        errors.push(errorMsg);
-        UtilityScriptLibrary.debugLog("ERROR processing student: " + errorMsg);
-      }
-    }
-    
-    // Clean up script properties
-    var keysToDelete = [
-      'reassign_currentSemester', 'reassign_year', 'reassign_season',
-      'reassign_activeTeachers', 'reassign_oldTeacherDisplay', 'reassign_oldTeacherInfo',
-      'reassign_studentList', 'reassign_oldRosterSheetName', 'reassign_oldRosterWorkbookId',
-      'reassign_selectedStudents', 'reassign_newTeacherDisplay', 'reassign_effectiveDate'
-    ];
-    for (var i = 0; i < keysToDelete.length; i++) {
-      scriptProps.deleteProperty(keysToDelete[i]);
-    }
-    
-    UtilityScriptLibrary.debugLog("=== STUDENT REASSIGNMENT COMPLETE ===");
-    
-    // Show results
-    var message = 'Student Reassignment Complete!\n\n';
-    message += 'Successfully processed: ' + successCount + ' student(s)\n';
-    if (skipCount > 0) {
-      message += 'Already in new roster (skipped): ' + skipCount + '\n';
-    }
-    if (errorCount > 0) {
-      message += 'Errors: ' + errorCount + '\n\n';
-      message += 'Failed students:\n' + errors.join('\n');
-    }
-    
-    ui.alert('Success', message, ui.ButtonSet.OK);
-    
-  } catch (error) {
-    UtilityScriptLibrary.debugLog("ERROR in processReassignment: " + error.message);
-    SpreadsheetApp.getUi().alert('Error', 'Step 5 failed: ' + error.message, SpreadsheetApp.getUi().ButtonSet.OK);
-  }
-}
-
-// === DIALOG FUNCTION ===
-
 
 function appendToReports(detailIssues, summaryData) {
   try {
@@ -3825,6 +3631,185 @@ function populateRosterWithContinuingStudents(workbook, semesterName, students) 
   } catch (error) {
     UtilityScriptLibrary.debugLog('Error populating roster: ' + error.message);
     throw error;
+  }
+}
+
+function processReassignment() {
+  try {
+    var ui = SpreadsheetApp.getUi();
+    var scriptProps = PropertiesService.getScriptProperties();
+    
+    // Retrieve all stored data
+    var currentSemester = scriptProps.getProperty('reassign_currentSemester');
+    var year = scriptProps.getProperty('reassign_year');
+    var season = scriptProps.getProperty('reassign_season');
+    var oldTeacherDisplay = scriptProps.getProperty('reassign_oldTeacherDisplay');
+    var newTeacherDisplay = scriptProps.getProperty('reassign_newTeacherDisplay');
+    var oldTeacherInfo = JSON.parse(scriptProps.getProperty('reassign_oldTeacherInfo'));
+    var selectedStudents = JSON.parse(scriptProps.getProperty('reassign_selectedStudents'));
+    var effectiveDate = new Date(scriptProps.getProperty('reassign_effectiveDate'));
+    var oldRosterWorkbookId = scriptProps.getProperty('reassign_oldRosterWorkbookId');
+    var oldRosterSheetName = scriptProps.getProperty('reassign_oldRosterSheetName');
+    
+    UtilityScriptLibrary.debugLog("Processing reassignment: " + selectedStudents.length + " students from " + oldTeacherDisplay + " to " + newTeacherDisplay);
+    
+    // Get roster folder from Year Metadata
+    var yearMetadataSheet = UtilityScriptLibrary.getSheet('yearMetadata');
+    if (!yearMetadataSheet) {
+      throw new Error("Year Metadata sheet not found");
+    }
+    
+    var metadataRows = yearMetadataSheet.getDataRange().getValues();
+    var headerRow = metadataRows[0];
+    var yearColIndex = -1;
+    var folderIdColIndex = -1;
+    
+    for (var i = 0; i < headerRow.length; i++) {
+      if (UtilityScriptLibrary.normalizeHeader(headerRow[i]) === UtilityScriptLibrary.normalizeHeader("Year")) {
+        yearColIndex = i;
+      }
+      if (UtilityScriptLibrary.normalizeHeader(headerRow[i]) === UtilityScriptLibrary.normalizeHeader("Roster Folder ID")) {
+        folderIdColIndex = i;
+      }
+    }
+    
+    if (yearColIndex === -1 || folderIdColIndex === -1) {
+      throw new Error("Required columns not found in Year Metadata sheet");
+    }
+    
+    var yearRow = null;
+    for (var i = 0; i < metadataRows.length; i++) {
+      if (metadataRows[i][yearColIndex] && metadataRows[i][yearColIndex].toString() === year) {
+        yearRow = metadataRows[i];
+        break;
+      }
+    }
+    
+    if (!yearRow) {
+      throw new Error("No roster folder found for year: " + year);
+    }
+    
+    var rosterFolderId = yearRow[folderIdColIndex];
+    var rosterFolder = DriveApp.getFolderById(rosterFolderId);
+    UtilityScriptLibrary.debugLog("✅ Found roster folder for year " + year);
+    
+    // Get new teacher info
+    var newTeacherInfo = getTeacherInfoByDisplayName(newTeacherDisplay);
+    if (!newTeacherInfo) {
+      throw new Error("Could not find new teacher info in Teacher Roster Lookup");
+    }
+    
+    // FIXED: Use displayName instead of teacherName for roster file lookup
+    var newRosterWorkbook = getOrCreateRosterFromTemplate(newTeacherInfo.displayName, rosterFolder, year, currentSemester);
+    var newRosterSheet = findSemesterRoster(newRosterWorkbook, currentSemester);
+    
+    if (!newRosterSheet) {
+      throw new Error("Could not find or create roster sheet for " + currentSemester + " in new teacher's workbook");
+    }
+    
+    UtilityScriptLibrary.debugLog("✅ Got/created new teacher roster: " + newRosterSheet.getName());
+    
+    // Update Teacher Roster Lookup with URL - FIXED: use displayName instead of teacherName
+    var newRosterFile = DriveApp.getFileById(newRosterWorkbook.getId());
+    var newRosterUrl = newRosterFile.getUrl();
+    
+    UtilityScriptLibrary.debugLog("📝 Updating Teacher Roster Lookup for display name: " + newTeacherInfo.displayName);
+    updateTeacherRosterLookup(newTeacherInfo.displayName, newRosterUrl);
+    UtilityScriptLibrary.debugLog("✅ Teacher Roster Lookup update completed");
+    
+    // Open old teacher's roster
+    var oldRosterWorkbook = SpreadsheetApp.openById(oldRosterWorkbookId);
+    var oldRosterSheet = oldRosterWorkbook.getSheetByName(oldRosterSheetName);
+    
+    if (!oldRosterSheet) {
+      throw new Error("Could not find old roster sheet: " + oldRosterSheetName);
+    }
+    
+    // Process each selected student
+    var successCount = 0;
+    var skipCount = 0;
+    var errorCount = 0;
+    var errors = [];
+    
+    for (var i = 0; i < selectedStudents.length; i++) {
+      var student = selectedStudents[i];
+      
+      try {
+        UtilityScriptLibrary.debugLog("Processing student: " + student.firstName + " " + student.lastName + " (" + student.studentId + ")");
+        
+        // Mark student as "Transferred" in old roster and clear warning color
+        var oldHeaderMap = UtilityScriptLibrary.getHeaderMap(oldRosterSheet);
+        var statusCol = oldHeaderMap['status'];
+        oldRosterSheet.getRange(student.rowNumber, statusCol).setValue('Transferred');
+        
+        // Apply normal alternating row style (background + text color) for columns A-W (23 columns)
+        var rowRange = oldRosterSheet.getRange(student.rowNumber, 1, 1, 23);
+        if (student.rowNumber % 2 === 0) {
+          rowRange.setBackground(UtilityScriptLibrary.STYLES.ALTERNATING_DARK.background);
+          rowRange.setFontColor(UtilityScriptLibrary.STYLES.ALTERNATING_DARK.text);
+        } else {
+          rowRange.setBackground(UtilityScriptLibrary.STYLES.ALTERNATING_LIGHT.background);
+          rowRange.setFontColor(UtilityScriptLibrary.STYLES.ALTERNATING_LIGHT.text);
+        }
+        
+        UtilityScriptLibrary.debugLog("Marked as 'Transferred' in old teacher's roster and cleared warning color");
+        
+        // Check if student already exists in new roster
+        var newHeaderMap = UtilityScriptLibrary.getHeaderMap(newRosterSheet);
+        var studentExists = checkIfStudentExists(newRosterSheet, student.studentId, newHeaderMap);
+        
+        if (studentExists) {
+          UtilityScriptLibrary.debugLog("Student already exists in new roster - skipping roster addition");
+          skipCount++;
+        } else {
+          // Add to new roster
+          addStudentToRosterFromData(newRosterSheet, student, newHeaderMap);
+          UtilityScriptLibrary.debugLog("Added to new teacher's roster");
+        }
+        
+        // Add to attendance sheets
+        addStudentToAttendanceSheetsFromDate(newRosterWorkbook, student, effectiveDate);
+        
+        successCount++;
+        UtilityScriptLibrary.debugLog("Successfully processed student: " + student.studentId);
+        
+      } catch (error) {
+        errorCount++;
+        var errorMsg = student.firstName + ' ' + student.lastName + ' (' + student.studentId + '): ' + error.message;
+        errors.push(errorMsg);
+        UtilityScriptLibrary.debugLog("ERROR processing student: " + errorMsg);
+      }
+    }
+    
+    // Clean up script properties
+    var keysToDelete = [
+      'reassign_currentSemester', 'reassign_year', 'reassign_season',
+      'reassign_activeTeachers', 'reassign_oldTeacherDisplay', 'reassign_oldTeacherInfo',
+      'reassign_studentList', 'reassign_oldRosterSheetName', 'reassign_oldRosterWorkbookId',
+      'reassign_selectedStudents', 'reassign_newTeacherDisplay', 'reassign_effectiveDate'
+    ];
+    for (var i = 0; i < keysToDelete.length; i++) {
+      scriptProps.deleteProperty(keysToDelete[i]);
+    }
+    
+    UtilityScriptLibrary.debugLog("=== STUDENT REASSIGNMENT COMPLETE ===");
+    
+    // Show results
+    var message = 'Student Reassignment Complete!\n\n';
+    message += 'Successfully processed: ' + successCount + ' student(s)\n';
+    if (skipCount > 0) {
+      message += 'Already in new roster (skipped): ' + skipCount + '\n';
+    }
+    if (errorCount > 0) {
+      message += 'Errors: ' + errorCount + '\n\n';
+      message += 'Failed students:\n' + errors.join('\n');
+    }
+    
+    ui.alert('Success', message, ui.ButtonSet.OK);
+    
+  } catch (error) {
+    UtilityScriptLibrary.debugLog("ERROR in processReassignment: " + error.message);
+    SpreadsheetApp.getUi().alert('Error', 'Step 5 failed: ' + error.message, SpreadsheetApp.getUi().ButtonSet.OK);
   }
 }
 
