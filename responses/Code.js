@@ -1,5 +1,3 @@
-
-
 function authorizeScript() {
   // This function just needs to be run once to authorize the script
   // It accesses the UI which triggers the authorization prompt
@@ -2244,8 +2242,6 @@ function findPreviousSemesterRoster(spreadsheet, currentSemesterName) {
   }
 }
 
-
-
 function findTeacherInEnhancedRosterLookup(lookupSheet, teacherName) {
   try {
     if (lookupSheet.getLastRow() <= 1) {
@@ -3878,9 +3874,6 @@ function validateEnhancedTeacherRosterLookup() {
 // ============================================
 // VERIFY: By Google Drive ID (folder or file)
 // ============================================
-// ============================================
-// VERIFY: By Google Drive ID (folder or file)
-// ============================================
 function verifyByDriveId(driveId) {
   try {
     if (!driveId) {
@@ -4663,4 +4656,8 @@ function findMostRecentRosterSheet(spreadsheet) {
   // Return the first roster sheet found (usually there's only one named "[Season] Roster")
   // If multiple, they're typically in chronological order, so last one is most recent
   return rosterSheets.length > 0 ? rosterSheets[rosterSheets.length - 1] : null;
+}
+
+function runLogHeaders() {
+  UtilityScriptLibrary.logAllSheetHeaders();
 }
