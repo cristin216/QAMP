@@ -2465,9 +2465,9 @@ function populateRosterWithContinuingStudents(workbook, semesterName, students) 
 function processParent(formData, parentsSheet, studentId, existingParentId) {
   try {
     UtilityScriptLibrary.debugLog("👨‍👩‍👧‍👦 Starting processParent");
-    
+
     existingParentId = existingParentId || '';
-    
+
     var headers = parentsSheet.getRange(1, 1, 1, parentsSheet.getLastColumn()).getValues()[0];
     var getCol = function(name) {
       for (var i = 0; i < headers.length; i++) {
@@ -2490,19 +2490,22 @@ function processParent(formData, parentsSheet, studentId, existingParentId) {
       formData["Address Formatted"] = UtilityScriptLibrary.formatAddress(formData["Address Street"] || '', parsed.city, parsed.zip);
     }
 
-    // Generate parent key based on current form data
     var parentKey = UtilityScriptLibrary.generateKey(
       formData["Parent Last Name"] || '',
-      formData["Parent First Name"] || '', 
+      formData["Parent First Name"] || '',
       formData["Email"] || ''
     );
 
-    // Get column positions dynamically
     var parentIdCol = getCol("Parent ID");
     var lookupCol = getCol("Parent Lookup");
     var studentIdsCol = getCol("Student IDs");
     var updatedCol = getCol("Updated");
     var parentGroupCol = getCol("Parent Group Interest");
+
+    var textFields = [
+      "Parent Last Name", "Parent First Name", "Salutation", "Email", "Email 2",
+      "Phone", "Address Formatted", "Billing Preference", "Additional Contacts", "Referral"
+    ];
 
     var parentId = existingParentId;
     var parentRow = UtilityScriptLibrary.findParentRow(parentsSheet, parentId, parentKey);
@@ -2512,88 +2515,52 @@ function processParent(formData, parentsSheet, studentId, existingParentId) {
     UtilityScriptLibrary.debugLog("findParentRow result: " + parentRow);
     UtilityScriptLibrary.debugLog("=== END PARENT DEBUG ===");
 
-    // Text fields to update
-    var textFields = [
-      "Parent Last Name", "Parent First Name", "Salutation", "Email", "Email 2", 
-      "Phone", "Address Formatted", "Billing Preference", "Additional Contacts", "Referral"
-    ];
-
     if (parentRow !== -1) {
-      // UPDATE EXISTING PARENT
       UtilityScriptLibrary.debugLog("📄 Updating existing parent");
-      var rowValues = parentsSheet.getRange(parentRow, 1, 1, parentsSheet.getLastColumn()).getValues()[0];
-      var changesMade = false;
-      
-      // Update text fields
+
+      // Build fields object from formData
+      var fieldsObj = {};
       for (var j = 0; j < textFields.length; j++) {
-        var field = textFields[j];
-        var col = getCol(field);
-        if (col) {
-          var newValue = formData[field] || '';
-          var currentValue = rowValues[col - 1] || '';
-          if (String(newValue) !== String(currentValue)) {
-            parentsSheet.getRange(parentRow, col).setValue(newValue);
-            changesMade = true;
-            UtilityScriptLibrary.debugLog("Updated " + field + ": '" + currentValue + "' → '" + newValue + "'");
-          }
-        }
+        fieldsObj[textFields[j]] = formData[textFields[j]] || '';
       }
-      
-      // Update Parent Lookup key to reflect current info (fixes email/name changes)
-      if (lookupCol) {
-        var currentLookup = String(rowValues[lookupCol - 1] || '').toLowerCase().trim();
-        if (currentLookup !== parentKey) {
-          parentsSheet.getRange(parentRow, lookupCol).setValue(parentKey);
-          changesMade = true;
-          UtilityScriptLibrary.debugLog("Updated Parent Lookup: '" + currentLookup + "' → '" + parentKey + "'");
-        }
-      }
-      
+
+      var updateResult = UtilityScriptLibrary.updateParentContactFields(
+        parentsSheet, parentRow, fieldsObj, { newLookupKey: parentKey }
+      );
+      var changesMade = updateResult.changesMade;
+
       // Update Student IDs list (add if not already present)
       if (studentIdsCol) {
+        var rowValues = parentsSheet.getRange(parentRow, 1, 1, parentsSheet.getLastColumn()).getValues()[0];
         var currentStudentIds = String(rowValues[studentIdsCol - 1] || '');
         var studentIdArray = currentStudentIds ? currentStudentIds.split(',').map(function(id) { return id.trim(); }) : [];
-        
         if (studentIdArray.indexOf(studentId) === -1) {
           studentIdArray.push(studentId);
-          var updatedStudentIds = studentIdArray.join(', ');
-          parentsSheet.getRange(parentRow, studentIdsCol).setValue(updatedStudentIds);
-          changesMade = true;
+          parentsSheet.getRange(parentRow, studentIdsCol).setValue(studentIdArray.join(', '));
           UtilityScriptLibrary.debugLog("Added student ID " + studentId + " to parent's student list");
         }
       }
-      
+
       // Update Parent Group Interest checkbox
       if (parentGroupCol) {
         var parentGroupCell = parentsSheet.getRange(parentRow, parentGroupCol);
         parentGroupCell.insertCheckboxes();
-        var parentGroupValue = (formData["Parent Group Interest"] === "Yes");
-        parentGroupCell.setValue(parentGroupValue);
-      }
-
-      // Update Updated checkbox
-      if (updatedCol) {
-        var updatedCell = parentsSheet.getRange(parentRow, updatedCol);
-        updatedCell.insertCheckboxes();
-        updatedCell.setValue(changesMade);
+        parentGroupCell.setValue(formData["Parent Group Interest"] === "Yes");
       }
 
     } else {
-      // CREATE NEW PARENT
       UtilityScriptLibrary.debugLog("➕ Creating new parent");
       parentId = UtilityScriptLibrary.generateNextId(parentsSheet, "Parent ID", "P");
-      
+
       var newRow = new Array(headers.length);
       for (var m = 0; m < headers.length; m++) {
         newRow[m] = '';
       }
-      
-      // Set basic parent information
+
       newRow[parentIdCol - 1] = parentId;
       newRow[lookupCol - 1] = parentKey;
       newRow[studentIdsCol - 1] = studentId;
-      
-      // Set text fields
+
       for (var n = 0; n < textFields.length; n++) {
         var field = textFields[n];
         var col = getCol(field);
@@ -2601,19 +2568,16 @@ function processParent(formData, parentsSheet, studentId, existingParentId) {
           newRow[col - 1] = formData[field] || '';
         }
       }
-      
+
       parentsSheet.appendRow(newRow);
       var newRowIndex = parentsSheet.getLastRow();
-      
-      // Set Parent Group Interest checkbox
+
       if (parentGroupCol) {
         var parentGroupCell = parentsSheet.getRange(newRowIndex, parentGroupCol);
         parentGroupCell.insertCheckboxes();
-        var parentGroupValue = (formData["Parent Group Interest"] === "Yes");
-        parentGroupCell.setValue(parentGroupValue);
+        parentGroupCell.setValue(formData["Parent Group Interest"] === "Yes");
       }
-      
-      // Set Updated checkbox  
+
       if (updatedCol) {
         var updatedCell = parentsSheet.getRange(newRowIndex, updatedCol);
         updatedCell.insertCheckboxes();
@@ -2623,7 +2587,7 @@ function processParent(formData, parentsSheet, studentId, existingParentId) {
 
     UtilityScriptLibrary.debugLog("✅ Completed processParent - ID: " + parentId);
     return parentId;
-    
+
   } catch (error) {
     UtilityScriptLibrary.debugLog("❌ Error in processParent: " + error.message);
     throw error;

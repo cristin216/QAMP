@@ -3,7 +3,7 @@
 WORKBOOK DOCUMENTATION
 ================================================================================
   Workbook Name: Responses
-  Most Recent version: 110
+  Most Recent version: 111
   Primary Purpose:
       Stores all form submissions, teacher and student metadata, semester registration
       data, calendar information, and debugging logs. Used by scripts for enrollment,
@@ -133,34 +133,88 @@ RESPONSES FUNCTION DIRECTORY
             Brief description of what the function does
             Category: CATEGORY_NAME
             Local functions used: function1(), function2()
-            Utility functions used: UtilityScriptLibrary.function1(), UtilityScriptLibrary.function2()
+            Utility functions used: function1(), function2()
 
   --------------------------------------------------------------------------------
   ALPHABETICAL INDEX:
   --------------------------------------------------------------------------------
-    addCarryoverStudentsToNewRoster, addRosterTemplateBorders, addStudentToAttendanceSheet, addStudentToAttendanceSheets,
-    addStudentToAttendanceSheetsFromDate, addStudentToNewRosterTemplate, addStudentToRosterFromData,
-    addStudentToSemesterRoster, applyTeacherDropdownToCurrentSemester, applyTeacherDropdownToSheet,
-    authorizeScript, calculateExperienceStartRange, calculateGraduationYear, checkIfStudentExists,
-    convertCarryoverToActive, convertStudentInfoToAttendanceObject, createCurrentMonthAttendance, createInvoiceLogSheet,
-    createStudentObjectForAttendance, createTeacherInfoObject, extractDisplayNameFromFullName,
-    extractFormData, extractNumericLessonLength, extractStudentDataFromRoster,
-    findPreviousSemesterRoster, findSemesterRoster, findTeacherInEnhancedRosterLookup, formatInvoiceLogSheet,
-    formatLessonLengthWithMinutes, generateAttendanceSheetFromRoster, getActiveStudentsFromRoster,
-    getActiveTeachersForDropdown, getAllTeachersWithGroupAssignments, getCurrentSemesterMonth,
-    getCurrentSemesterName, getExistingGroupIds, getMonthName, getMostRecentMonthSheet,
-    getMostRecentMonthSheets, getOrCreateRosterFromTemplate, getSemesterDates,
-    getTeacherIdFromContacts, getTeacherInfoByDisplayName, getTeacherInfoByFullName,
-    getTeacherRosterLookupSheet, handleFormEdit, handleRosterUpdate, hasMonthBeenInvoiced,
-    markTeacherAsActiveInLookup, onOpen, processParent, processPendingAssignments,
-    processRoster, processSingleRow, processStudent, reassignStep2_selectStudents,
-    reassignStep2b_processStudentSelection, reassignStep3_selectNewTeacher,
-    reassignStep4_enterEffectiveDate, reassignStep5_processReassignment, reassignStudentToNewTeacher,
-    refreshCurrentSemesterTeacherDropdown, setupCompleteRosterWorkbook, setupInvoiceLogHeaders,
-    setupNewRosterTemplate, setupRosterTemplateFormatting, setupRosterTemplateProtection,
-    setupStatusValidation, shouldProcessEdit, showStudentCheckboxDialog, showTeacherDropdownDialog,
-    studentExistsInAttendanceSheet, updateAllTeacherGroupAssignments, updateGroupAssignmentsForCurrentMonth,
-    updateStudentWithParentId, updateTeacherRosterLookup, validateEnhancedTeacherRosterLookup
+    addCarryoverStudentsToNewRoster
+    addRosterTemplateBorders
+    addStudentToAttendanceSheet
+    addStudentToAttendanceSheets
+    addStudentToAttendanceSheetsFromDate
+    addStudentToNewRosterTemplate
+    addStudentToRosterFromData
+    addStudentToSemesterRoster
+    applyTeacherDropdownToCurrentSemester
+    applyTeacherDropdownToSheet
+    authorizeScript
+    calculateExperienceStartRange
+    calculateGraduationYear
+    checkIfStudentExists
+    convertCarryoverToActive
+    convertStudentInfoToAttendanceObject
+    createCurrentMonthAttendance
+    createInvoiceLogSheet
+    createStudentObjectForAttendance
+    createTeacherInfoObject
+    extractDisplayNameFromFullName
+    extractFormData
+    extractNumericLessonLength
+    extractStudentDataFromRoster
+    findPreviousSemesterRoster
+    findSemesterRoster
+    findTeacherInEnhancedRosterLookup
+    formatInvoiceLogSheet
+    formatLessonLengthWithMinutes
+    generateAttendanceSheetFromRoster
+    getActiveStudentsFromRoster
+    getActiveTeachersForDropdown
+    getAllTeachersWithGroupAssignments
+    getCurrentSemesterMonth
+    getCurrentSemesterName
+    getExistingGroupIds
+    getMonthName
+    getMostRecentMonthSheet
+    getMostRecentMonthSheets
+    getOrCreateRosterFromTemplate
+    getSemesterDates
+    getTeacherIdFromContacts
+    getTeacherInfoByDisplayName
+    getTeacherInfoByFullName
+    getTeacherRosterLookupSheet
+    handleFormEdit
+    handleRosterUpdate
+    hasMonthBeenInvoiced
+    markTeacherAsActiveInLookup
+    onOpen
+    processParent
+    processPendingAssignments
+    processRoster
+    processSingleRow
+    processStudent
+    reassignStep2_selectStudents
+    reassignStep2b_processStudentSelection
+    reassignStep3_selectNewTeacher
+    reassignStep4_enterEffectiveDate
+    reassignStep5_processReassignment
+    reassignStudentToNewTeacher
+    refreshCurrentSemesterTeacherDropdown
+    setupCompleteRosterWorkbook
+    setupInvoiceLogHeaders
+    setupNewRosterTemplate
+    setupRosterTemplateFormatting
+    setupRosterTemplateProtection
+    setupStatusValidation
+    shouldProcessEdit
+    showStudentCheckboxDialog
+    showTeacherDropdownDialog
+    studentExistsInAttendanceSheet
+    updateAllTeacherGroupAssignments
+    updateGroupAssignmentsForCurrentMonth
+    updateStudentWithParentId
+    updateTeacherRosterLookup
+    validateEnhancedTeacherRosterLookup
 
   --------------------------------------------------------------------------------
   FUNCTION REFERENCE (Alphabetical)
@@ -170,73 +224,71 @@ RESPONSES FUNCTION DIRECTORY
         Sets Status to "Carryover" and applies WARNING formatting to entire row (A-X).
         Category: ROSTER_OPERATIONS
         Local functions used: findPreviousSemesterRoster(), checkIfStudentExists()
-        Utility functions used: UtilityScriptLibrary.debugLog(), UtilityScriptLibrary.getHeaderMap(), 
-                                UtilityScriptLibrary.STYLES.WARNING.background, UtilityScriptLibrary.STYLES.WARNING.text
+        Utility functions used: debugLog(), getHeaderMap(), STYLES.WARNING.background, STYLES.WARNING.text
 
     addRosterTemplateBorders(sheet) -> void
         Adds thick green borders and dotted borders to roster template sheet to separate sections.
         Borders separate editable area, admin area, and hours/lessons remaining columns.
         Category: SHEET_FORMATTING
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.debugLog(), UtilityScriptLibrary.STYLES
+        Utility functions used: debugLog(), STYLES
 
     addStudentToAttendanceSheet(attendanceSheet, studentData) -> void
         Adds a single student to an attendance sheet with proper formatting and validation.
         Includes status dropdown, formatted lesson length, and proper column values.
         Category: ATTENDANCE_OPERATIONS
         Local functions used: setupStatusValidation()
-        Utility functions used: UtilityScriptLibrary.debugLog(), UtilityScriptLibrary.createColumnFinder()
+        Utility functions used: debugLog(), createColumnFinder()
 
     addStudentToAttendanceSheets(rosterWorkbook, studentData, semesterName, customToday?) -> void
         Adds student to all relevant attendance sheets in the roster workbook.
         Handles both current and future month sheets based on effective date.
         Category: ATTENDANCE_OPERATIONS
         Local functions used: getMostRecentMonthSheets(), addStudentToAttendanceSheet(), getMonthName()
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Utility functions used: debugLog()
 
     addStudentToAttendanceSheetsFromDate(workbook, studentInfo, effectiveDate) -> void
         Adds student to attendance sheets starting from a specific effective date.
         Used for mid-semester enrollments or teacher reassignments.
         Category: ATTENDANCE_OPERATIONS
-        Local functions used: getMostRecentMonthSheets(), convertStudentInfoToAttendanceObject(), 
+        Local functions used: getMostRecentMonthSheets(), convertStudentInfoToAttendanceObject(),
                              studentExistsInAttendanceSheet(), addStudentToAttendanceSheet()
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Utility functions used: debugLog()
 
     addStudentToNewRosterTemplate(sheet, formData, studentId) -> void
         Adds a new student to the roster template sheet with all form data.
         Handles grade, experience, instrument, lesson length, and parent information.
         Category: ROSTER_OPERATIONS
         Local functions used: calculateGraduationYear(), calculateExperienceStartRange()
-        Utility functions used: UtilityScriptLibrary.debugLog(), UtilityScriptLibrary.createColumnFinder()
+        Utility functions used: debugLog(), createColumnFinder()
 
     addStudentToRosterFromData(rosterSheet, studentInfo, headerMap) -> void
         Adds student to roster using extracted student data with proper formatting.
         Used when processing pending assignments or reassignments.
         Category: ROSTER_OPERATIONS
         Local functions used: calculateGraduationYear(), calculateExperienceStartRange()
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Utility functions used: debugLog()
 
     addStudentToSemesterRoster(workbook, formData, studentId, semesterName) -> void
         Adds student to the semester-specific roster sheet within a teacher workbook.
         Finds or creates semester roster and populates with student data.
         Category: ROSTER_OPERATIONS
         Local functions used: findSemesterRoster(), addStudentToNewRosterTemplate(), checkIfStudentExists()
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Utility functions used: debugLog()
 
     applyTeacherDropdownToCurrentSemester() -> void
         Applies teacher dropdown validation to the current semester sheet.
         Called on spreadsheet open to ensure dropdown is available.
         Category: UI_OPERATIONS
         Local functions used: getCurrentSemesterName(), applyTeacherDropdownToSheet()
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Utility functions used: debugLog()
 
     applyTeacherDropdownToSheet(sheet) -> void
         Applies teacher dropdown data validation to the Teacher column of a sheet.
         Uses active teacher list from current semester.
         Category: UI_OPERATIONS
         Local functions used: getActiveTeachersForDropdown()
-        Utility functions used: UtilityScriptLibrary.debugLog(), UtilityScriptLibrary.getHeaderMap(), 
-                                 UtilityScriptLibrary.normalizeHeader()
+        Utility functions used: debugLog(), getHeaderMap(), normalizeHeader()
 
     authorizeScript() -> void
         One-time authorization function to grant script necessary permissions.
@@ -250,28 +302,28 @@ RESPONSES FUNCTION DIRECTORY
         Handles various input formats and edge cases.
         Category: DATA_PROCESSING
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Utility functions used: debugLog()
 
     calculateGraduationYear(grade) -> Number|String
         Calculates graduation year from current grade level.
         Returns "N/A" for adult students.
         Category: DATA_PROCESSING
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Utility functions used: debugLog()
 
     checkIfStudentExists(rosterSheet, studentId, headerMap) -> Boolean
         Checks if a student already exists in a roster sheet by Student ID.
         Returns true if found, false otherwise.
         Category: VALIDATION
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Utility functions used: debugLog()
 
     convertCarryoverToActive(rosterSheet, studentId, formData, headerMap) -> void
         Converts a Carryover student to Active status when they re-register.
         Replaces Lessons Registered with new value, resets Lessons Completed to 0, and removes WARNING formatting.
         Category: ROSTER_OPERATIONS
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Utility functions used: debugLog()
 
     convertStudentInfoToAttendanceObject(studentInfo) -> Object
         Converts roster student data to attendance sheet format.
@@ -292,7 +344,7 @@ RESPONSES FUNCTION DIRECTORY
         Sets up headers and applies formatting and protection.
         Category: SHEET_CREATION
         Local functions used: setupInvoiceLogHeaders(), formatInvoiceLogSheet()
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Utility functions used: debugLog()
 
     createStudentObjectForAttendance(studentData) -> Object
         Creates a student data object formatted for attendance sheet insertion.
@@ -320,7 +372,7 @@ RESPONSES FUNCTION DIRECTORY
         Normalizes headers and handles data type conversions.
         Category: DATA_PROCESSING
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.normalizeHeader()
+        Utility functions used: normalizeHeader()
 
     extractNumericLessonLength(lessonLengthValue) -> Number
         Extracts numeric minutes from lesson length value (e.g., "60 min" → 60).
@@ -334,36 +386,35 @@ RESPONSES FUNCTION DIRECTORY
         Returns object with all student fields.
         Category: DATA_PROCESSING
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Utility functions used: debugLog()
 
     findPreviousSemesterRoster(spreadsheet, currentSemesterName) -> String|null
         Searches Semester Metadata and workbook sheets to find the most recent previous semester roster sheet.
         Returns sheet name if found, null otherwise.
         Category: ROSTER_OPERATIONS
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.getSheet(), UtilityScriptLibrary.extractSeasonFromSemester(), 
-                                UtilityScriptLibrary.debugLog()
+        Utility functions used: getSheet(), extractSeasonFromSemester(), debugLog()
 
     findSemesterRoster(workbook, semesterName) -> Sheet|null
         Finds a semester-specific roster sheet in a workbook.
         Returns the sheet if found, null otherwise.
         Category: SHEET_OPERATIONS
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Utility functions used: debugLog()
 
     findTeacherInEnhancedRosterLookup(lookupSheet, teacherName) -> Number
         Finds a teacher's row in the Enhanced Teacher Roster Lookup sheet.
         Returns row number or -1 if not found.
         Category: LOOKUP_OPERATIONS
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.normalizeHeader()
+        Utility functions used: normalizeHeader()
 
     formatInvoiceLogSheet(sheet) -> void
         Applies formatting to Invoice Log sheet including date/currency formats.
         Protects sheet from editing (view-only for teachers).
         Category: SHEET_FORMATTING
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Utility functions used: debugLog()
 
     formatLessonLengthWithMinutes(lessonLengthValue) -> String
         Formats lesson length value to include "min" suffix if not present.
@@ -377,35 +428,35 @@ RESPONSES FUNCTION DIRECTORY
         Populates with all active students from roster.
         Category: ATTENDANCE_OPERATIONS
         Local functions used: getActiveStudentsFromRoster(), addStudentToAttendanceSheet()
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Utility functions used: debugLog()
 
     getActiveStudentsFromRoster(rosterSheet) -> Array
         Retrieves all active students from a roster sheet.
         Excludes withdrawn students and returns array of student data objects.
         Category: DATA_RETRIEVAL
         Local functions used: extractStudentDataFromRoster()
-        Utility functions used: UtilityScriptLibrary.debugLog(), UtilityScriptLibrary.createColumnFinder()
+        Utility functions used: debugLog(), createColumnFinder()
 
     getActiveTeachersForDropdown() -> Array
         Gets list of active teachers for dropdown validation.
         Retrieves from Teacher Roster Lookup sheet.
         Category: DATA_RETRIEVAL
         Local functions used: getCurrentSemesterName(), getTeacherRosterLookupSheet()
-        Utility functions used: UtilityScriptLibrary.debugLog(), UtilityScriptLibrary.normalizeHeader()
+        Utility functions used: debugLog(), normalizeHeader()
 
     getAllTeachersWithGroupAssignments() -> Array
         Retrieves all teachers with their group assignments from lookup sheet.
         Returns array of teacher objects with name and group assignment.
         Category: DATA_RETRIEVAL
         Local functions used: getTeacherRosterLookupSheet()
-        Utility functions used: UtilityScriptLibrary.debugLog(), UtilityScriptLibrary.createColumnFinder()
+        Utility functions used: debugLog(), createColumnFinder()
 
     getCurrentSemesterMonth(semesterName) -> String
         Gets the current month name based on semester and current date.
         Handles semester date ranges.
         Category: DATE_OPERATIONS
         Local functions used: getSemesterDates(), getMonthName()
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Utility functions used: debugLog()
 
     getCurrentSemesterName() -> String
         Gets the current semester name from Calendar sheet D2.
@@ -419,7 +470,7 @@ RESPONSES FUNCTION DIRECTORY
         Returns array of group ID strings.
         Category: DATA_RETRIEVAL
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Utility functions used: debugLog()
 
     getMonthName(date) -> String
         Returns month name from a date object (e.g., "January").
@@ -432,49 +483,49 @@ RESPONSES FUNCTION DIRECTORY
         Compares sheet names to find latest month.
         Category: SHEET_OPERATIONS
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Utility functions used: debugLog()
 
     getMostRecentMonthSheets(workbook) -> Array
         Gets all month sheets from the most recent month onwards.
         Returns array of sheet objects sorted chronologically.
         Category: SHEET_OPERATIONS
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Utility functions used: debugLog()
 
     getOrCreateRosterFromTemplate(teacher, rosterFolder, year, semesterName) -> Spreadsheet
         Gets existing teacher roster or creates new one from template.
         Creates complete workbook structure including Invoice Log.
         Category: ROSTER_OPERATIONS
         Local functions used: setupCompleteRosterWorkbook()
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Utility functions used: debugLog()
 
     getSemesterDates(semesterName) -> Object
         Returns start and end dates for a given semester.
         Retrieves from Calendar sheet configuration.
         Category: DATE_OPERATIONS
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Utility functions used: debugLog()
 
     getTeacherIdFromContacts(teacherName) -> String
         Gets teacher ID from Contacts sheet by teacher name.
         Returns empty string if not found.
         Category: DATA_RETRIEVAL
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.debugLog(), UtilityScriptLibrary.normalizeHeader()
+        Utility functions used: debugLog(), normalizeHeader()
 
     getTeacherInfoByDisplayName(displayName) -> Object|null
         Gets complete teacher information using display name (First Last-Initial).
         Returns teacher info object or null if not found.
         Category: DATA_RETRIEVAL
         Local functions used: getTeacherRosterLookupSheet()
-        Utility functions used: UtilityScriptLibrary.debugLog(), UtilityScriptLibrary.createColumnFinder()
+        Utility functions used: debugLog(), createColumnFinder()
 
     getTeacherInfoByFullName(teacherName) -> Object|null
         Gets complete teacher information using full name.
         Returns teacher info object or null if not found.
         Category: DATA_RETRIEVAL
         Local functions used: findTeacherInEnhancedRosterLookup(), getTeacherRosterLookupSheet()
-        Utility functions used: UtilityScriptLibrary.debugLog(), UtilityScriptLibrary.createColumnFinder()
+        Utility functions used: debugLog(), createColumnFinder()
 
     getTeacherRosterLookupSheet() -> Sheet|null
         Gets the Teacher Roster Lookup sheet from active spreadsheet.
@@ -488,30 +539,29 @@ RESPONSES FUNCTION DIRECTORY
         Triggers student processing when Teacher column is edited.
         Category: EVENT_HANDLER
         Local functions used: shouldProcessEdit(), processSingleRow()
-        Utility functions used: UtilityScriptLibrary.debugLog(), UtilityScriptLibrary.getHeaderMap(), 
-                                 UtilityScriptLibrary.normalizeHeader()
+        Utility functions used: debugLog(), getHeaderMap(), normalizeHeader()
 
     handleRosterUpdate(teacher, rosterFolder, studentData, year, semesterName) -> void
         Handles adding/updating student in teacher roster and attendance sheets.
         Orchestrates roster creation, student addition, and attendance updates.
         Category: ROSTER_OPERATIONS
-        Local functions used: getOrCreateRosterFromTemplate(), addStudentToSemesterRoster(), 
+        Local functions used: getOrCreateRosterFromTemplate(), addStudentToSemesterRoster(),
                              addStudentToAttendanceSheets()
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Utility functions used: debugLog()
 
     hasMonthBeenInvoiced(sheet) -> Boolean
         Checks if a month attendance sheet has already been invoiced.
         Looks for "Invoiced" status in metadata or specific cells.
         Category: VALIDATION
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Utility functions used: debugLog()
 
     markTeacherAsActiveInLookup(teacherName) -> void
         Marks a teacher as active in the Teacher Roster Lookup sheet.
         Updates status and last updated timestamp.
         Category: DATA_UPDATE
         Local functions used: getTeacherRosterLookupSheet(), findTeacherInEnhancedRosterLookup()
-        Utility functions used: UtilityScriptLibrary.debugLog(), UtilityScriptLibrary.createColumnFinder()
+        Utility functions used: debugLog(), createColumnFinder()
 
     onOpen() -> void
         Runs when spreadsheet opens. Creates custom menu and applies teacher dropdown.
@@ -522,142 +572,133 @@ RESPONSES FUNCTION DIRECTORY
 
     processParent(formData, parentsSheet, studentId, existingParentId?) -> String
         Processes parent information from form submission.
-        Creates new parent record or links to existing parent. Returns Parent ID.
+        Creates new parent record or updates existing parent contact fields. Returns Parent ID.
         Category: DATA_PROCESSING
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.debugLog(), UtilityScriptLibrary.generateUniqueId(), 
-                                 UtilityScriptLibrary.normalizeHeader()
+        Utility functions used: debugLog(), findParentRow(), formatAddress(), formatPhoneNumber(),
+                                generateKey(), generateNextId(), normalizeHeader(),
+                                parseCityZipMessy(), updateParentContactFields()
 
     processPendingAssignments() -> void
         Processes all pending teacher assignments from current semester sheet.
         Batch processes multiple students that need teacher roster updates.
         Category: BATCH_OPERATIONS
         Local functions used: getCurrentSemesterName(), processSingleRow()
-        Utility functions used: UtilityScriptLibrary.debugLog(), UtilityScriptLibrary.getHeaderMap(), 
-                                 UtilityScriptLibrary.normalizeHeader()
+        Utility functions used: debugLog(), getHeaderMap(), normalizeHeader()
 
     processRoster(formData, sheet, editedRow, headerMap, fieldMap, studentId, rosterFolder, year, semesterName) -> void
         Processes roster update for assigned teacher.
         Coordinates student data preparation and roster/attendance updates.
         Category: ROSTER_OPERATIONS
         Local functions used: handleRosterUpdate(), extractStudentDataFromRoster()
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Utility functions used: debugLog()
 
-    processSingleRow(sheet, row, headerMap) -> void
-        Processes a single row from form responses sheet.
-        Handles student, parent, and roster processing for one student.
+    processSingleRow(sheet, row, headerMap, fieldMap, semesterName) -> void
+        Processes a single form submission row end-to-end.
+        Orchestrates student creation, parent linking, and roster assignment.
         Category: DATA_PROCESSING
-        Local functions used: extractFormData(), processStudent(), processParent(), updateStudentWithParentId(), 
-                             processRoster()
-        Utility functions used: UtilityScriptLibrary.debugLog(), UtilityScriptLibrary.getFieldMap()
+        Local functions used: extractFormData(), processStudent(), processParent(),
+                             updateStudentWithParentId()
+        Utility functions used: debugLog(), getHeaderMap(), getSheet(), normalizeHeader()
 
-    processStudent(formData, contactsSheet, enrollmentTerm) -> Object
-        Processes student information from form data.
-        Creates new student record or updates existing. Returns {studentId, isNew, studentRow}.
+    processStudent(formData, studentsSheet, parentsSheet) -> Object
+        Processes student information from form submission.
+        Creates new student record or updates existing. Returns student result object.
         Category: DATA_PROCESSING
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.debugLog(), UtilityScriptLibrary.generateUniqueId(), 
-                                 UtilityScriptLibrary.normalizeHeader()
+        Utility functions used: debugLog(), findStudentRow(), generateNextId(),
+                                getHeaderMap(), normalizeHeader()
 
-    reassignStep2_selectStudents(oldTeacherDisplay) -> void
-        Step 2 of reassignment: Shows checkbox dialog to select students to reassign.
-        Displays list of active students from old teacher's roster.
+    reassignStep2_selectStudents(teacherName) -> void
+        Step 2 of reassignment: displays student selection dialog for chosen teacher.
         Category: UI_OPERATIONS
-        Local functions used: showStudentCheckboxDialog(), getTeacherInfoByDisplayName()
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Local functions used: getTeacherInfoByDisplayName(), showStudentCheckboxDialog()
+        Utility functions used: debugLog()
 
-    reassignStep2b_processStudentSelection(selectedIndices) -> void
-        Step 2b of reassignment: Processes student selection and moves to teacher selection.
-        Stores selected students and calls next step.
+    reassignStep2b_processStudentSelection(selectedStudents, teacherName) -> void
+        Step 2b: processes selected students and shows teacher selection dialog.
         Category: UI_OPERATIONS
-        Local functions used: reassignStep3_selectNewTeacher()
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Local functions used: showTeacherDropdownDialog()
+        Utility functions used: debugLog()
 
-    reassignStep3_selectNewTeacher() -> void
-        Step 3 of reassignment: Shows dropdown to select new teacher.
-        Displays active teachers for selection.
+    reassignStep3_selectNewTeacher(selectedStudents, fromTeacher, newTeacher) -> void
+        Step 3: captures new teacher selection and shows effective date dialog.
         Category: UI_OPERATIONS
-        Local functions used: getActiveTeachersForDropdown(), showTeacherDropdownDialog()
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Local functions used: None
+        Utility functions used: debugLog()
 
-    reassignStep4_enterEffectiveDate(newTeacherDisplay) -> void
-        Step 4 of reassignment: Prompts for effective date of reassignment.
-        Validates date and proceeds to processing.
+    reassignStep4_enterEffectiveDate(selectedStudents, fromTeacher, newTeacher) -> void
+        Step 4: captures effective date for reassignment.
         Category: UI_OPERATIONS
-        Local functions used: reassignStep5_processReassignment()
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Local functions used: None
+        Utility functions used: debugLog()
 
-    reassignStep5_processReassignment() -> void
-        Step 5 of reassignment: Executes the actual student reassignment.
-        Moves students from old to new teacher roster and updates attendance sheets.
+    reassignStep5_processReassignment(selectedStudents, fromTeacher, newTeacher, effectiveDate) -> void
+        Step 5: executes the actual student reassignment between teachers.
         Category: ROSTER_OPERATIONS
-        Local functions used: getTeacherInfoByDisplayName(), addStudentToRosterFromData(), 
+        Local functions used: getTeacherInfoByDisplayName(), handleRosterUpdate(),
                              addStudentToAttendanceSheetsFromDate()
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Utility functions used: debugLog(), getSheet()
 
-    reassignStudentToNewTeacher() -> void
-        Main entry point for student reassignment workflow.
-        Initiates multi-step reassignment process with teacher selection.
+    reassignStudentToNewTeacher(studentId, fromTeacher, newTeacher, effectiveDate) -> void
+        Reassigns a single student from one teacher to another.
+        Updates roster and attendance records.
         Category: UI_OPERATIONS
-        Local functions used: getActiveTeachersForDropdown(), showTeacherDropdownDialog()
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Local functions used: getTeacherInfoByDisplayName(), handleRosterUpdate(),
+                             addStudentToAttendanceSheetsFromDate()
+        Utility functions used: debugLog()
 
     refreshCurrentSemesterTeacherDropdown() -> void
-        Refreshes teacher dropdown in current semester sheet.
-        Updates validation list with current active teachers.
+        Refreshes teacher dropdown for the current semester sheet.
         Category: UI_OPERATIONS
         Local functions used: getCurrentSemesterName(), applyTeacherDropdownToSheet()
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Utility functions used: debugLog()
 
-    setupCompleteRosterWorkbook(spreadsheet, teacher, year, semesterName) -> void
-        Sets up complete roster workbook structure with all sheets.
-        Creates roster template, Invoice Log, semester rosters, and applies formatting.
+    setupCompleteRosterWorkbook(workbook, semesterName) -> void
+        Sets up complete roster workbook structure from template.
+        Creates all required sheets with proper formatting.
         Category: SHEET_CREATION
         Local functions used: setupNewRosterTemplate(), createInvoiceLogSheet()
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Utility functions used: debugLog()
 
     setupInvoiceLogHeaders(sheet) -> void
-        Sets up column headers for Invoice Log sheet.
-        Defines Invoice Number, Invoice Date, Student Name, Program Type, and Total Amount columns.
+        Sets up column headers for the Invoice Log sheet.
         Category: SHEET_SETUP
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.styleHeaderRow()
+        Utility functions used: debugLog()
 
-    setupNewRosterTemplate(sheet) -> void
-        Creates the roster template structure with headers and initial setup.
-        Sets up all student tracking columns and applies formatting/protection.
+    setupNewRosterTemplate(sheet, semesterName) -> void
+        Sets up a new roster template sheet with headers and formatting.
         Category: SHEET_SETUP
-        Local functions used: setupRosterTemplateFormatting(), addRosterTemplateBorders(), 
-                             setupRosterTemplateProtection()
-        Utility functions used: UtilityScriptLibrary.debugLog(), UtilityScriptLibrary.styleHeaderRow()
+        Local functions used: addRosterTemplateBorders(), setupRosterTemplateFormatting()
+        Utility functions used: debugLog(), styleHeaderRow()
 
     setupRosterTemplateFormatting(sheet) -> void
-        Applies formatting to roster template including column widths and colors.
-        Sets frozen rows/columns and conditional formatting.
+        Applies formatting rules to roster template sheet.
         Category: SHEET_FORMATTING
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Utility functions used: debugLog()
 
     setupRosterTemplateProtection(sheet) -> void
-        Applies protection to non-editable columns in roster template.
+        Applies protection to admin columns in roster template.
         Allows editing only in designated columns.
         Category: SHEET_PROTECTION
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Utility functions used: debugLog()
 
     setupStatusValidation(sheet, lastRow) -> void
         Sets up status dropdown validation for attendance sheets.
         Applies data validation with status options (Present, Absent, Excused, etc.).
         Category: SHEET_SETUP
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Utility functions used: debugLog()
 
     shouldProcessEdit(e, sheet) -> Boolean
         Determines if a form edit should be processed based on various conditions.
         Checks for duplicate submissions and validates edit context.
         Category: VALIDATION
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Utility functions used: debugLog()
 
     showStudentCheckboxDialog(title, message, studentList, callbackFunctionName) -> void
         Displays custom HTML dialog with student checkboxes for selection.
@@ -678,110 +719,158 @@ RESPONSES FUNCTION DIRECTORY
         Returns true if found, false otherwise.
         Category: VALIDATION
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.createColumnFinder()
+        Utility functions used: createColumnFinder()
 
     updateAllTeacherGroupAssignments() -> void
         Updates group assignments for all teachers with roster files.
         Batch processes group assignments to current month attendance sheets.
         Category: BATCH_OPERATIONS
         Local functions used: getAllTeachersWithGroupAssignments(), updateGroupAssignmentsForCurrentMonth()
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Utility functions used: debugLog()
 
     updateGroupAssignmentsForCurrentMonth(teacherName, semesterName) -> void
         Updates group assignments in teacher's current month attendance sheet.
         Adds new group sections that don't already exist.
         Category: ATTENDANCE_OPERATIONS
-        Local functions used: getTeacherInfoByFullName(), getMostRecentMonthSheet(), getExistingGroupIds(), 
-                             setupStatusValidation()
-        Utility functions used: UtilityScriptLibrary.debugLog(), UtilityScriptLibrary.createGroupSections()
+        Local functions used: getTeacherInfoByFullName(), getMostRecentMonthSheet(),
+                             getExistingGroupIds(), setupStatusValidation()
+        Utility functions used: debugLog(), createGroupSections()
 
     updateStudentWithParentId(contactsSheet, studentRow, parentId, getCol?) -> void
         Updates a student record with their parent's ID.
         Links student to parent in Contacts sheet.
         Category: DATA_UPDATE
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.debugLog(), UtilityScriptLibrary.normalizeHeader()
+        Utility functions used: debugLog(), normalizeHeader()
 
     updateTeacherRosterLookup(teacherName, fileUrl) -> void
         Updates Teacher Roster Lookup with roster file URL and status.
         Marks teacher as active and updates last modified timestamp.
         Category: DATA_UPDATE
         Local functions used: findTeacherInEnhancedRosterLookup()
-        Utility functions used: UtilityScriptLibrary.debugLog(), UtilityScriptLibrary.createColumnFinder()
+        Utility functions used: debugLog(), createColumnFinder()
 
     validateEnhancedTeacherRosterLookup() -> Boolean
         Validates and repairs Enhanced Teacher Roster Lookup sheet structure.
         Ensures all required columns exist with correct headers.
         Category: VALIDATION
         Local functions used: getTeacherRosterLookupSheet(), extractDisplayNameFromFullName()
-        Utility functions used: UtilityScriptLibrary.debugLog(), UtilityScriptLibrary.styleHeaderRow()
+        Utility functions used: debugLog(), styleHeaderRow()
 
   --------------------------------------------------------------------------------
   CATEGORIES:
   --------------------------------------------------------------------------------
-  
+
     ATTENDANCE_OPERATIONS (7 functions):
-      addStudentToAttendanceSheet, addStudentToAttendanceSheets, addStudentToAttendanceSheetsFromDate,
-      createCurrentMonthAttendance, generateAttendanceSheetFromRoster, updateGroupAssignmentsForCurrentMonth
+      addStudentToAttendanceSheet
+      addStudentToAttendanceSheets
+      addStudentToAttendanceSheetsFromDate
+      createCurrentMonthAttendance
+      generateAttendanceSheetFromRoster
+      updateGroupAssignmentsForCurrentMonth
 
     BATCH_OPERATIONS (2 functions):
-      processPendingAssignments, updateAllTeacherGroupAssignments
+      processPendingAssignments
+      updateAllTeacherGroupAssignments
 
     DATA_PROCESSING (13 functions):
-      calculateExperienceStartRange, calculateGraduationYear, convertStudentInfoToAttendanceObject,
-      createStudentObjectForAttendance, createTeacherInfoObject, extractDisplayNameFromFullName,
-      extractFormData, extractNumericLessonLength, extractStudentDataFromRoster,
-      formatLessonLengthWithMinutes, processParent, processSingleRow, processStudent
+      calculateExperienceStartRange
+      calculateGraduationYear
+      convertStudentInfoToAttendanceObject
+      createStudentObjectForAttendance
+      createTeacherInfoObject
+      extractDisplayNameFromFullName
+      extractFormData
+      extractNumericLessonLength
+      extractStudentDataFromRoster
+      formatLessonLengthWithMinutes
+      processParent
+      processSingleRow
+      processStudent
 
     DATA_RETRIEVAL (10 functions):
-      getActiveStudentsFromRoster, getActiveTeachersForDropdown, getAllTeachersWithGroupAssignments,
-      getCurrentSemesterName, getExistingGroupIds, getTeacherIdFromContacts, getTeacherInfoByDisplayName,
+      getActiveStudentsFromRoster
+      getActiveTeachersForDropdown
+      getAllTeachersWithGroupAssignments
+      getCurrentSemesterName
+      getExistingGroupIds
+      getMostRecentMonthSheet
+      getMostRecentMonthSheets
+      getTeacherIdFromContacts
+      getTeacherInfoByDisplayName
       getTeacherInfoByFullName
 
     DATA_UPDATE (3 functions):
-      markTeacherAsActiveInLookup, updateStudentWithParentId, updateTeacherRosterLookup
+      markTeacherAsActiveInLookup
+      updateStudentWithParentId
+      updateTeacherRosterLookup
 
     DATE_OPERATIONS (3 functions):
-      getCurrentSemesterMonth, getMonthName, getSemesterDates
+      getCurrentSemesterMonth
+      getMonthName
+      getSemesterDates
 
     EVENT_HANDLER (2 functions):
-      handleFormEdit, onOpen
+      handleFormEdit
+      onOpen
 
     LOOKUP_OPERATIONS (1 function):
       findTeacherInEnhancedRosterLookup
 
     ROSTER_OPERATIONS (8 functions):
-      addStudentToNewRosterTemplate, addStudentToRosterFromData, addStudentToSemesterRoster,
-      getOrCreateRosterFromTemplate, handleRosterUpdate, processRoster, reassignStep5_processReassignment
+      addStudentToNewRosterTemplate
+      addStudentToRosterFromData
+      addStudentToSemesterRoster
+      findPreviousSemesterRoster
+      getOrCreateRosterFromTemplate
+      handleRosterUpdate
+      processRoster
+      reassignStep5_processReassignment
 
     SETUP (1 function):
       authorizeScript
 
     SHEET_CREATION (2 functions):
-      createInvoiceLogSheet, setupCompleteRosterWorkbook
+      createInvoiceLogSheet
+      setupCompleteRosterWorkbook
 
     SHEET_FORMATTING (3 functions):
-      addRosterTemplateBorders, formatInvoiceLogSheet, setupRosterTemplateFormatting
+      addRosterTemplateBorders
+      formatInvoiceLogSheet
+      setupRosterTemplateFormatting
 
-    SHEET_OPERATIONS (5 functions):
-      findSemesterRoster, getMostRecentMonthSheet, getMostRecentMonthSheets, getTeacherRosterLookupSheet
+    SHEET_OPERATIONS (2 functions):
+      findSemesterRoster
+      getTeacherRosterLookupSheet
 
     SHEET_PROTECTION (1 function):
       setupRosterTemplateProtection
 
     SHEET_SETUP (3 functions):
-      setupInvoiceLogHeaders, setupNewRosterTemplate, setupStatusValidation
+      setupInvoiceLogHeaders
+      setupNewRosterTemplate
+      setupStatusValidation
 
     UI_OPERATIONS (9 functions):
-      applyTeacherDropdownToCurrentSemester, applyTeacherDropdownToSheet, reassignStep2_selectStudents,
-      reassignStep2b_processStudentSelection, reassignStep3_selectNewTeacher, reassignStep4_enterEffectiveDate,
-      reassignStudentToNewTeacher, refreshCurrentSemesterTeacherDropdown, showStudentCheckboxDialog,
+      applyTeacherDropdownToCurrentSemester
+      applyTeacherDropdownToSheet
+      reassignStep2_selectStudents
+      reassignStep2b_processStudentSelection
+      reassignStep3_selectNewTeacher
+      reassignStep4_enterEffectiveDate
+      reassignStudentToNewTeacher
+      refreshCurrentSemesterTeacherDropdown
+      showStudentCheckboxDialog
       showTeacherDropdownDialog
 
     VALIDATION (5 functions):
-      checkIfStudentExists, hasMonthBeenInvoiced, shouldProcessEdit, studentExistsInAttendanceSheet,
+      checkIfStudentExists
+      hasMonthBeenInvoiced
+      shouldProcessEdit
+      studentExistsInAttendanceSheet
       validateEnhancedTeacherRosterLookup
+
 ================================================================================
 END OF FUNCTION DIRECTORY
-================================================================================    
+================================================================================
 */
