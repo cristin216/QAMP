@@ -8,552 +8,703 @@ Documentation: See FUNCTIONS_Billing.md
 ================================================================================
 */
 
-function diagnosticCheckQtyColumns() {
-  // Access the Responses spreadsheet
-  var responsesSS = UtilityScriptLibrary.getWorkbook('formResponses');
-  var formSheet = responsesSS.getSheetByName('Summer 2025');
-  
-  if (!formSheet) {
-    UtilityScriptLibrary.debugLog('diagnosticCheckQtyColumns', 'ERROR', 
-      'Sheet "Summer 2025" not found. Available: ' + responsesSS.getSheets().map(function(s) { return s.getName(); }).join(', '), 
-      '', '');
-    return;
-  }
-  
-  // Get the fieldMap properly
-  var fieldMapSheet = responsesSS.getSheetByName('FieldMap');
-  if (!fieldMapSheet) {
-    UtilityScriptLibrary.debugLog('diagnosticCheckQtyColumns', 'ERROR', 
-      'FieldMap sheet not found in Form Responses workbook', '', '');
-    return;
-  }
-  var fieldMap = UtilityScriptLibrary.getFieldMappingFromSheet(fieldMapSheet);
-  
-  var headers = formSheet.getDataRange().getValues()[0];
-  
-  // Find columns that contain "30-minute" or "45-minute" or "60-minute"
-  for (var i = 0; i < headers.length; i++) {
-    var header = headers[i];
-    var headerStr = header.toString();
-    
-    if (headerStr.indexOf('30-minute') > -1 || 
-        headerStr.indexOf('45-minute') > -1 || 
-        headerStr.indexOf('60-minute') > -1) {
-      
-      // FIXED: Normalize the header before looking it up
-      var normalizedHeader = UtilityScriptLibrary.normalizeHeader(header);
-      var mappedName = fieldMap[normalizedHeader] || 'NOT FOUND';
-      var sampleValue = formSheet.getLastRow() > 1 ? formSheet.getRange(2, i + 1).getValue() : 'N/A';
-      
-      Logger.log('===== COLUMN ' + i + ' =====');
-      Logger.log('Header: ' + JSON.stringify(header));
-      Logger.log('Normalized: ' + normalizedHeader);
-      Logger.log('Mapped to: ' + mappedName);
-      Logger.log('Sample value: ' + JSON.stringify(sampleValue));
-      Logger.log('');
-    }
-  }
-  
-  Logger.log('Diagnostic complete');
-}
-
-
 // ============================================================================
 // SECTION 1: UI MENU
 // ============================================================================
 
-function onOpen() {
-  SpreadsheetApp.getUi()
-    .createMenu('QAMP Tools')
-    .addItem('Set Up New Semester', 'setupNewSemester')
-    .addItem('Begin New Billing Cycle', 'runBillingCycleAutomation')
-    .addItem('Full Reconciliation', 'runFullReconciliationUI')
-    .addItem('Lessons Only', 'runWeeklyLessonReconciliationUI')
-    .addItem('Payments Only', 'runPaymentReconciliationUI')
-    .addItem('Forms Only', 'runFormsReconciliationUI')
-    .addItem('Generate Documents', 'runRegistrationPacketGenerationUI')
-    .addItem('Print Documents', 'convertFolderDocsToPdfUI')
-    .addItem('Create New Attendance Sheets', 'createNewAttendanceSheets')
-    .addItem('Verify Payments 2024-2025', 'verifyPayments2024_2025')
-    .addItem('Verify Payments (Detailed)', 'verifyPaymentsDetailed')
-    .addToUi();
-}
-
-function runBillingCycleAutomation() {
-  try {
-    UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "INFO", "Starting billing cycle automation", "", "");
-    
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var ui = SpreadsheetApp.getUi();
-    var customToday = promptForCustomToday();
-    var billingCycleName = promptForBillingCycleName(customToday);
-    if (!billingCycleName) return;
-
-    UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "DEBUG", "User inputs confirmed", 
-                  "Date: " + customToday.toLocaleDateString() + ", Cycle: " + billingCycleName, "");
-
-    var semesterSheet = ss.getSheetByName('Semester Metadata');
-    if (!semesterSheet) throw new Error('Semester Metadata sheet not found.');
-    var semesterData = semesterSheet.getDataRange().getValues();
-    if (semesterData.length < 2) throw new Error('No semesters found in Semester Metadata.');
-    
-    var semesterName = semesterData[semesterData.length - 1][0];
-
-    verifyProgramsForSemester(semesterName, ss);
-
-    if (!verifyRatesEnhanced()) {
-      ui.alert('Please verify the Rates sheet before proceeding.');
-      return;
+    function onOpen() {
+      SpreadsheetApp.getUi()
+        .createMenu('QAMP Tools')
+        .addItem('Set Up New Semester', 'setupNewSemester')
+        .addItem('Begin New Billing Cycle', 'runBillingCycleAutomation')
+        .addItem('Full Reconciliation', 'runFullReconciliationUI')
+        .addItem('Lessons Only', 'runWeeklyLessonReconciliationUI')
+        .addItem('Payments Only', 'runPaymentReconciliationUI')
+        .addItem('Forms Only', 'runFormsReconciliationUI')
+        .addItem('Generate Documents', 'runRegistrationPacketGenerationUI')
+        .addItem('Print Documents', 'convertFolderDocsToPdfUI')
+        .addItem('Create New Attendance Sheets', 'createNewAttendanceSheets')
+        .addItem('Verify Payments 2024-2025', 'verifyPayments2024_2025')
+        .addItem('Verify Payments (Detailed)', 'verifyPaymentsDetailed')
+        .addItem('Send Re-Registration Links', 'sendReregistrationLinks')
+        .addToUi();
     }
 
-    UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "DEBUG", "All validations passed", "", "");
-
-    createBillingSheet(billingCycleName);
-    var newBillingSheet = ss.getSheetByName(billingCycleName);
-    ss.setActiveSheet(newBillingSheet);
-
-    protectPreviousBillingCycle();
-
-    var billingMetaSheet = ss.getSheetByName('Billing Metadata');
-    var billingMetaData = billingMetaSheet.getDataRange().getValues();
-    
-    var metaHeaderMap = UtilityScriptLibrary.getHeaderMap(billingMetaSheet);
-    var semesterCol = metaHeaderMap[UtilityScriptLibrary.normalizeHeader("Semester Name")];
-
-    if (!semesterCol) {
-      UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "ERROR", "Semester Name column not found in Billing Metadata", "", "");
-      throw new Error("Semester Name column not found in Billing Metadata sheet");
+    function doGet(e) {
+      var parentId = e.parameter.pid || '';
+      var template = HtmlService.createTemplateFromFile('ReRegistration');
+      template.parentId = parentId;
+      return template.evaluate()
+        .setTitle('QAMP Re-Registration')
+        .setSandboxMode(HtmlService.SandboxMode.IFRAME);
     }
 
-    var isFirstCycle = !billingMetaData.some(function(row) { 
-      return row[semesterCol - 1] === semesterName; 
-    });
+    function runBillingCycleAutomation() {
+      try {
+        UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "INFO", "Starting billing cycle automation", "", "");
+        
+        var ss = SpreadsheetApp.getActiveSpreadsheet();
+        var ui = SpreadsheetApp.getUi();
+        var customToday = promptForCustomToday();
+        var billingCycleName = promptForBillingCycleName(customToday);
+        if (!billingCycleName) return;
 
-    UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "DEBUG", "Billing cycle type determined", 
-                  "First cycle: " + isFirstCycle, "");
+        UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "DEBUG", "User inputs confirmed", 
+                      "Date: " + customToday.toLocaleDateString() + ", Cycle: " + billingCycleName, "");
 
-    var carryOverData = extractPreviousBillingData({ includeAll: !isFirstCycle });
-    if (!carryOverData || !carryOverData.previousSheetName) {
-      if (isFirstCycle) {
-        UtilityScriptLibrary.debugLog('No previous billing data found. Initializing empty carryOverData for first cycle.');
-        carryOverData = { rowsToCarry: {}, prevHeaderMap: {}, previousSheetName: null };
-      } else {
-        throw new Error('Could not retrieve previous billing data.');
+        var semesterSheet = ss.getSheetByName('Semester Metadata');
+        if (!semesterSheet) throw new Error('Semester Metadata sheet not found.');
+        var semesterData = semesterSheet.getDataRange().getValues();
+        if (semesterData.length < 2) throw new Error('No semesters found in Semester Metadata.');
+        
+        var semesterName = semesterData[semesterData.length - 1][0];
+
+        verifyProgramsForSemester(semesterName, ss);
+
+        if (!verifyRatesEnhanced()) {
+          ui.alert('Please verify the Rates sheet before proceeding.');
+          return;
+        }
+
+        UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "DEBUG", "All validations passed", "", "");
+
+        createBillingSheet(billingCycleName);
+        var newBillingSheet = ss.getSheetByName(billingCycleName);
+        ss.setActiveSheet(newBillingSheet);
+
+        protectPreviousBillingCycle();
+
+        var billingMetaSheet = ss.getSheetByName('Billing Metadata');
+        var billingMetaData = billingMetaSheet.getDataRange().getValues();
+        
+        var metaHeaderMap = UtilityScriptLibrary.getHeaderMap(billingMetaSheet);
+        var semesterCol = metaHeaderMap[UtilityScriptLibrary.normalizeHeader("Semester Name")];
+
+        if (!semesterCol) {
+          UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "ERROR", "Semester Name column not found in Billing Metadata", "", "");
+          throw new Error("Semester Name column not found in Billing Metadata sheet");
+        }
+
+        var isFirstCycle = !billingMetaData.some(function(row) { 
+          return row[semesterCol - 1] === semesterName; 
+        });
+
+        UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "DEBUG", "Billing cycle type determined", 
+                      "First cycle: " + isFirstCycle, "");
+
+        var carryOverData = extractPreviousBillingData({ includeAll: !isFirstCycle });
+        if (!carryOverData || !carryOverData.previousSheetName) {
+          if (isFirstCycle) {
+            UtilityScriptLibrary.debugLog('No previous billing data found. Initializing empty carryOverData for first cycle.');
+            carryOverData = { rowsToCarry: {}, prevHeaderMap: {}, previousSheetName: null };
+          } else {
+            throw new Error('Could not retrieve previous billing data.');
+          }
+        }
+
+        // NEW: Prompt for forms carry-over if this is the first cycle of a new semester
+        var carryOverForms = true; // Default to true for within-semester cycles
+        if (isFirstCycle && carryOverData && carryOverData.previousSheetName) {
+          var response = ui.alert(
+            'Forms Data Carry-Over',
+            'This is the first billing cycle of a new semester.\n\n' +
+            'Do you want to carry over Agreement Form and Media Release status from the previous semester?',
+            ui.ButtonSet.YES_NO
+          );
+          
+          if (response === ui.Button.YES) {
+            carryOverForms = true;
+            UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "INFO", "User selected forms carry-over", 
+                          "Carry over: true", "");
+          } else if (response === ui.Button.NO) {
+            carryOverForms = false;
+            UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "INFO", "User selected forms carry-over", 
+                          "Carry over: false", "");
+          } else {
+            ui.alert('❌ Billing cycle cancelled.');
+            return;
+          }
+        }
+
+        // NEW: Update cumulative tracking from previous cycle before building new rows
+        if (carryOverData.previousSheetName) {
+          updateCumulativeTracking(carryOverData.previousSheetName);
+          UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "INFO", "Cumulative tracking updated", 
+                        "From sheet: " + carryOverData.previousSheetName, "");
+        }
+
+        ss.setActiveSheet(newBillingSheet);
+        var context = buildBillingContext(customToday, semesterName, billingCycleName);
+        context.prevHeaderMap = carryOverData.previousSheetName
+          ? UtilityScriptLibrary.getHeaderMap(ss.getSheetByName(carryOverData.previousSheetName))
+          : {};
+        context.carryOverForms = carryOverForms; // NEW: Add forms carry-over flag to context
+
+        ss.setActiveSheet(newBillingSheet);
+        var context = buildBillingContext(customToday, semesterName, billingCycleName);
+        context.prevHeaderMap = carryOverData.previousSheetName
+          ? UtilityScriptLibrary.getHeaderMap(ss.getSheetByName(carryOverData.previousSheetName))
+          : {};
+
+        UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "DEBUG", "Context built", 
+                      "Previous sheet: " + (carryOverData.previousSheetName || "None"), "");
+
+        if (isFirstCycle) {
+          populateBillingSheet(context, carryOverData);
+        } else {
+          var previousStartDate = new Date(context.billingStartDate);
+          var existingStudentIds = [];
+          populateBillingSheetContinuingSemester(context, newBillingSheet, existingStudentIds, carryOverData.rowsToCarry, null);
+        }
+
+        appendToBillingMetadata(billingCycleName, customToday, semesterName);
+        
+        UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "INFO", "Billing cycle completed successfully", 
+                      "Cycle: " + billingCycleName, "");
+        
+        ui.alert("New billing cycle \"" + billingCycleName + "\" successfully created.");
+        
+      } catch (error) {
+        UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "ERROR", "Billing cycle failed", 
+                      "", error.message + " | " + error.stack);
+        SpreadsheetApp.getUi().alert("Error: " + error.message);
+        UtilityScriptLibrary.debugLog("Error in runBillingCycleAutomation: " + error.stack);
       }
     }
 
-    // NEW: Prompt for forms carry-over if this is the first cycle of a new semester
-    var carryOverForms = true; // Default to true for within-semester cycles
-    if (isFirstCycle && carryOverData && carryOverData.previousSheetName) {
-      var response = ui.alert(
-        'Forms Data Carry-Over',
-        'This is the first billing cycle of a new semester.\n\n' +
-        'Do you want to carry over Agreement Form and Media Release status from the previous semester?',
-        ui.ButtonSet.YES_NO
-      );
-      
-      if (response === ui.Button.YES) {
-        carryOverForms = true;
-        UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "INFO", "User selected forms carry-over", 
-                      "Carry over: true", "");
-      } else if (response === ui.Button.NO) {
-        carryOverForms = false;
-        UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "INFO", "User selected forms carry-over", 
-                      "Carry over: false", "");
-      } else {
-        ui.alert('❌ Billing cycle cancelled.');
+    function runFullReconciliation(reconciliationDate) {
+      try {
+        UtilityScriptLibrary.debugLog("runFullReconciliation", "INFO", "Starting full reconciliation", 
+                    "Date: " + reconciliationDate, "");
+        
+        var ui = SpreadsheetApp.getUi();
+        var results = {
+          attendance: null,
+          combined: null,
+          success: false,
+          errors: []
+        };
+        
+        // 1. Run attendance reconciliation
+        try {
+          UtilityScriptLibrary.debugLog("runFullReconciliation", "INFO", "Running attendance reconciliation", "", "");
+          results.attendance = runWeeklyLessonReconciliation(reconciliationDate);
+          UtilityScriptLibrary.debugLog("runFullReconciliation", "SUCCESS", "Attendance reconciliation completed", "", "");
+        } catch (error) {
+          results.errors.push("Attendance reconciliation failed: " + error.message);
+          UtilityScriptLibrary.debugLog("runFullReconciliation", "ERROR", "Attendance reconciliation failed", "", error.message);
+        }
+        
+        // 2. Run combined payment and forms reconciliation
+        try {
+          UtilityScriptLibrary.debugLog("runFullReconciliation", "INFO", "Running combined payment and forms reconciliation", "", "");
+          results.combined = runCombinedReconciliation();
+          UtilityScriptLibrary.debugLog("runFullReconciliation", "SUCCESS", "Combined reconciliation completed", "", "");
+        } catch (error) {
+          results.errors.push("Payment/Forms reconciliation failed: " + error.message);
+          UtilityScriptLibrary.debugLog("runFullReconciliation", "ERROR", "Combined reconciliation failed", "", error.message);
+        }
+        
+        // Generate summary
+        var summary = generateReconciliationSummaryUpdated(results);
+        results.success = (results.errors.length === 0);
+        
+        // Show results to user
+        ui.alert(
+          results.success ? '✅ Reconciliation Complete' : '⚠️ Reconciliation Completed with Errors',
+          summary,
+          ui.ButtonSet.OK
+        );
+        
+        UtilityScriptLibrary.debugLog("runFullReconciliation", results.success ? "SUCCESS" : "WARNING", 
+                    "Full reconciliation completed", "Errors: " + results.errors.length, "");
+        
+        return results;
+        
+      } catch (error) {
+        UtilityScriptLibrary.debugLog("runFullReconciliation", "ERROR", "Full reconciliation failed", "", error.message);
+        SpreadsheetApp.getUi().alert('❌ Reconciliation Error', 'Failed to run reconciliation: ' + error.message, SpreadsheetApp.getUi().ButtonSet.OK);
+        throw error;
+      }
+    }
+
+    function runFullReconciliationUI() {
+      try {
+        var ui = SpreadsheetApp.getUi();
+        
+        // Prompt for reconciliation date
+        var response = ui.prompt(
+          'Full Reconciliation',
+          'Enter the date to reconcile up to (MM/DD/YYYY):',
+          ui.ButtonSet.OK_CANCEL
+        );
+        
+        if (response.getSelectedButton() !== ui.Button.OK) {
+          ui.alert('❌ Reconciliation cancelled.');
+          return;
+        }
+        
+        // Parse the date
+        var dateString = response.getResponseText().trim();
+        var reconciliationDate = UtilityScriptLibrary.parseDateFromString(dateString);
+        
+        if (!reconciliationDate) {
+          ui.alert('❌ Invalid date format. Please use MM/DD/YYYY.');
+          return;
+        }
+        
+        // Run full reconciliation
+        runFullReconciliation(reconciliationDate);
+        
+      } catch (error) {
+        UtilityScriptLibrary.debugLog("runFullReconciliationUI", "ERROR", "UI reconciliation failed", "", error.message);
+        SpreadsheetApp.getUi().alert('❌ Error: ' + error.message);
+      }
+    }
+
+    function runRegistrationPacketGenerationUI() {
+      try {
+        generateRegistrationPacketsForBillingCycle();
+      } catch (error) {
+        UtilityScriptLibrary.debugLog("runRegistrationPacketGenerationUI", "ERROR", "Registration packet UI failed", "", error.message);
+        SpreadsheetApp.getUi().alert('Error', 'Registration packet generation failed: ' + error.message, SpreadsheetApp.getUi().ButtonSet.OK);
+      }
+    }
+
+    function runPaymentReconciliation() {
+      try {
+        UtilityScriptLibrary.debugLog('💰 Starting payment reconciliation...');
+        
+        // Get payment workbook and current semester sheet
+        var paymentsSS = UtilityScriptLibrary.getWorkbook('payments');
+        UtilityScriptLibrary.debugLog('runPaymentReconciliation', 'DEBUG', 'Got payments workbook', '', '');
+        
+        var currentSemester = UtilityScriptLibrary.getCurrentSemesterName();
+        UtilityScriptLibrary.debugLog('runPaymentReconciliation', 'DEBUG', 'Current semester', currentSemester, '');
+        
+        var paymentSheet = paymentsSS.getSheetByName(currentSemester);
+        
+        if (!paymentSheet) {
+          throw new Error('Payment sheet not found for semester: ' + currentSemester);
+        }
+        UtilityScriptLibrary.debugLog('runPaymentReconciliation', 'DEBUG', 'Found payment sheet', currentSemester, '');
+        
+        var headerMap = UtilityScriptLibrary.getHeaderMap(paymentSheet);
+        UtilityScriptLibrary.debugLog('runPaymentReconciliation', 'DEBUG', 'Got header map', 'Keys: ' + Object.keys(headerMap).length, '');
+        
+        var data = paymentSheet.getDataRange().getValues();
+        UtilityScriptLibrary.debugLog('runPaymentReconciliation', 'DEBUG', 'Got payment data', 'Rows: ' + data.length, '');
+        
+        var processed = 0;
+        var errors = [];
+        var results = {
+          processed: 0,
+          errors: 0,
+          details: []
+        };
+        
+        // Process each payment record (skip header row)
+        for (var i = 1; i < data.length; i++) {
+          var rowData = data[i];
+          var rowNumber = i + 1;
+          
+          UtilityScriptLibrary.debugLog('runPaymentReconciliation', 'DEBUG', 'Processing row', 'Row: ' + rowNumber, '');
+          
+          try {
+            var result = processPaymentRecord(rowData, paymentSheet, headerMap, rowNumber);
+            UtilityScriptLibrary.debugLog('runPaymentReconciliation', 'DEBUG', 'processPaymentRecord result', 
+                        'Row: ' + rowNumber + ', Processed: ' + result.processed + ', Message: ' + result.message, '');
+            
+            if (result.processed) {
+              results.processed++;
+              results.details.push(result.message);
+            }
+          } catch (error) {
+            results.errors++;
+            results.details.push('Row ' + rowNumber + ': ' + error.message);
+            UtilityScriptLibrary.debugLog('❌ Error processing row ' + rowNumber + ': ' + error.message);
+          }
+        }
+        
+        UtilityScriptLibrary.debugLog('✅ Payment reconciliation completed. Processed: ' + results.processed + ', Errors: ' + results.errors);
+        return results;
+        
+      } catch (error) {
+        UtilityScriptLibrary.debugLog('❌ Payment reconciliation failed: ' + error.message);
+        throw error;
+      }
+    }
+
+    function runPaymentReconciliationUI() {
+      try {
+        var results = runPaymentReconciliation();
+        var ui = SpreadsheetApp.getUi();
+        ui.alert('💰 Payment Reconciliation Complete', 
+                'Processed: ' + results.processed + ' payments\nErrors: ' + results.errors, 
+                ui.ButtonSet.OK);
+      } catch (error) {
+        SpreadsheetApp.getUi().alert('❌ Error: ' + error.message);
+      }
+    }
+
+    function runWeeklyLessonReconciliationUI() {
+      try {
+        var ui = SpreadsheetApp.getUi();
+        
+        // Prompt for admin review date
+        var response = ui.prompt(
+          'Admin Review Date',
+          'Enter the date to pull lessons up to (MM/DD/YYYY):',
+          ui.ButtonSet.OK_CANCEL
+        );
+        
+        if (response.getSelectedButton() !== ui.Button.OK) {
+          ui.alert('❌ Lesson reconciliation cancelled.');
+          return;
+        }
+        
+        // Parse the date
+        var dateString = response.getResponseText().trim();
+        var reconciliationDate = UtilityScriptLibrary.parseDateFromString(dateString);
+        
+        if (!reconciliationDate) {
+          ui.alert('❌ Invalid date format. Please use MM/DD/YYYY.');
+          return;
+        }
+        
+        // Confirm the date
+        var formattedDate = UtilityScriptLibrary.formatDateFlexible(reconciliationDate, "MM/dd/yyyy");
+        var confirm = ui.alert(
+          `🔄 Reconcile lessons up to ${formattedDate}?`,
+          ui.ButtonSet.YES_NO
+        );
+        
+        if (confirm !== ui.Button.YES) {
+          ui.alert('❌ Lesson reconciliation cancelled.');
+          return;
+        }
+        
+        // Run the reconciliation
+        runWeeklyLessonReconciliation(reconciliationDate);
+        
+        // Success message
+        ui.alert(`✅ Lesson reconciliation completed for ${formattedDate}!`);
+        
+      } catch (error) {
+        UtilityScriptLibrary.debugLog(`❌ Error in lesson reconciliation UI: ${error.message}`);
+        SpreadsheetApp.getUi().alert(`❌ Error: ${error.message}`);
+      }
+    }
+
+    function sendReregistrationLinks() {
+      var ui = SpreadsheetApp.getUi();
+      var norm = UtilityScriptLibrary.normalizeHeader;
+
+      var webAppUrl = ScriptApp.getService().getUrl();
+      if (!webAppUrl) {
+        ui.alert('❌ Web app URL not available. Make sure this script is deployed as a web app.');
         return;
       }
-    }
 
-    // NEW: Update cumulative tracking from previous cycle before building new rows
-    if (carryOverData.previousSheetName) {
-      updateCumulativeTracking(carryOverData.previousSheetName);
-      UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "INFO", "Cumulative tracking updated", 
-                    "From sheet: " + carryOverData.previousSheetName, "");
-    }
+      // Get active student IDs from current billing sheet
+      var billingSheet = getCurrentBillingSheet();
+      if (!billingSheet) {
+        ui.alert('❌ Could not find current billing sheet.');
+        return;
+      }
 
-    ss.setActiveSheet(newBillingSheet);
-    var context = buildBillingContext(customToday, semesterName, billingCycleName);
-    context.prevHeaderMap = carryOverData.previousSheetName
-      ? UtilityScriptLibrary.getHeaderMap(ss.getSheetByName(carryOverData.previousSheetName))
-      : {};
-    context.carryOverForms = carryOverForms; // NEW: Add forms carry-over flag to context
+      var billingHeaderMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
+      var billingData = billingSheet.getDataRange().getValues();
+      var billingStudentIdCol = billingHeaderMap[norm('Student ID')];
 
-    ss.setActiveSheet(newBillingSheet);
-    var context = buildBillingContext(customToday, semesterName, billingCycleName);
-    context.prevHeaderMap = carryOverData.previousSheetName
-      ? UtilityScriptLibrary.getHeaderMap(ss.getSheetByName(carryOverData.previousSheetName))
-      : {};
+      var activeStudentIds = {};
+      for (var i = 1; i < billingData.length; i++) {
+        var sId = String(billingData[i][billingStudentIdCol - 1] || '').trim();
+        if (sId) activeStudentIds[sId] = true;
+      }
 
-    UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "DEBUG", "Context built", 
-                  "Previous sheet: " + (carryOverData.previousSheetName || "None"), "");
+      // Load parents and filter to those with active students
+      var parentsSheet = UtilityScriptLibrary.getSheet('parents');
+      var parentHeaderMap = UtilityScriptLibrary.getHeaderMap(parentsSheet);
+      var parentsData = parentsSheet.getDataRange().getValues();
 
-    if (isFirstCycle) {
-      populateBillingSheet(context, carryOverData);
-    } else {
-      var previousStartDate = new Date(context.billingStartDate);
-      var existingStudentIds = [];
-      populateBillingSheetContinuingSemester(context, newBillingSheet, existingStudentIds, carryOverData.rowsToCarry, null);
-    }
+      var parentIdCol = parentHeaderMap[norm('Parent ID')];
+      var firstNameCol = parentHeaderMap[norm('Parent First Name')];
+      var emailCol = parentHeaderMap[norm('Email')];
+      var studentIdsCol = parentHeaderMap[norm('Student IDs')];
 
-    appendToBillingMetadata(billingCycleName, customToday, semesterName);
-    
-    UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "INFO", "Billing cycle completed successfully", 
-                  "Cycle: " + billingCycleName, "");
-    
-    ui.alert("New billing cycle \"" + billingCycleName + "\" successfully created.");
-    
-  } catch (error) {
-    UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "ERROR", "Billing cycle failed", 
-                  "", error.message + " | " + error.stack);
-    SpreadsheetApp.getUi().alert("Error: " + error.message);
-    UtilityScriptLibrary.debugLog("Error in runBillingCycleAutomation: " + error.stack);
-  }
-}
+      if (!parentIdCol || !emailCol || !studentIdsCol) {
+        ui.alert('❌ Required columns not found in Parents sheet.');
+        return;
+      }
 
-function runFullReconciliation(reconciliationDate) {
-  try {
-    UtilityScriptLibrary.debugLog("runFullReconciliation", "INFO", "Starting full reconciliation", 
-                 "Date: " + reconciliationDate, "");
-    
-    var ui = SpreadsheetApp.getUi();
-    var results = {
-      attendance: null,
-      combined: null,
-      success: false,
-      errors: []
-    };
-    
-    // 1. Run attendance reconciliation
-    try {
-      UtilityScriptLibrary.debugLog("runFullReconciliation", "INFO", "Running attendance reconciliation", "", "");
-      results.attendance = runWeeklyLessonReconciliation(reconciliationDate);
-      UtilityScriptLibrary.debugLog("runFullReconciliation", "SUCCESS", "Attendance reconciliation completed", "", "");
-    } catch (error) {
-      results.errors.push("Attendance reconciliation failed: " + error.message);
-      UtilityScriptLibrary.debugLog("runFullReconciliation", "ERROR", "Attendance reconciliation failed", "", error.message);
-    }
-    
-    // 2. Run combined payment and forms reconciliation
-    try {
-      UtilityScriptLibrary.debugLog("runFullReconciliation", "INFO", "Running combined payment and forms reconciliation", "", "");
-      results.combined = runCombinedReconciliation();
-      UtilityScriptLibrary.debugLog("runFullReconciliation", "SUCCESS", "Combined reconciliation completed", "", "");
-    } catch (error) {
-      results.errors.push("Payment/Forms reconciliation failed: " + error.message);
-      UtilityScriptLibrary.debugLog("runFullReconciliation", "ERROR", "Combined reconciliation failed", "", error.message);
-    }
-    
-    // Generate summary
-    var summary = generateReconciliationSummaryUpdated(results);
-    results.success = (results.errors.length === 0);
-    
-    // Show results to user
-    ui.alert(
-      results.success ? '✅ Reconciliation Complete' : '⚠️ Reconciliation Completed with Errors',
-      summary,
-      ui.ButtonSet.OK
-    );
-    
-    UtilityScriptLibrary.debugLog("runFullReconciliation", results.success ? "SUCCESS" : "WARNING", 
-                 "Full reconciliation completed", "Errors: " + results.errors.length, "");
-    
-    return results;
-    
-  } catch (error) {
-    UtilityScriptLibrary.debugLog("runFullReconciliation", "ERROR", "Full reconciliation failed", "", error.message);
-    SpreadsheetApp.getUi().alert('❌ Reconciliation Error', 'Failed to run reconciliation: ' + error.message, SpreadsheetApp.getUi().ButtonSet.OK);
-    throw error;
-  }
-}
+      var eligibleParents = [];
+      for (var r = 1; r < parentsData.length; r++) {
+        var row = parentsData[r];
+        var parentId = String(row[parentIdCol - 1] || '').trim();
+        var email = String(row[emailCol - 1] || '').trim();
+        var studentIds = String(row[studentIdsCol - 1] || '').trim();
 
-function runFullReconciliationUI() {
-  try {
-    var ui = SpreadsheetApp.getUi();
-    
-    // Prompt for reconciliation date
-    var response = ui.prompt(
-      'Full Reconciliation',
-      'Enter the date to reconcile up to (MM/DD/YYYY):',
-      ui.ButtonSet.OK_CANCEL
-    );
-    
-    if (response.getSelectedButton() !== ui.Button.OK) {
-      ui.alert('❌ Reconciliation cancelled.');
-      return;
-    }
-    
-    // Parse the date
-    var dateString = response.getResponseText().trim();
-    var reconciliationDate = UtilityScriptLibrary.parseDateFromString(dateString);
-    
-    if (!reconciliationDate) {
-      ui.alert('❌ Invalid date format. Please use MM/DD/YYYY.');
-      return;
-    }
-    
-    // Run full reconciliation
-    runFullReconciliation(reconciliationDate);
-    
-  } catch (error) {
-    UtilityScriptLibrary.debugLog("runFullReconciliationUI", "ERROR", "UI reconciliation failed", "", error.message);
-    SpreadsheetApp.getUi().alert('❌ Error: ' + error.message);
-  }
-}
+        if (!parentId || !email || !studentIds) continue;
 
-function runRegistrationPacketGenerationUI() {
-  try {
-    generateRegistrationPacketsForBillingCycle();
-  } catch (error) {
-    UtilityScriptLibrary.debugLog("runRegistrationPacketGenerationUI", "ERROR", "Registration packet UI failed", "", error.message);
-    SpreadsheetApp.getUi().alert('Error', 'Registration packet generation failed: ' + error.message, SpreadsheetApp.getUi().ButtonSet.OK);
-  }
-}
-
-function runPaymentReconciliation() {
-  try {
-    UtilityScriptLibrary.debugLog('💰 Starting payment reconciliation...');
-    
-    // Get payment workbook and current semester sheet
-    var paymentsSS = UtilityScriptLibrary.getWorkbook('payments');
-    UtilityScriptLibrary.debugLog('runPaymentReconciliation', 'DEBUG', 'Got payments workbook', '', '');
-    
-    var currentSemester = UtilityScriptLibrary.getCurrentSemesterName();
-    UtilityScriptLibrary.debugLog('runPaymentReconciliation', 'DEBUG', 'Current semester', currentSemester, '');
-    
-    var paymentSheet = paymentsSS.getSheetByName(currentSemester);
-    
-    if (!paymentSheet) {
-      throw new Error('Payment sheet not found for semester: ' + currentSemester);
-    }
-    UtilityScriptLibrary.debugLog('runPaymentReconciliation', 'DEBUG', 'Found payment sheet', currentSemester, '');
-    
-    var headerMap = UtilityScriptLibrary.getHeaderMap(paymentSheet);
-    UtilityScriptLibrary.debugLog('runPaymentReconciliation', 'DEBUG', 'Got header map', 'Keys: ' + Object.keys(headerMap).length, '');
-    
-    var data = paymentSheet.getDataRange().getValues();
-    UtilityScriptLibrary.debugLog('runPaymentReconciliation', 'DEBUG', 'Got payment data', 'Rows: ' + data.length, '');
-    
-    var processed = 0;
-    var errors = [];
-    var results = {
-      processed: 0,
-      errors: 0,
-      details: []
-    };
-    
-    // Process each payment record (skip header row)
-    for (var i = 1; i < data.length; i++) {
-      var rowData = data[i];
-      var rowNumber = i + 1;
-      
-      UtilityScriptLibrary.debugLog('runPaymentReconciliation', 'DEBUG', 'Processing row', 'Row: ' + rowNumber, '');
-      
-      try {
-        var result = processPaymentRecord(rowData, paymentSheet, headerMap, rowNumber);
-        UtilityScriptLibrary.debugLog('runPaymentReconciliation', 'DEBUG', 'processPaymentRecord result', 
-                     'Row: ' + rowNumber + ', Processed: ' + result.processed + ', Message: ' + result.message, '');
-        
-        if (result.processed) {
-          results.processed++;
-          results.details.push(result.message);
+        var idList = studentIds.split(',').map(function(id) { return id.trim(); });
+        var hasActiveStudent = false;
+        for (var s = 0; s < idList.length; s++) {
+          if (activeStudentIds[idList[s]]) { hasActiveStudent = true; break; }
         }
+        if (!hasActiveStudent) continue;
+
+        eligibleParents.push({
+          parentId: parentId,
+          firstName: String(row[firstNameCol - 1] || '').trim(),
+          email: email
+        });
+      }
+
+      if (eligibleParents.length === 0) {
+        ui.alert('No eligible parents found with active students in the current billing cycle.');
+        return;
+      }
+
+      var confirm = ui.alert(
+        'Send Re-Registration Links',
+        'This will email a unique re-registration link to ' + eligibleParents.length + ' parent(s). Continue?',
+        ui.ButtonSet.YES_NO
+      );
+      if (confirm !== ui.Button.YES) return;
+
+      var sent = 0;
+      var failed = 0;
+
+      for (var p = 0; p < eligibleParents.length; p++) {
+        var parent = eligibleParents[p];
+        var link = webAppUrl + '?pid=' + parent.parentId;
+        var subject = 'QAMP Lesson Re-Registration';
+        var body = 'Dear ' + parent.firstName + ',\n\n' +
+          'It\'s time to register for your next block of lessons! Please use the link below to confirm ' +
+          'your information and submit your lesson request.\n\n' +
+          link + '\n\n' +
+          'You\'ll be asked to verify your identity with the last 4 digits of your phone number on file.\n\n' +
+          'If you have any questions, please contact us at admin@quakermusic.org.\n\n' +
+          'Thank you,\nCristin Kalinowski\nQuaker Arts Music Program';
+
+        try {
+          GmailApp.sendEmail(parent.email, subject, body);
+          sent++;
+          UtilityScriptLibrary.debugLog('sendReregistrationLinks', 'INFO', 'Email sent', parent.parentId + ' - ' + parent.email, '');
+        } catch (e) {
+          failed++;
+          UtilityScriptLibrary.debugLog('sendReregistrationLinks', 'ERROR', 'Email failed', parent.parentId + ' - ' + parent.email, e.message);
+        }
+      }
+
+      ui.alert('✅ Done. Sent: ' + sent + (failed > 0 ? ', Failed: ' + failed + ' (check Debug log)' : ''));
+    }
+
+    function setupNewSemester() {
+      var semesterName = promptForSemesterName();
+      if (!semesterName) return;
+
+      try {
+        UtilityScriptLibrary.debugLog('setupNewSemester', 'INFO', 'Starting setup for semester', semesterName, '');
+
+        // Process previous semester credits before creating new semester
+        var creditBalances = processSemesterEndCredits(UtilityScriptLibrary.getCurrentSemesterName());
+        
+        // FIXED: Handle null return value safely
+        if (creditBalances && creditBalances.length > 0) {
+          SpreadsheetApp.getUi().alert('📊 SEMESTER CREDITS PROCESSED\n\nProcessed lesson balances for ' + creditBalances.length + ' students.\nCredits will be applied to new semester registrations.');
+        }
+
+        // Step 1: Prompt for dates
+        var semesterDates = promptForSemesterDates();
+        
+        if (!semesterDates) {
+          throw new Error('❌ No semester dates returned from prompt.');
+        }
+        
+        var startDate = semesterDates.startDate;
+        var endDate = semesterDates.endDate;
+        
+        // Force conversion to Date objects (handles serialization issues)
+        startDate = new Date(startDate);
+        endDate = new Date(endDate);
+        
+        UtilityScriptLibrary.debugLog('🔧 Converted dates - startDate: ' + startDate + ' (instanceof Date: ' + (startDate instanceof Date) + ')');
+        UtilityScriptLibrary.debugLog('🔧 Converted dates - endDate: ' + endDate + ' (instanceof Date: ' + (endDate instanceof Date) + ')');
+        
+        // Validate dates
+        if (!startDate || !(startDate instanceof Date) || isNaN(startDate.getTime())) {
+          throw new Error('❌ Invalid startDate after conversion. Value: ' + startDate);
+        }
+        if (!endDate || !(endDate instanceof Date) || isNaN(endDate.getTime())) {
+          throw new Error('❌ Invalid endDate after conversion. Value: ' + endDate);
+        }
+
+        UtilityScriptLibrary.debugLog('setupNewSemester', 'INFO', 'Semester dates confirmed', 
+                                      'Start: ' + startDate + ', End: ' + endDate, '');
+
+        // Step 2: Generate Calendar
+        generateCalendarForSemester(semesterName, startDate, endDate);
+        UtilityScriptLibrary.debugLog('setupNewSemester', 'INFO', 'Calendar generated', '', '');
+
+        // Step 3: Rename Form Sheet
+        renameLatestFormSheet(semesterName);
+        UtilityScriptLibrary.debugLog('setupNewSemester', 'INFO', 'Form response sheet renamed', '', '');
+
+        // Step 4: Process Field Map
+        processFieldMapForSemester(semesterName);
+        UtilityScriptLibrary.debugLog('setupNewSemester', 'INFO', 'Field map processed', '', '');
+
+        // Step 5: Create Payments Tab
+        createPaymentsTab(semesterName);
+        UtilityScriptLibrary.debugLog('setupNewSemester', 'INFO', 'Payments tab created', '', '');
+
+        // Step 6: Metadata Append
+        var folderId = appendToSemesterMetadata(semesterName, startDate, endDate);
+        UtilityScriptLibrary.debugLog('setupNewSemester', 'INFO', 'Semester metadata appended', 
+                                      'Folder ID: ' + folderId, '');
+
+        // Step 7: Mark Students Inactive
+        markStudentsInactive();
+        UtilityScriptLibrary.debugLog('setupNewSemester', 'INFO', 'Students marked inactive', '', '');
+
+        // Step 8: Final UI Confirmation
+        SpreadsheetApp.getUi().alert('✅ New semester "' + semesterName + '" setup completed.');
+        
       } catch (error) {
-        results.errors++;
-        results.details.push('Row ' + rowNumber + ': ' + error.message);
-        UtilityScriptLibrary.debugLog('❌ Error processing row ' + rowNumber + ': ' + error.message);
+        UtilityScriptLibrary.debugLog('setupNewSemester', 'ERROR', 'Setup failed', semesterName, error.message);
+        SpreadsheetApp.getUi().alert('❌ Error: ' + error.message);
       }
     }
-    
-    UtilityScriptLibrary.debugLog('✅ Payment reconciliation completed. Processed: ' + results.processed + ', Errors: ' + results.errors);
-    return results;
-    
-  } catch (error) {
-    UtilityScriptLibrary.debugLog('❌ Payment reconciliation failed: ' + error.message);
-    throw error;
-  }
-}
 
-function runPaymentReconciliationUI() {
-  try {
-    var results = runPaymentReconciliation();
-    var ui = SpreadsheetApp.getUi();
-    ui.alert('💰 Payment Reconciliation Complete', 
-             'Processed: ' + results.processed + ' payments\nErrors: ' + results.errors, 
-             ui.ButtonSet.OK);
-  } catch (error) {
-    SpreadsheetApp.getUi().alert('❌ Error: ' + error.message);
-  }
-}
-
-function runWeeklyLessonReconciliationUI() {
-  try {
-    var ui = SpreadsheetApp.getUi();
-    
-    // Prompt for admin review date
-    var response = ui.prompt(
-      'Admin Review Date',
-      'Enter the date to pull lessons up to (MM/DD/YYYY):',
-      ui.ButtonSet.OK_CANCEL
-    );
-    
-    if (response.getSelectedButton() !== ui.Button.OK) {
-      ui.alert('❌ Lesson reconciliation cancelled.');
-      return;
-    }
-    
-    // Parse the date
-    var dateString = response.getResponseText().trim();
-    var reconciliationDate = UtilityScriptLibrary.parseDateFromString(dateString);
-    
-    if (!reconciliationDate) {
-      ui.alert('❌ Invalid date format. Please use MM/DD/YYYY.');
-      return;
-    }
-    
-    // Confirm the date
-    var formattedDate = UtilityScriptLibrary.formatDateFlexible(reconciliationDate, "MM/dd/yyyy");
-    var confirm = ui.alert(
-      `🔄 Reconcile lessons up to ${formattedDate}?`,
-      ui.ButtonSet.YES_NO
-    );
-    
-    if (confirm !== ui.Button.YES) {
-      ui.alert('❌ Lesson reconciliation cancelled.');
-      return;
-    }
-    
-    // Run the reconciliation
-    runWeeklyLessonReconciliation(reconciliationDate);
-    
-    // Success message
-    ui.alert(`✅ Lesson reconciliation completed for ${formattedDate}!`);
-    
-  } catch (error) {
-    UtilityScriptLibrary.debugLog(`❌ Error in lesson reconciliation UI: ${error.message}`);
-    SpreadsheetApp.getUi().alert(`❌ Error: ${error.message}`);
-  }
-}
-
-function getNextMonthName(targetDate) {
-  var monthNames = UtilityScriptLibrary.getMonthNames();
-  
-  var nextMonth = targetDate.getMonth() + 1;
-  if (nextMonth > 11) {
-    nextMonth = 0; // Wrap to January
-  }
-  
-  return monthNames[nextMonth];
-}
-
-function setupNewSemester() {
-  var semesterName = promptForSemesterName();
-  if (!semesterName) return;
-
-  try {
-    UtilityScriptLibrary.debugLog('setupNewSemester', 'INFO', 'Starting setup for semester', semesterName, '');
-
-    // Process previous semester credits before creating new semester
-    var creditBalances = processSemesterEndCredits(UtilityScriptLibrary.getCurrentSemesterName());
-    
-    // FIXED: Handle null return value safely
-    if (creditBalances && creditBalances.length > 0) {
-      SpreadsheetApp.getUi().alert('📊 SEMESTER CREDITS PROCESSED\n\nProcessed lesson balances for ' + creditBalances.length + ' students.\nCredits will be applied to new semester registrations.');
+    function setupRosterTemplateProtection(sheet) {
+      try {
+        // Protect admin columns (E through U) with warning - UPDATED range
+        var adminRange = sheet.getRange(1, 5, sheet.getMaxRows(), 17); // Columns E-U (17 columns)
+        var protection = adminRange.protect();
+        protection.setDescription('Admin columns - automated data only');
+        protection.setWarningOnly(true);
+        
+        // Set up date validation for First Lesson Date column (B)
+        var dateRange = sheet.getRange(2, 2, sheet.getMaxRows() - 1, 1);
+        var dateRule = SpreadsheetApp.newDataValidation()
+          .requireDate()
+          .setAllowInvalid(false)
+          .build();
+        dateRange.setDataValidation(dateRule);
+        
+        // Set up dropdown validation for Status column (T)
+        var statusRange = sheet.getRange(2, 20, sheet.getMaxRows() - 1, 1);
+        var statusRule = SpreadsheetApp.newDataValidation()
+          .requireValueInList(['active', 'dropped'], true)
+          .setAllowInvalid(false)
+          .build();
+        statusRange.setDataValidation(statusRule);
+        
+        UtilityScriptLibrary.debugLog("✅ Roster protection, date validation, and status dropdown applied");
+        
+      } catch (error) {
+        UtilityScriptLibrary.debugLog("⚠️ Error in roster protection: " + error.message);
+      }
     }
 
-    // Step 1: Prompt for dates
-    var semesterDates = promptForSemesterDates();
-    
-    if (!semesterDates) {
-      throw new Error('❌ No semester dates returned from prompt.');
+    function submitReregistration(data) {
+      try {
+        UtilityScriptLibrary.debugLog('submitReregistration', 'INFO', 'Starting', 'Parent ID: ' + data.parentId, '');
+        var norm = UtilityScriptLibrary.normalizeHeader;
+
+        var billingSheet = getCurrentBillingSheet();
+        if (!billingSheet) {
+          return { success: false, message: 'Could not find current billing sheet.' };
+        }
+
+        var billingHeaderMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
+        var billingData = billingSheet.getDataRange().getValues();
+        var billingStudentIdCol = billingHeaderMap[norm('Student ID')];
+        var billingLessonQtyCol = billingHeaderMap[norm('Lesson Quantity')];
+
+        if (!billingStudentIdCol || !billingLessonQtyCol) {
+          return { success: false, message: 'Required billing columns not found.' };
+        }
+
+        var updatedStudents = [];
+        var errors = [];
+
+        for (var i = 0; i < data.students.length; i++) {
+          var student = data.students[i];
+          if (!student.reregister) continue;
+
+          var found = false;
+          for (var j = 1; j < billingData.length; j++) {
+            if (String(billingData[j][billingStudentIdCol - 1]).trim() === student.studentId) {
+              billingSheet.getRange(j + 1, billingLessonQtyCol).setValue(parseInt(student.lessonCount) || 0);
+              updatedStudents.push(student.firstName + ' ' + student.lastName);
+              found = true;
+              break;
+            }
+          }
+
+          if (!found) {
+            errors.push(student.firstName + ' ' + student.lastName + ' not found in current billing cycle.');
+            UtilityScriptLibrary.debugLog('submitReregistration', 'WARNING', 'Student not in billing sheet', student.studentId, '');
+          }
+        }
+
+        // Update parent contact info if changes were submitted
+        if (data.contactChanges) {
+          var parentsSheet = UtilityScriptLibrary.getSheet('parents');
+          var parentHeaderMap = UtilityScriptLibrary.getHeaderMap(parentsSheet);
+          var parentRow = UtilityScriptLibrary.findParentRow(parentsSheet, data.parentId, '');
+
+          if (parentRow !== -1) {
+            var changes = data.contactChanges;
+            var editableFields = ['Email', 'Email 2', 'Phone', 'Address Formatted', 'Billing Preference', 'Additional Contacts'];
+
+            var fieldsObj = {};
+            for (var k = 0; k < editableFields.length; k++) {
+              var field = editableFields[k];
+              if (changes[field] !== undefined && changes[field] !== null) {
+                fieldsObj[field] = changes[field];
+              }
+            }
+
+            // Regenerate lookup key if email changed
+            var newLookupKey = null;
+            if (changes['Email'] !== undefined) {
+              var parentRowValues = parentsSheet.getRange(parentRow, 1, 1, parentsSheet.getLastColumn()).getValues()[0];
+              var lastNameCol = parentHeaderMap[norm('Parent Last Name')];
+              var firstNameCol = parentHeaderMap[norm('Parent First Name')];
+              newLookupKey = UtilityScriptLibrary.generateKey(
+                String(parentRowValues[lastNameCol - 1] || '').trim(),
+                String(parentRowValues[firstNameCol - 1] || '').trim(),
+                changes['Email']
+              );
+            }
+
+            UtilityScriptLibrary.updateParentContactFields(
+              parentsSheet, parentRow, fieldsObj, { newLookupKey: newLookupKey }
+            );
+
+            UtilityScriptLibrary.debugLog('submitReregistration', 'INFO', 'Parent contact updated', 'Parent ID: ' + data.parentId, '');
+          }
+        }
+
+        UtilityScriptLibrary.debugLog('submitReregistration', 'SUCCESS', 'Re-registration complete',
+          'Updated students: ' + updatedStudents.join(', '), '');
+
+        return {
+          success: true,
+          updatedStudents: updatedStudents,
+          errors: errors,
+          message: 'Re-registration submitted successfully!'
+        };
+
+      } catch (error) {
+        UtilityScriptLibrary.debugLog('submitReregistration', 'ERROR', 'Failed', '', error.message);
+        return { success: false, message: 'An error occurred. Please try again or contact us.' };
+      }
     }
-    
-    var startDate = semesterDates.startDate;
-    var endDate = semesterDates.endDate;
-    
-    // Force conversion to Date objects (handles serialization issues)
-    startDate = new Date(startDate);
-    endDate = new Date(endDate);
-    
-    UtilityScriptLibrary.debugLog('🔧 Converted dates - startDate: ' + startDate + ' (instanceof Date: ' + (startDate instanceof Date) + ')');
-    UtilityScriptLibrary.debugLog('🔧 Converted dates - endDate: ' + endDate + ' (instanceof Date: ' + (endDate instanceof Date) + ')');
-    
-    // Validate dates
-    if (!startDate || !(startDate instanceof Date) || isNaN(startDate.getTime())) {
-      throw new Error('❌ Invalid startDate after conversion. Value: ' + startDate);
-    }
-    if (!endDate || !(endDate instanceof Date) || isNaN(endDate.getTime())) {
-      throw new Error('❌ Invalid endDate after conversion. Value: ' + endDate);
-    }
-
-    UtilityScriptLibrary.debugLog('setupNewSemester', 'INFO', 'Semester dates confirmed', 
-                                  'Start: ' + startDate + ', End: ' + endDate, '');
-
-    // Step 2: Generate Calendar
-    generateCalendarForSemester(semesterName, startDate, endDate);
-    UtilityScriptLibrary.debugLog('setupNewSemester', 'INFO', 'Calendar generated', '', '');
-
-    // Step 3: Rename Form Sheet
-    renameLatestFormSheet(semesterName);
-    UtilityScriptLibrary.debugLog('setupNewSemester', 'INFO', 'Form response sheet renamed', '', '');
-
-    // Step 4: Process Field Map
-    processFieldMapForSemester(semesterName);
-    UtilityScriptLibrary.debugLog('setupNewSemester', 'INFO', 'Field map processed', '', '');
-
-    // Step 5: Create Payments Tab
-    createPaymentsTab(semesterName);
-    UtilityScriptLibrary.debugLog('setupNewSemester', 'INFO', 'Payments tab created', '', '');
-
-    // Step 6: Metadata Append
-    var folderId = appendToSemesterMetadata(semesterName, startDate, endDate);
-    UtilityScriptLibrary.debugLog('setupNewSemester', 'INFO', 'Semester metadata appended', 
-                                  'Folder ID: ' + folderId, '');
-
-    // Step 7: Mark Students Inactive
-    markStudentsInactive();
-    UtilityScriptLibrary.debugLog('setupNewSemester', 'INFO', 'Students marked inactive', '', '');
-
-    // Step 8: Final UI Confirmation
-    SpreadsheetApp.getUi().alert('✅ New semester "' + semesterName + '" setup completed.');
-    
-  } catch (error) {
-    UtilityScriptLibrary.debugLog('setupNewSemester', 'ERROR', 'Setup failed', semesterName, error.message);
-    SpreadsheetApp.getUi().alert('❌ Error: ' + error.message);
-  }
-}
-
-function setupRosterTemplateProtection(sheet) {
-  try {
-    // Protect admin columns (E through U) with warning - UPDATED range
-    var adminRange = sheet.getRange(1, 5, sheet.getMaxRows(), 17); // Columns E-U (17 columns)
-    var protection = adminRange.protect();
-    protection.setDescription('Admin columns - automated data only');
-    protection.setWarningOnly(true);
-    
-    // Set up date validation for First Lesson Date column (B)
-    var dateRange = sheet.getRange(2, 2, sheet.getMaxRows() - 1, 1);
-    var dateRule = SpreadsheetApp.newDataValidation()
-      .requireDate()
-      .setAllowInvalid(false)
-      .build();
-    dateRange.setDataValidation(dateRule);
-    
-    // Set up dropdown validation for Status column (T)
-    var statusRange = sheet.getRange(2, 20, sheet.getMaxRows() - 1, 1);
-    var statusRule = SpreadsheetApp.newDataValidation()
-      .requireValueInList(['active', 'dropped'], true)
-      .setAllowInvalid(false)
-      .build();
-    statusRange.setDataValidation(statusRule);
-    
-    UtilityScriptLibrary.debugLog("✅ Roster protection, date validation, and status dropdown applied");
-    
-  } catch (error) {
-    UtilityScriptLibrary.debugLog("⚠️ Error in roster protection: " + error.message);
-  }
-}
 
 // ============================================================================
 // SECTION 2: SET UP NEW SEMESTER MID-LEVEL AND HELPER FUNCTIONS
@@ -1104,6 +1255,101 @@ function renameLatestFormSheet(semesterName) {
     showUI: false,
     logLevel: 'INFO'
   }).data;
+}
+
+function verifyAndGetParentData(parentId, lastFourPhone) {
+  try {
+    UtilityScriptLibrary.debugLog('verifyAndGetParentData', 'INFO', 'Starting verification', 'Parent ID: ' + parentId, '');
+
+    if (!parentId) {
+      return { success: false, message: 'Invalid registration link.' };
+    }
+
+    var parentsSheet = UtilityScriptLibrary.getSheet('parents');
+    var parentHeaderMap = UtilityScriptLibrary.getHeaderMap(parentsSheet);
+    var parentsData = parentsSheet.getDataRange().getValues();
+    var norm = UtilityScriptLibrary.normalizeHeader;
+
+    var parentRow = UtilityScriptLibrary.findParentRow(parentsSheet, parentId, '');
+    if (parentRow === -1) {
+      return { success: false, message: 'Registration link not recognized.' };
+    }
+
+    var rowData = parentsData[parentRow - 1];
+
+    // Verify last 4 of phone
+    var phoneCol = parentHeaderMap[norm('Phone')];
+    if (!phoneCol) {
+      return { success: false, message: 'Could not verify account.' };
+    }
+
+    var phoneDigits = String(rowData[phoneCol - 1] || '').replace(/\D/g, '');
+    if (phoneDigits.slice(-4) !== String(lastFourPhone).trim()) {
+      UtilityScriptLibrary.debugLog('verifyAndGetParentData', 'WARNING', 'Phone verification failed', 'Parent ID: ' + parentId, '');
+      return { success: false, message: 'The last 4 digits of your phone number did not match our records.' };
+    }
+
+    // Build parent info object
+    var get = function(field) {
+      var col = parentHeaderMap[norm(field)];
+      return col ? String(rowData[col - 1] || '').trim() : '';
+    };
+
+    var parentInfo = {
+      parentId: parentId,
+      firstName: get('Parent First Name'),
+      lastName: get('Parent Last Name'),
+      salutation: get('Salutation'),
+      email: get('Email'),
+      email2: get('Email 2'),
+      phone: get('Phone'),
+      address: get('Address Formatted'),
+      billingPreference: get('Billing Preference'),
+      additionalContacts: get('Additional Contacts'),
+      studentIds: get('Student IDs')
+    };
+
+    // Get students associated with this parent
+    var studentsSheet = UtilityScriptLibrary.getSheet('students');
+    var studentHeaderMap = UtilityScriptLibrary.getHeaderMap(studentsSheet);
+    var studentsData = studentsSheet.getDataRange().getValues();
+
+    var studentIdArray = parentInfo.studentIds.split(',')
+      .map(function(id) { return id.trim(); })
+      .filter(function(id) { return id; });
+
+    var studentIdCol = studentHeaderMap[norm('Student ID')];
+    var students = [];
+
+    for (var i = 1; i < studentsData.length; i++) {
+      var sRow = studentsData[i];
+      var sId = String(sRow[studentIdCol - 1] || '').trim();
+      if (studentIdArray.indexOf(sId) === -1) continue;
+
+      var sGet = function(field) {
+        var col = studentHeaderMap[norm(field)];
+        return col ? String(sRow[col - 1] || '').trim() : '';
+      };
+
+      students.push({
+        studentId: sId,
+        firstName: sGet('Student First Name'),
+        lastName: sGet('Student Last Name'),
+        instrument: sGet('Instrument'),
+        lessonLength: sGet('Lesson Length'),
+        teacher: sGet('Teacher')
+      });
+    }
+
+    UtilityScriptLibrary.debugLog('verifyAndGetParentData', 'SUCCESS', 'Verification passed',
+      'Parent: ' + parentId + ', Students: ' + students.length, '');
+
+    return { success: true, parent: parentInfo, students: students };
+
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('verifyAndGetParentData', 'ERROR', 'Failed', '', error.message);
+    return { success: false, message: 'An error occurred. Please try again or contact us.' };
+  }
 }
 
 function verifyProgramsForSemester(semesterName, billingSS) {
@@ -4318,6 +4564,17 @@ function getDocumentSelectionHtml() {
     '</script>' +
     '</body>' +
     '</html>';
+}
+
+function getNextMonthName(targetDate) {
+  var monthNames = UtilityScriptLibrary.getMonthNames();
+  
+  var nextMonth = targetDate.getMonth() + 1;
+  if (nextMonth > 11) {
+    nextMonth = 0; // Wrap to January
+  }
+  
+  return monthNames[nextMonth];
 }
 
 function processDocumentSelection(selectedTypes) {
