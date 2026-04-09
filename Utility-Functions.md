@@ -1,8 +1,8 @@
 ================================================================================
 UTILITY LIBRARY FUNCTION DIRECTORY
 ================================================================================
-    Total Functions: 112 (110 standard functions + 2 EnvironmentManager methods)
-     Most Recent version: 86
+    Total Functions: 113 (111 standard functions + 2 EnvironmentManager methods)
+     Most Recent version: 87
 
     This directory provides a quick reference for all functions in Utility script.
     Parameters marked with ? are optional. 'options' parameters are optional 
@@ -16,39 +16,124 @@ UTILITY LIBRARY FUNCTION DIRECTORY
   ================================================================================
   ALPHABETICAL INDEX:
   ================================================================================
-    addToCurrencyCols, appendToMetadataWithVerification, buildAcademicYearVariables,
-    buildRateMapFromSheet, buildRateVariables, bulkUpdateStudentStatus, cleanName,
-    clearCache, clearEmptyRows, clearOldDebugEntries, clearUtilityDebugLog,
-    columnToLetter, combineDocumentsIntoPDF, convertYesNoToBoolean,
-    copySheetWithProtections, copyTextAttributes, createColumnFinder, createDisplayName, 
-    createGroupSections, createLessonRows, createMonthlyAttendanceSheet,
-    createStudentHeader, createStudentSections, createUtilityDebugSheet, debugLog,
-    deleteExtraColumns, determineIfStudentIsAdult, determineLessonLengthFromPackages,
-    documentAlreadyExists, enableDatePickerForColumn, executeWithErrorHandling,
-    extractLessonQuantityFromPackage, extractNumericLessonLength, extractRosterData,
-    extractSeasonFromSemester, extractTeacherNameFromWorkbook, extractTotalLessonsFromPackages, findColumnByPartialName,
-    findParentRow, findStudentRow, formatAddress, formatAttendanceColumns,
-    formatAttendanceSheet, formatCurrency, formatDateFlexible,
-    formatLessonLengthWithMinutes, formatLogValue, formatPhoneNumber,
-    formatRosterColumns, freezeSheetFormulas, generateAutoId,
-    generateDocumentFromTemplate, generateKey, generateNextId,generateNextIdDirect, 
-    getAttendanceSheetForDate, getCached, getColumnHeaders, getColumnIndices,
-    getConfig, getCurrentAcademicYearInfo, getCurrentMonthName, getCurrentSemesterMonth,
-    getDateForWeekday, getFieldMappingFromSheet, getGeneratedDocumentsFolder,
-    getHeaderMap, getLessonLengthFromPackages, getMonthNameFromDate, getMonthNames,
-    getMonthSheets, getMostRecentRateColumn, getRateSummary, getRosterFolder,
-    getRosterFolderUrlForYear, getSemesterDates, getSheet, getStudentIdFromRow, getTeacherGroupAssignments,
-    getTemplate, getTemplateFolder, getWeekdayName, getWeekdayNumber, getWorkbook,
-    getYearFromSemesterName, inferWorkbookKey, insertCountFormula, interpretAgeField,
-    isAttendanceSheet, isCurrentOrFutureMonth, isHistoricalDataInputEnabled,
-    isIdAlreadyUsed, isMonthSheet, normalizeHeader, parseAllPackageQuantities,
-    parseAndFormatAddress, parseCityZipMessy, parseDateFromString, parseRosterData,
-    prefillAttendanceDatesForStudent, promptForHistoricalId, promptForNameWithDefault,
-    protectSheetRanges, safeGet, safeParseFloat, setCached, setupAttendanceHeaders, setupRosterTemplateProtection,
-    setupStatusValidation, shouldBeCurrency, showConfirmationDialog, styleHeaderRow,
-    truncateString, updateFieldMappings, validateProgramConfiguration,
-    validateTemplateVariables, verifyConfigurationWithUser
-
+    addToCurrencyCols
+    appendToMetadataWithVerification
+    buildAcademicYearVariables
+    buildRateMapFromSheet
+    buildRateVariables
+    bulkUpdateStudentStatus
+    cleanName
+    clearCache
+    clearEmptyRows
+    clearOldDebugEntries
+    clearUtilityDebugLog
+    columnToLetter
+    combineDocumentsIntoPDF
+    convertYesNoToBoolean
+    copySheetWithProtections
+    copyTextAttributes
+    createColumnFinder
+    createDisplayName
+    createGroupSections
+    createLessonRows
+    createMonthlyAttendanceSheet
+    createStudentHeader
+    createStudentSections
+    createUtilityDebugSheet
+    debugLog
+    deleteExtraColumns
+    determineIfStudentIsAdult
+    determineLessonLengthFromPackages
+    documentAlreadyExists
+    enableDatePickerForColumn
+    executeWithErrorHandling
+    extractLessonQuantityFromPackage
+    extractNumericLessonLength
+    extractRosterData
+    extractSeasonFromSemester
+    extractTeacherNameFromWorkbook
+    extractTotalLessonsFromPackages
+    findColumnByPartialName
+    findParentRow
+    findStudentRow
+    formatAddress
+    formatAttendanceColumns
+    formatAttendanceSheet
+    formatCurrency
+    formatDateFlexible
+    formatLessonLengthWithMinutes
+    formatLogValue
+    formatPhoneNumber
+    formatRosterColumns
+    freezeSheetFormulas
+    generateAutoId
+    generateDocumentFromTemplate
+    generateKey
+    generateNextId
+    generateNextIdDirect
+    getAttendanceSheetForDate
+    getCached
+    getColumnHeaders
+    getColumnIndices
+    getConfig
+    getCurrentAcademicYearInfo
+    getCurrentMonthName
+    getCurrentSemesterMonth
+    getDateForWeekday
+    getFieldMappingFromSheet
+    getGeneratedDocumentsFolder
+    getHeaderMap
+    getLessonLengthFromPackages
+    getMonthNameFromDate
+    getMonthNames
+    getMonthSheets
+    getMostRecentRateColumn
+    getRateSummary
+    getRosterFolder
+    getRosterFolderUrlForYear
+    getSemesterDates
+    getSheet
+    getStudentIdFromRow
+    getTeacherGroupAssignments
+    getTemplate
+    getTemplateFolder
+    getWeekdayName
+    getWeekdayNumber
+    getWorkbook
+    getYearFromSemesterName
+    inferWorkbookKey
+    insertCountFormula
+    interpretAgeField
+    isAttendanceSheet
+    isCurrentOrFutureMonth
+    isHistoricalDataInputEnabled
+    isIdAlreadyUsed
+    isMonthSheet
+    normalizeHeader
+    parseAllPackageQuantities
+    parseAndFormatAddress
+    parseCityZipMessy
+    parseDateFromString
+    parseRosterData
+    prefillAttendanceDatesForStudent
+    promptForHistoricalId
+    promptForNameWithDefault
+    protectSheetRanges
+    safeGet
+    safeParseFloat
+    setCached
+    setupAttendanceHeaders
+    setupRosterTemplateProtection
+    setupStatusValidation
+    shouldBeCurrency
+    showConfirmationDialog
+    styleHeaderRow
+    truncateString
+    updateFieldMappings
+    updateParentContactFields
+    validateProgramConfiguration
+    validateTemplateVariables
+    verifyConfigurationWithUser
   ================================================================================
   ENVIRONMENT MANAGER (Special Module)
   ================================================================================
@@ -815,6 +900,17 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Dependencies: findColumnByPartialName(), normalizeHeader()
         Called by: 
 
+
+    updateParentContactFields(parentsSheet, parentRow, fieldsToUpdate, options?) -> Object
+        Updates contact fields for an existing parent row. Only writes cells where
+        the new value differs from the current value. Optionally updates Parent
+        Lookup key and Updated checkbox.
+        Options: {newLookupKey, updateUpdatedCheckbox}
+        Returns: {changesMade}
+        Category: SHEET_OPERATIONS
+        Dependencies: debugLog(), normalizeHeader()
+        Called by: Responses (processParent), Billing (submitReregistration)
+
     validateProgramConfiguration(programSheet, options?) -> Object
         Validates program configuration in Program List sheet.
         Options: {checkPackages, checkRates}
@@ -840,93 +936,166 @@ UTILITY LIBRARY FUNCTION DIRECTORY
 
 
   --------------------------------------------------------------------------------
-  CATEGORIES:
-  --------------------------------------------------------------------------------
-  
-    ATTENDANCE (1 function):
-      getAttendanceSheetForDate
+ATTENDANCE (1 function):
+    getAttendanceSheetForDate
 
-    BULK_OPERATIONS (1 function):
-      bulkUpdateStudentStatus
+  BULK_OPERATIONS (1 function):
+    bulkUpdateStudentStatus
 
-    CACHE (3 functions):
-      clearCache, getCached, setCached
+  CACHE (3 functions):
+    clearCache
+    getCached
+    setCached
 
-    CONFIGURATION (11 functions):
-      EnvironmentManager.get, EnvironmentManager.set, getConfig, getGeneratedDocumentsFolder,
-      getRateSummary, getRosterFolder, getRosterFolderUrlForYear, getSheet, getTemplate,
-      getTemplateFolder, getWorkbook
+  CONFIGURATION (11 functions):
+    EnvironmentManager.get
+    EnvironmentManager.set
+    getConfig
+    getGeneratedDocumentsFolder
+    getRateSummary
+    getRosterFolder
+    getRosterFolderUrlForYear
+    getSheet
+    getTemplate
+    getTemplateFolder
+    getWorkbook
 
-    DATA_EXTRACTION (7 functions):
-      extractLessonQuantityFromPackage, extractNumericLessonLength, extractRosterData,
-      extractSeasonFromSemester, extractTeacherNameFromWorkbook, extractTotalLessonsFromPackages,
-      getStudentIdFromRow
+  DATA_EXTRACTION (7 functions):
+    extractLessonQuantityFromPackage
+    extractNumericLessonLength
+    extractRosterData
+    extractSeasonFromSemester
+    extractTeacherNameFromWorkbook
+    extractTotalLessonsFromPackages
+    getStudentIdFromRow
 
-    DATA_MANIPULATION (13 functions):
-      cleanName, convertYesNoToBoolean, createDisplayName, getLessonLengthFromPackages,
-      interpretAgeField, normalizeHeader, parseAllPackageQuantities, parseAndFormatAddress,
-      parseCityZipMessy, parseDateFromString, parseRosterData, prefillAttendanceDatesForStudent,
-      safeParseFloat
+  DATA_MANIPULATION (13 functions):
+    cleanName
+    convertYesNoToBoolean
+    createDisplayName
+    getLessonLengthFromPackages
+    interpretAgeField
+    normalizeHeader
+    parseAllPackageQuantities
+    parseAndFormatAddress
+    parseCityZipMessy
+    parseDateFromString
+    parseRosterData
+    prefillAttendanceDatesForStudent
+    safeParseFloat
 
-    DATA_RETRIEVAL (7 functions):
-      findColumnByPartialName, findParentRow, findStudentRow, getColumnHeaders, getColumnIndices,
-      getHeaderMap, getMonthSheets
+  DATA_RETRIEVAL (7 functions):
+    findColumnByPartialName
+    findParentRow
+    findStudentRow
+    getColumnHeaders
+    getColumnIndices
+    getHeaderMap
+    getMonthSheets
 
-    DATE_TIME (9 functions):
-      getCurrentAcademicYearInfo, getCurrentSemesterMonth, getDateForWeekday, getMonthNameFromDate,
-      getMonthNames, getSemesterDates, getWeekdayName, getWeekdayNumber, getYearFromSemesterName
+  DATE_TIME (9 functions):
+    getCurrentAcademicYearInfo
+    getCurrentSemesterMonth
+    getDateForWeekday
+    getMonthNameFromDate
+    getMonthNames
+    getSemesterDates
+    getWeekdayName
+    getWeekdayNumber
+    getYearFromSemesterName
 
-    DEBUG (1 function):
-      debugLog
+  DEBUG (1 function):
+    debugLog
 
-    DOCUMENT_GENERATION (2 functions):
-      combineDocumentsIntoPDF, generateDocumentFromTemplate
+  DOCUMENT_GENERATION (2 functions):
+    combineDocumentsIntoPDF
+    generateDocumentFromTemplate
 
-    ERROR_HANDLING (1 function):
-      executeWithErrorHandling
+  ERROR_HANDLING (1 function):
+    executeWithErrorHandling
 
-    FIELD_MAPPING (2 functions):
-      getFieldMappingFromSheet, updateFieldMappings
+  FIELD_MAPPING (2 functions):
+    getFieldMappingFromSheet
+    updateFieldMappings
 
-    FORMATTING (9 functions):
-      formatAddress, formatAttendanceColumns, formatAttendanceSheet, formatCurrency,
-      formatDateFlexible, formatLessonLengthWithMinutes, formatLogValue, formatPhoneNumber,
-      formatRosterColumns
+  FORMATTING (9 functions):
+    formatAddress
+    formatAttendanceColumns
+    formatAttendanceSheet
+    formatCurrency
+    formatDateFlexible
+    formatLessonLengthWithMinutes
+    formatLogValue
+    formatPhoneNumber
+    formatRosterColumns
 
-    ID_GENERATION (3 functions):
-      generateKey, generateNextId, generateNextIdDirect
+  ID_GENERATION (3 functions):
+    generateKey
+    generateNextId
+    generateNextIdDirect
 
-    METADATA (1 function):
-      appendToMetadataWithVerification
+  METADATA (1 function):
+    appendToMetadataWithVerification
 
-    RATES (1 function):
-      getMostRecentRateColumn
+  RATES (1 function):
+    getMostRecentRateColumn
 
-    ROSTER (1 function):
-      getTeacherGroupAssignments
+  ROSTER (1 function):
+    getTeacherGroupAssignments
 
-    SHEET_OPERATIONS (19 functions):
-      clearEmptyRows, clearOldDebugEntries, clearUtilityDebugLog, copySheetWithProtections,
-      copyTextAttributes, createColumnFinder, createGroupSections, createLessonRows,
-      createMonthlyAttendanceSheet, createStudentHeader, createStudentSections,
-      createUtilityDebugSheet, deleteExtraColumns, enableDatePickerForColumn,
-      freezeSheetFormulas, protectSheetRanges, setupAttendanceHeaders,
-      setupRosterTemplateProtection, setupStatusValidation
+  SHEET_OPERATIONS (20 functions):
+    clearEmptyRows
+    clearOldDebugEntries
+    clearUtilityDebugLog
+    copySheetWithProtections
+    copyTextAttributes
+    createColumnFinder
+    createGroupSections
+    createLessonRows
+    createMonthlyAttendanceSheet
+    createStudentHeader
+    createStudentSections
+    createUtilityDebugSheet
+    deleteExtraColumns
+    enableDatePickerForColumn
+    freezeSheetFormulas
+    protectSheetRanges
+    setupAttendanceHeaders
+    setupRosterTemplateProtection
+    setupStatusValidation
+    updateParentContactFields
 
-    UI_INTERACTION (3 functions):
-      promptForHistoricalId, promptForNameWithDefault, showConfirmationDialog
+  UI_INTERACTION (3 functions):
+    promptForHistoricalId
+    promptForNameWithDefault
+    showConfirmationDialog
 
-    UTILITIES (8 functions):
-      addToCurrencyCols, columnToLetter, documentAlreadyExists, inferWorkbookKey,
-      insertCountFormula, safeGet, styleHeaderRow, truncateString
+  UTILITIES (8 functions):
+    addToCurrencyCols
+    columnToLetter
+    documentAlreadyExists
+    inferWorkbookKey
+    insertCountFormula
+    safeGet
+    styleHeaderRow
+    truncateString
 
-    VALIDATION (9 functions):
-      determineIfStudentIsAdult, isCurrentOrFutureMonth, isHistoricalDataInputEnabled,
-      isIdAlreadyUsed, isMonthSheet, shouldBeCurrency, validateProgramConfiguration,
-      validateTemplateVariables, verifyConfigurationWithUser
+  VALIDATION (9 functions):
+    determineIfStudentIsAdult
+    isCurrentOrFutureMonth
+    isHistoricalDataInputEnabled
+    isIdAlreadyUsed
+    isMonthSheet
+    shouldBeCurrency
+    validateProgramConfiguration
+    validateTemplateVariables
+    verifyConfigurationWithUser
 
-    VARIABLE_BUILDING (3 functions):
-      buildAcademicYearVariables, buildRateMapFromSheet, buildRateVariables
+  VARIABLE_BUILDING (3 functions):
+    buildAcademicYearVariables
+    buildRateMapFromSheet
+    buildRateVariables
+
 ================================================================================
 END OF FUNCTION DIRECTORY
 ================================================================================
