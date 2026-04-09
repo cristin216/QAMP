@@ -3313,6 +3313,73 @@ function updateFieldMappings(fieldMapSheet, newHeaders, sourceSheetName, options
   }
 }
 
+function updateParentContactFields(parentsSheet, parentRow, fieldsToUpdate, options) {
+  options = options || {};
+  var updateCheckbox = options.updateUpdatedCheckbox !== false; // default true
+
+  try {
+    var norm = normalizeHeader;
+    var headers = parentsSheet.getRange(1, 1, 1, parentsSheet.getLastColumn()).getValues()[0];
+    var rowValues = parentsSheet.getRange(parentRow, 1, 1, parentsSheet.getLastColumn()).getValues()[0];
+    var changesMade = false;
+
+    // Find a column index by field name
+    var findCol = function(fieldName) {
+      for (var i = 0; i < headers.length; i++) {
+        if (norm(String(headers[i])) === norm(fieldName)) return i + 1;
+      }
+      return 0;
+    };
+
+    // Update text fields — only write if value differs
+    for (var field in fieldsToUpdate) {
+      if (!fieldsToUpdate.hasOwnProperty(field)) continue;
+      var col = findCol(field);
+      if (!col) continue;
+      var newValue = fieldsToUpdate[field] !== null && fieldsToUpdate[field] !== undefined
+        ? String(fieldsToUpdate[field]) : '';
+      var currentValue = String(rowValues[col - 1] || '');
+      if (newValue !== currentValue) {
+        parentsSheet.getRange(parentRow, col).setValue(newValue);
+        changesMade = true;
+        debugLog('updateParentContactFields', 'INFO', 'Updated ' + field,
+          "'" + currentValue + "' → '" + newValue + "'", '');
+      }
+    }
+
+    // Update Parent Lookup key if provided
+    if (options.newLookupKey) {
+      var lookupCol = findCol('Parent Lookup');
+      if (lookupCol) {
+        var currentLookup = String(rowValues[lookupCol - 1] || '').toLowerCase().trim();
+        var newLookup = options.newLookupKey.toLowerCase().trim();
+        if (currentLookup !== newLookup) {
+          parentsSheet.getRange(parentRow, lookupCol).setValue(options.newLookupKey);
+          changesMade = true;
+          debugLog('updateParentContactFields', 'INFO', 'Updated Parent Lookup',
+            "'" + currentLookup + "' → '" + newLookup + "'", '');
+        }
+      }
+    }
+
+    // Update Updated checkbox
+    if (updateCheckbox) {
+      var updatedCol = findCol('Updated');
+      if (updatedCol) {
+        var updatedCell = parentsSheet.getRange(parentRow, updatedCol);
+        updatedCell.insertCheckboxes();
+        updatedCell.setValue(changesMade);
+      }
+    }
+
+    return { changesMade: changesMade };
+
+  } catch (error) {
+    debugLog('updateParentContactFields', 'ERROR', 'Failed', '', error.message);
+    throw error;
+  }
+}
+
 function validateProgramConfiguration(programSheet, options) {
   options = options || {};
   var checkPackages = options.checkPackages !== false; // Default true
