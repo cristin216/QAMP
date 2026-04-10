@@ -75,6 +75,9 @@ var SHEET_MAP = {
   fieldMap: {
     name: 'FieldMap'
   },
+  reregistration: {
+    name: 'Reregistration'
+  },
   teacherRosterLookup: {
     name: 'Teacher Roster Lookup'
   },
