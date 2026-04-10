@@ -62,6 +62,9 @@ var SHEET_MAP = {
   programList: {
     name: 'Program List'
   },
+  packages: {
+    name: 'Packages'
+  },
   billingTemplate: {
     name: 'Billing Template'
   },
