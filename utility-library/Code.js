@@ -2410,15 +2410,18 @@ function inferWorkbookKey(sheetKey) {
     students: 'contacts',
     parents: 'contacts',
     instrumentList: 'contacts',
+    futureTeachers: 'contacts',
     billingMetadata: 'billing',
     semesterMetadata: 'billing',
     yearMetadata: 'billing',
     rates: 'billing',
     programList: 'billing',
+    packages: 'billing',
     billingTemplate: 'billing',
     calendar: 'formResponses',
     fieldMap: 'formResponses',
-    teacherRosterLookup: 'formResponses', 
+    reregistration: 'formResponses',
+    teacherRosterLookup: 'formResponses',
     ledgerTemplate: 'payments'
   };
   return keyToWorkbook[sheetKey];
