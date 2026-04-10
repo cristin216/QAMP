@@ -9806,6 +9806,121 @@ function storeSemesterEndBalances(creditBalances) {
   }
 }
 
+function submitReregistration(data) {
+  try {
+    UtilityScriptLibrary.debugLog('submitReregistration', 'INFO', 'Starting', 'Parent ID: ' + data.parentId, '');
+    var norm = UtilityScriptLibrary.normalizeHeader;
+
+    var updatedStudents = [];
+    var errors = [];
+
+    // === PHASE 1: WRITE STUDENT SELECTIONS TO REREGISTRATION SHEET ===
+    var reregSheet = UtilityScriptLibrary.getSheet('reregistration');
+    var timestamp = new Date();
+
+    for (var i = 0; i < data.students.length; i++) {
+      var student = data.students[i];
+
+      try {
+        if (student.enrollment === 'Not Enrolled') {
+          reregSheet.appendRow([
+            timestamp,
+            data.parentId,
+            student.studentId,
+            '',
+            '',
+            '',
+            'Not Enrolled',
+            false
+          ]);
+        } else {
+          reregSheet.appendRow([
+            timestamp,
+            data.parentId,
+            student.studentId,
+            student.lessonLength,
+            student.packageName,
+            student.lessonCount,
+            '',
+            false
+          ]);
+        }
+
+        updatedStudents.push(student.studentId);
+        UtilityScriptLibrary.debugLog('submitReregistration', 'INFO', 'Student written to ReRegistration sheet',
+          student.studentId, '');
+
+      } catch (studentError) {
+        errors.push(student.studentId + ': ' + studentError.message);
+        UtilityScriptLibrary.debugLog('submitReregistration', 'ERROR', 'Failed to write student',
+          student.studentId, studentError.message);
+      }
+    }
+
+    // === PHASE 2: UPDATE PARENT CONTACT INFO IF CHANGES SUBMITTED ===
+    if (data.contactChanges) {
+      try {
+        var parentsSheet = UtilityScriptLibrary.getSheet('parents');
+        var parentHeaderMap = UtilityScriptLibrary.getHeaderMap(parentsSheet);
+        var parentRow = UtilityScriptLibrary.findParentRow(parentsSheet, data.parentId, '');
+
+        if (parentRow !== -1) {
+          var changes = data.contactChanges;
+          var editableFields = ['Email', 'Email 2', 'Phone', 'Address Formatted',
+                                'Billing Preference', 'Additional Contacts'];
+
+          var fieldsObj = {};
+          for (var k = 0; k < editableFields.length; k++) {
+            var field = editableFields[k];
+            if (changes[field] !== undefined && changes[field] !== null) {
+              fieldsObj[field] = changes[field];
+            }
+          }
+
+          // Regenerate lookup key if email changed
+          var newLookupKey = null;
+          if (changes['Email'] !== undefined) {
+            var parentRowValues = parentsSheet.getRange(parentRow, 1, 1,
+              parentsSheet.getLastColumn()).getValues()[0];
+            var lastNameCol = parentHeaderMap[norm('Parent Last Name')];
+            var firstNameCol = parentHeaderMap[norm('Parent First Name')];
+            newLookupKey = UtilityScriptLibrary.generateKey(
+              String(parentRowValues[lastNameCol - 1] || '').trim(),
+              String(parentRowValues[firstNameCol - 1] || '').trim(),
+              changes['Email']
+            );
+          }
+
+          UtilityScriptLibrary.updateParentContactFields(
+            parentsSheet, parentRow, fieldsObj, { newLookupKey: newLookupKey }
+          );
+
+          UtilityScriptLibrary.debugLog('submitReregistration', 'INFO', 'Parent contact updated',
+            'Parent ID: ' + data.parentId, '');
+        }
+      } catch (contactError) {
+        errors.push('Contact update: ' + contactError.message);
+        UtilityScriptLibrary.debugLog('submitReregistration', 'ERROR', 'Failed to update parent contact',
+          data.parentId, contactError.message);
+      }
+    }
+
+    UtilityScriptLibrary.debugLog('submitReregistration', 'SUCCESS', 'Re-registration complete',
+      'Updated students: ' + updatedStudents.join(', '), '');
+
+    return {
+      success: true,
+      updatedStudents: updatedStudents,
+      errors: errors,
+      message: 'Re-registration submitted successfully!'
+    };
+
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('submitReregistration', 'ERROR', 'Failed', '', error.message);
+    return { success: false, message: 'An error occurred. Please try again or contact us.' };
+  }
+}
+
 function sumPayments(sheet, studentId, startDate, endDate) {
   try {
     UtilityScriptLibrary.debugLog('sumPayments', 'INFO', 'Starting payment sum', 
