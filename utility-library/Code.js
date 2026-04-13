@@ -1400,6 +1400,15 @@ function findParentRow(parentsSheet, parentId, fallbackKey) {
   return -1;
 }
 
+function findStudentInContacts(contactsData, studentIdCol, targetStudentId) {
+  for (var i = 1; i < contactsData.length; i++) {
+    if (contactsData[i][studentIdCol - 1] === targetStudentId) {
+      return i;
+    }
+  }
+  return -1;
+}
+
 function findStudentRow(studentSheet, studentKey) {
   var data = studentSheet.getDataRange().getValues();
   var headerRow = data[0];
