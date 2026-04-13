@@ -12,7 +12,7 @@ Documentation: See FUNCTIONS_Billing.md
 // SECTION 1: UI MENU
 // ============================================================================
 
-    function onOpen() {
+function onOpen() {
       SpreadsheetApp.getUi()
         .createMenu('QAMP Tools')
         .addItem('Set Up New Semester', 'setupNewSemester')
@@ -30,7 +30,7 @@ Documentation: See FUNCTIONS_Billing.md
         .addToUi();
     }
 
-    function doGet(e) {
+function doGet(e) {
       var parentId = e.parameter.pid || '';
       var template = HtmlService.createTemplateFromFile('ReRegistration');
       template.parentId = parentId;
@@ -39,140 +39,136 @@ Documentation: See FUNCTIONS_Billing.md
         .setSandboxMode(HtmlService.SandboxMode.IFRAME);
     }
 
-    function runBillingCycleAutomation() {
-      try {
-        UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "INFO", "Starting billing cycle automation", "", "");
-        
-        var ss = SpreadsheetApp.getActiveSpreadsheet();
-        var ui = SpreadsheetApp.getUi();
-        var customToday = promptForCustomToday();
-        var billingCycleName = promptForBillingCycleName(customToday);
-        if (!billingCycleName) return;
+function runBillingCycleAutomation() {
+  try {
+    UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "INFO", "Starting billing cycle automation", "", "");
 
-        UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "DEBUG", "User inputs confirmed", 
-                      "Date: " + customToday.toLocaleDateString() + ", Cycle: " + billingCycleName, "");
+    var ss              = SpreadsheetApp.getActiveSpreadsheet();
+    var ui              = SpreadsheetApp.getUi();
+    var customToday     = promptForCustomToday();
+    var billingCycleName = promptForBillingCycleName(customToday);
+    if (!billingCycleName) return;
 
-        var semesterSheet = ss.getSheetByName('Semester Metadata');
-        if (!semesterSheet) throw new Error('Semester Metadata sheet not found.');
-        var semesterData = semesterSheet.getDataRange().getValues();
-        if (semesterData.length < 2) throw new Error('No semesters found in Semester Metadata.');
-        
-        var semesterName = semesterData[semesterData.length - 1][0];
+    UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "DEBUG", "User inputs confirmed",
+      "Date: " + customToday.toLocaleDateString() + ", Cycle: " + billingCycleName, "");
 
-        verifyProgramsForSemester(semesterName, ss);
+    var semesterSheet = ss.getSheetByName('Semester Metadata');
+    if (!semesterSheet) throw new Error('Semester Metadata sheet not found.');
+    var semesterData = semesterSheet.getDataRange().getValues();
+    if (semesterData.length < 2) throw new Error('No semesters found in Semester Metadata.');
 
-        if (!verifyRatesEnhanced()) {
-          ui.alert('Please verify the Rates sheet before proceeding.');
-          return;
-        }
+    var semesterName = semesterData[semesterData.length - 1][0];
 
-        UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "DEBUG", "All validations passed", "", "");
+    verifyProgramsForSemester(semesterName, ss);
 
-        createBillingSheet(billingCycleName);
-        var newBillingSheet = ss.getSheetByName(billingCycleName);
-        ss.setActiveSheet(newBillingSheet);
+    if (!verifyRatesEnhanced()) {
+      ui.alert('Please verify the Rates sheet before proceeding.');
+      return;
+    }
 
-        protectPreviousBillingCycle();
+    UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "DEBUG", "All validations passed", "", "");
 
-        var billingMetaSheet = ss.getSheetByName('Billing Metadata');
-        var billingMetaData = billingMetaSheet.getDataRange().getValues();
-        
-        var metaHeaderMap = UtilityScriptLibrary.getHeaderMap(billingMetaSheet);
-        var semesterCol = metaHeaderMap[UtilityScriptLibrary.normalizeHeader("Semester Name")];
+    createBillingSheet(billingCycleName);
+    var newBillingSheet = ss.getSheetByName(billingCycleName);
+    ss.setActiveSheet(newBillingSheet);
 
-        if (!semesterCol) {
-          UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "ERROR", "Semester Name column not found in Billing Metadata", "", "");
-          throw new Error("Semester Name column not found in Billing Metadata sheet");
-        }
+    protectPreviousBillingCycle();
 
-        var isFirstCycle = !billingMetaData.some(function(row) { 
-          return row[semesterCol - 1] === semesterName; 
-        });
+    var billingMetaSheet = ss.getSheetByName('Billing Metadata');
+    var billingMetaData  = billingMetaSheet.getDataRange().getValues();
+    var metaHeaderMap    = UtilityScriptLibrary.getHeaderMap(billingMetaSheet);
+    var semesterCol      = metaHeaderMap[UtilityScriptLibrary.normalizeHeader("Semester Name")];
 
-        UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "DEBUG", "Billing cycle type determined", 
-                      "First cycle: " + isFirstCycle, "");
+    if (!semesterCol) {
+      throw new Error("Semester Name column not found in Billing Metadata sheet");
+    }
 
-        var carryOverData = extractPreviousBillingData({ includeAll: !isFirstCycle });
-        if (!carryOverData || !carryOverData.previousSheetName) {
-          if (isFirstCycle) {
-            UtilityScriptLibrary.debugLog('No previous billing data found. Initializing empty carryOverData for first cycle.');
-            carryOverData = { rowsToCarry: {}, prevHeaderMap: {}, previousSheetName: null };
-          } else {
-            throw new Error('Could not retrieve previous billing data.');
-          }
-        }
+    var isFirstCycle = !billingMetaData.some(function(row) {
+      return row[semesterCol - 1] === semesterName;
+    });
 
-        // NEW: Prompt for forms carry-over if this is the first cycle of a new semester
-        var carryOverForms = true; // Default to true for within-semester cycles
-        if (isFirstCycle && carryOverData && carryOverData.previousSheetName) {
-          var response = ui.alert(
-            'Forms Data Carry-Over',
-            'This is the first billing cycle of a new semester.\n\n' +
-            'Do you want to carry over Agreement Form and Media Release status from the previous semester?',
-            ui.ButtonSet.YES_NO
-          );
-          
-          if (response === ui.Button.YES) {
-            carryOverForms = true;
-            UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "INFO", "User selected forms carry-over", 
-                          "Carry over: true", "");
-          } else if (response === ui.Button.NO) {
-            carryOverForms = false;
-            UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "INFO", "User selected forms carry-over", 
-                          "Carry over: false", "");
-          } else {
-            ui.alert('❌ Billing cycle cancelled.');
-            return;
-          }
-        }
+    UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "DEBUG", "Billing cycle type determined",
+      "First cycle: " + isFirstCycle, "");
 
-        // NEW: Update cumulative tracking from previous cycle before building new rows
-        if (carryOverData.previousSheetName) {
-          updateCumulativeTracking(carryOverData.previousSheetName);
-          UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "INFO", "Cumulative tracking updated", 
-                        "From sheet: " + carryOverData.previousSheetName, "");
-        }
-
-        ss.setActiveSheet(newBillingSheet);
-        var context = buildBillingContext(customToday, semesterName, billingCycleName);
-        context.prevHeaderMap = carryOverData.previousSheetName
-          ? UtilityScriptLibrary.getHeaderMap(ss.getSheetByName(carryOverData.previousSheetName))
-          : {};
-        context.carryOverForms = carryOverForms; // NEW: Add forms carry-over flag to context
-
-        ss.setActiveSheet(newBillingSheet);
-        var context = buildBillingContext(customToday, semesterName, billingCycleName);
-        context.prevHeaderMap = carryOverData.previousSheetName
-          ? UtilityScriptLibrary.getHeaderMap(ss.getSheetByName(carryOverData.previousSheetName))
-          : {};
-
-        UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "DEBUG", "Context built", 
-                      "Previous sheet: " + (carryOverData.previousSheetName || "None"), "");
-
-        if (isFirstCycle) {
-          populateBillingSheet(context, carryOverData);
-        } else {
-          var previousStartDate = new Date(context.billingStartDate);
-          var existingStudentIds = [];
-          populateBillingSheetContinuingSemester(context, newBillingSheet, existingStudentIds, carryOverData.rowsToCarry, null);
-        }
-
-        appendToBillingMetadata(billingCycleName, customToday, semesterName);
-        
-        UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "INFO", "Billing cycle completed successfully", 
-                      "Cycle: " + billingCycleName, "");
-        
-        ui.alert("New billing cycle \"" + billingCycleName + "\" successfully created.");
-        
-      } catch (error) {
-        UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "ERROR", "Billing cycle failed", 
-                      "", error.message + " | " + error.stack);
-        SpreadsheetApp.getUi().alert("Error: " + error.message);
-        UtilityScriptLibrary.debugLog("Error in runBillingCycleAutomation: " + error.stack);
+    var carryOverData = extractPreviousBillingData({ includeAll: !isFirstCycle });
+    if (!carryOverData || !carryOverData.previousSheetName) {
+      if (isFirstCycle) {
+        carryOverData = { rowsToCarry: {}, prevHeaderMap: {}, previousSheetName: null };
+      } else {
+        throw new Error('Could not retrieve previous billing data.');
       }
     }
 
-    function runFullReconciliation(reconciliationDate) {
+    var carryOverForms = true;
+    if (isFirstCycle && carryOverData && carryOverData.previousSheetName) {
+      var response = ui.alert(
+        'Forms Data Carry-Over',
+        'This is the first billing cycle of a new semester.\n\n' +
+        'Do you want to carry over Agreement Form and Media Release status from the previous semester?',
+        ui.ButtonSet.YES_NO
+      );
+
+      if (response === ui.Button.YES) {
+        carryOverForms = true;
+      } else if (response === ui.Button.NO) {
+        carryOverForms = false;
+      } else {
+        ui.alert('❌ Billing cycle cancelled.');
+        return;
+      }
+    }
+
+    if (carryOverData.previousSheetName) {
+      updateCumulativeTracking(carryOverData.previousSheetName);
+      UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "INFO", "Cumulative tracking updated",
+        "From sheet: " + carryOverData.previousSheetName, "");
+    }
+
+    // Load re-registration data
+    var reregResult = loadReregistrationData();
+    UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "INFO", "Re-registration data loaded",
+      "Entries: " + Object.keys(reregResult.map).length, "");
+
+    ss.setActiveSheet(newBillingSheet);
+    var context = buildBillingContext(customToday, semesterName, billingCycleName);
+    context.prevHeaderMap  = carryOverData.previousSheetName
+      ? UtilityScriptLibrary.getHeaderMap(ss.getSheetByName(carryOverData.previousSheetName))
+      : {};
+    context.carryOverForms = carryOverForms;
+    context.reregMap       = reregResult.map;
+    context.reregSheet     = reregResult.sheet;
+
+    UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "DEBUG", "Context built",
+      "Previous sheet: " + (carryOverData.previousSheetName || "None"), "");
+
+    if (isFirstCycle) {
+      populateBillingSheet(context, carryOverData);
+    } else {
+      var existingStudentIds = [];
+      populateBillingSheetContinuingSemester(context, newBillingSheet, existingStudentIds, carryOverData.rowsToCarry, null);
+    }
+
+    // Multi-student discount pass (runs after all rows are written)
+    applyMultiStudentDiscount(newBillingSheet);
+
+    // Mark re-registration rows as processed
+    markReregistrationProcessed(context.reregSheet, context.processedReregIds || {});
+
+    appendToBillingMetadata(billingCycleName, customToday, semesterName);
+
+    UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "INFO", "Billing cycle completed successfully",
+      "Cycle: " + billingCycleName, "");
+
+    ui.alert("New billing cycle \"" + billingCycleName + "\" successfully created.");
+
+  } catch (error) {
+    UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "ERROR", "Billing cycle failed",
+      "", error.message + " | " + error.stack);
+    SpreadsheetApp.getUi().alert("Error: " + error.message);
+  }
+}
+
+function runFullReconciliation(reconciliationDate) {
       try {
         UtilityScriptLibrary.debugLog("runFullReconciliation", "INFO", "Starting full reconciliation", 
                     "Date: " + reconciliationDate, "");
@@ -226,9 +222,9 @@ Documentation: See FUNCTIONS_Billing.md
         SpreadsheetApp.getUi().alert('❌ Reconciliation Error', 'Failed to run reconciliation: ' + error.message, SpreadsheetApp.getUi().ButtonSet.OK);
         throw error;
       }
-    }
+}
 
-    function runFullReconciliationUI() {
+function runFullReconciliationUI() {
       try {
         var ui = SpreadsheetApp.getUi();
         
@@ -260,18 +256,18 @@ Documentation: See FUNCTIONS_Billing.md
         UtilityScriptLibrary.debugLog("runFullReconciliationUI", "ERROR", "UI reconciliation failed", "", error.message);
         SpreadsheetApp.getUi().alert('❌ Error: ' + error.message);
       }
-    }
+}
 
-    function runRegistrationPacketGenerationUI() {
+function runRegistrationPacketGenerationUI() {
       try {
         generateRegistrationPacketsForBillingCycle();
       } catch (error) {
         UtilityScriptLibrary.debugLog("runRegistrationPacketGenerationUI", "ERROR", "Registration packet UI failed", "", error.message);
         SpreadsheetApp.getUi().alert('Error', 'Registration packet generation failed: ' + error.message, SpreadsheetApp.getUi().ButtonSet.OK);
       }
-    }
+}
 
-    function runPaymentReconciliation() {
+function runPaymentReconciliation() {
       try {
         UtilityScriptLibrary.debugLog('💰 Starting payment reconciliation...');
         
@@ -333,9 +329,9 @@ Documentation: See FUNCTIONS_Billing.md
         UtilityScriptLibrary.debugLog('❌ Payment reconciliation failed: ' + error.message);
         throw error;
       }
-    }
+}
 
-    function runPaymentReconciliationUI() {
+function runPaymentReconciliationUI() {
       try {
         var results = runPaymentReconciliation();
         var ui = SpreadsheetApp.getUi();
@@ -345,9 +341,9 @@ Documentation: See FUNCTIONS_Billing.md
       } catch (error) {
         SpreadsheetApp.getUi().alert('❌ Error: ' + error.message);
       }
-    }
+}
 
-    function runWeeklyLessonReconciliationUI() {
+function runWeeklyLessonReconciliationUI() {
       try {
         var ui = SpreadsheetApp.getUi();
         
@@ -394,9 +390,9 @@ Documentation: See FUNCTIONS_Billing.md
         UtilityScriptLibrary.debugLog(`❌ Error in lesson reconciliation UI: ${error.message}`);
         SpreadsheetApp.getUi().alert(`❌ Error: ${error.message}`);
       }
-    }
+}
 
-    function sendReregistrationLinks() {
+function sendReregistrationLinks() {
       var ui = SpreadsheetApp.getUi();
       var norm = UtilityScriptLibrary.normalizeHeader;
 
@@ -499,9 +495,9 @@ Documentation: See FUNCTIONS_Billing.md
       }
 
       ui.alert('✅ Done. Sent: ' + sent + (failed > 0 ? ', Failed: ' + failed + ' (check Debug log)' : ''));
-    }
+}
 
-    function setupNewSemester() {
+function setupNewSemester() {
       var semesterName = promptForSemesterName();
       if (!semesterName) return;
 
@@ -576,9 +572,9 @@ Documentation: See FUNCTIONS_Billing.md
         UtilityScriptLibrary.debugLog('setupNewSemester', 'ERROR', 'Setup failed', semesterName, error.message);
         SpreadsheetApp.getUi().alert('❌ Error: ' + error.message);
       }
-    }
+}
 
-    function setupRosterTemplateProtection(sheet) {
+function setupRosterTemplateProtection(sheet) {
       try {
         // Protect admin columns (E through U) with warning - UPDATED range
         var adminRange = sheet.getRange(1, 5, sheet.getMaxRows(), 17); // Columns E-U (17 columns)
@@ -607,9 +603,9 @@ Documentation: See FUNCTIONS_Billing.md
       } catch (error) {
         UtilityScriptLibrary.debugLog("⚠️ Error in roster protection: " + error.message);
       }
-    }
+}
 
-    function submitReregistration(data) {
+function submitReregistration(data) {
       try {
         UtilityScriptLibrary.debugLog('submitReregistration', 'INFO', 'Starting', 'Parent ID: ' + data.parentId, '');
         var norm = UtilityScriptLibrary.normalizeHeader;
@@ -704,7 +700,7 @@ Documentation: See FUNCTIONS_Billing.md
         UtilityScriptLibrary.debugLog('submitReregistration', 'ERROR', 'Failed', '', error.message);
         return { success: false, message: 'An error occurred. Please try again or contact us.' };
       }
-    }
+}
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -7717,35 +7713,33 @@ function populateAllCumulativeColumns() {
 
 function populateBillingSheet(context, carryOverData) {
   UtilityScriptLibrary.debugLog("populateBillingSheet", "INFO", "Starting billing sheet population", "", "");
-  
+
   try {
-    var formData = context.formSheet.getDataRange().getValues();
-    var get = context.getColIndex;
+    var formData     = context.formSheet.getDataRange().getValues();
+    var get          = context.getColIndex;
     var timestampCol = get("Timestamp");
     var studentIdCol = get("Student ID");
     var billingSheet = context.billingSheet;
-    var existingIds = {};
-    var prevDataMap = (carryOverData && carryOverData.rowsToCarry) ? carryOverData.rowsToCarry : {};
-    var allStudents = [];
+    var existingIds  = {};
+    var prevDataMap  = (carryOverData && carryOverData.rowsToCarry) ? carryOverData.rowsToCarry : {};
+    var allStudents  = [];
 
-    // Build all form students with correct row indices
-    var currentRowIndex = 2; // Start at row 2 (row 1 is header)
+    var currentRowIndex = 2;
     for (var i = 1; i < formData.length; i++) {
-      var row = formData[i];
+      var row       = formData[i];
       var studentId = row[studentIdCol];
       var timestamp = new Date(row[timestampCol]);
 
       if (!studentId || isNaN(timestamp.getTime())) continue;
 
       var prevRow = prevDataMap[studentId];
-      var result = buildBillingRowFromForm(row, prevRow, context, currentRowIndex);
-      
+      var result  = buildBillingRowFromForm(row, prevRow, context, currentRowIndex);
+
       allStudents.push(result);
       existingIds[studentId] = true;
-      currentRowIndex++; // Increment for next student
+      currentRowIndex++;
     }
 
-    // Build carryover students with correct row indices
     var carryoverCount = 0;
     for (var studentId in prevDataMap) {
       if (existingIds[studentId]) continue;
@@ -7754,30 +7748,38 @@ function populateBillingSheet(context, carryOverData) {
       if (!prevRow || !Array.isArray(prevRow)) continue;
 
       var result = buildBillingRowFromPrevious(prevRow, context, currentRowIndex);
-      
+
       allStudents.push(result);
       carryoverCount++;
-      currentRowIndex++; // Increment for next student
+      currentRowIndex++;
     }
 
-    UtilityScriptLibrary.debugLog("populateBillingSheet", "INFO", "Built all students", 
-                  "Form: " + Object.keys(existingIds).length + ", Carryover: " + carryoverCount, "");
-    
-    // Write and format in batch
+    UtilityScriptLibrary.debugLog("populateBillingSheet", "INFO", "Built all students",
+      "Form: " + Object.keys(existingIds).length + ", Carryover: " + carryoverCount, "");
+
     writeAndFormatRows(billingSheet, allStudents);
-    
-    // Cumulative columns
+
+    // Re-registration pass
+    var processedReregIds = {};
+    if (context.reregMap && Object.keys(context.reregMap).length > 0) {
+      var overwroteIds = applyReregistrationOverwrites(billingSheet, context.reregMap, existingIds);
+      var appendedIds  = appendReregistrationNewStudents(billingSheet, context.reregMap, overwroteIds, context);
+
+      for (var id in overwroteIds) processedReregIds[id] = true;
+      for (var id in appendedIds)  processedReregIds[id] = true;
+    }
+    context.processedReregIds = processedReregIds;
+
     populateAllCumulativeColumns();
-    
-    // Overages
+
     if (carryOverData && carryOverData.previousSheetName) {
       var overages = detectAndBillOverages(billingSheet, context.billingCycleName);
       if (overages.length > 0) {
-        UtilityScriptLibrary.debugLog("populateBillingSheet", "INFO", "Overages detected", 
-                      "Count: " + overages.length, "");
+        UtilityScriptLibrary.debugLog("populateBillingSheet", "INFO", "Overages detected",
+          "Count: " + overages.length, "");
       }
     }
-    
+
   } catch (error) {
     UtilityScriptLibrary.debugLog("populateBillingSheet", "ERROR", "Failed", "", error.message);
     throw error;
@@ -7787,36 +7789,47 @@ function populateBillingSheet(context, carryOverData) {
 function populateBillingSheetContinuingSemester(context, billingSheet, existingStudentIds, previousData, previousStartDate) {
   try {
     UtilityScriptLibrary.debugLog("populateBillingSheetContinuingSemester", "INFO", "Starting", "", "");
-    
-    var filterDate = getFilterDate(context, previousStartDate);
-    var formSheet = getFormSheet(context);
+
+    var filterDate  = getFilterDate(context, previousStartDate);
+    var formSheet   = getFormSheet(context);
     var allStudents = [];
-    
-    // Build form students starting at row 2
+
     var formResult = buildFormStudents(formSheet, filterDate, previousData, context, allStudents, 2);
     existingStudentIds.push.apply(existingStudentIds, formResult.formStudentIds);
-    
-    // Build carryover students continuing from where form students left off
+
     buildCarryoverStudents(previousData, existingStudentIds, context, allStudents, formResult.nextRowIndex);
-    
-    UtilityScriptLibrary.debugLog("populateBillingSheetContinuingSemester", "INFO", "Built all students", 
-                  "Total: " + allStudents.length, "");
-    
-    // Write and format in batch
+
+    UtilityScriptLibrary.debugLog("populateBillingSheetContinuingSemester", "INFO", "Built all students",
+      "Total: " + allStudents.length, "");
+
     writeAndFormatRows(billingSheet, allStudents);
-    
-    // Cumulative columns
+
+    // Re-registration pass
+    var formStudentIdsMap = {};
+    for (var fi = 0; fi < formResult.formStudentIds.length; fi++) {
+      formStudentIdsMap[formResult.formStudentIds[fi]] = true;
+    }
+
+    var processedReregIds = {};
+    if (context.reregMap && Object.keys(context.reregMap).length > 0) {
+      var overwroteIds = applyReregistrationOverwrites(billingSheet, context.reregMap, formStudentIdsMap);
+      var appendedIds  = appendReregistrationNewStudents(billingSheet, context.reregMap, overwroteIds, context);
+
+      for (var id in overwroteIds) processedReregIds[id] = true;
+      for (var id in appendedIds)  processedReregIds[id] = true;
+    }
+    context.processedReregIds = processedReregIds;
+
     populateAllCumulativeColumns();
-    
-    // Overages
+
     if (previousData && Object.keys(previousData).length > 0) {
       var overages = detectAndBillOverages(billingSheet, context.billingCycleName);
       if (overages.length > 0) {
-        UtilityScriptLibrary.debugLog("populateBillingSheetContinuingSemester", "INFO", "Overages detected", 
-                      "Count: " + overages.length, "");
+        UtilityScriptLibrary.debugLog("populateBillingSheetContinuingSemester", "INFO", "Overages detected",
+          "Count: " + overages.length, "");
       }
     }
-    
+
   } catch (error) {
     UtilityScriptLibrary.debugLog("populateBillingSheetContinuingSemester", "ERROR", "Failed", "", error.message);
     throw error;
