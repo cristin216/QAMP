@@ -841,6 +841,113 @@ function addOveragesToBillingSheet(billingSheet, overageStudents, headerMap) {
   }
 }
 
+function appendReregistrationNewStudents(billingSheet, reregMap, overwroteIds, context) {
+  try {
+    var norm = UtilityScriptLibrary.normalizeHeader;
+    var headerMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
+    var appendedIds = {};
+
+    var toAppend = [];
+    for (var studentId in reregMap) {
+      if (!overwroteIds[studentId]) toAppend.push(reregMap[studentId]);
+    }
+
+    if (toAppend.length === 0) {
+      UtilityScriptLibrary.debugLog('appendReregistrationNewStudents', 'INFO', 'No new students to append', '', '');
+      return appendedIds;
+    }
+
+    // Load contacts
+    var studentsSheet = UtilityScriptLibrary.getSheet('students');
+    var parentsSheet  = UtilityScriptLibrary.getSheet('parents');
+    var studentHdrMap = UtilityScriptLibrary.getHeaderMap(studentsSheet);
+    var parentHdrMap  = UtilityScriptLibrary.getHeaderMap(parentsSheet);
+    var studentData   = studentsSheet.getDataRange().getValues();
+    var parentData    = parentsSheet.getDataRange().getValues();
+
+    var sIdCol = studentHdrMap[norm('Student ID')];
+    var pIdCol = parentHdrMap[norm('Parent ID')];
+
+    var studentLookup = {};
+    for (var s = 1; s < studentData.length; s++) {
+      var sId = String(studentData[s][sIdCol - 1] || '').trim();
+      if (sId) studentLookup[sId] = studentData[s];
+    }
+
+    var parentLookup = {};
+    for (var pp = 1; pp < parentData.length; pp++) {
+      var pId = String(parentData[pp][pIdCol - 1] || '').trim();
+      if (pId) parentLookup[pId] = parentData[pp];
+    }
+
+    var totalCols = billingSheet.getLastColumn();
+    var nextRow = billingSheet.getLastRow() + 1;
+
+    for (var j = 0; j < toAppend.length; j++) {
+      var entry = toAppend[j];
+      var studentRow = studentLookup[entry.studentId];
+      var parentRow  = parentLookup[entry.parentId];
+
+      if (!studentRow || !parentRow) {
+        UtilityScriptLibrary.debugLog('appendReregistrationNewStudents', 'WARNING',
+          'Contact data not found — skipping',
+          'Student ID: ' + entry.studentId + ', Parent ID: ' + entry.parentId, '');
+        continue;
+      }
+
+      var newRow = [];
+      for (var c = 0; c < totalCols; c++) newRow.push('');
+
+      var setCol = function(fieldName, value) {
+        var col = headerMap[norm(fieldName)];
+        if (col) newRow[col - 1] = (value !== undefined && value !== null) ? value : '';
+      };
+
+      // Student fields
+      setCol('Student Last Name',  studentRow[studentHdrMap[norm('Student Last Name')] - 1]);
+      setCol('Student First Name', studentRow[studentHdrMap[norm('Student First Name')] - 1]);
+      setCol('Student ID',         entry.studentId);
+      setCol('Instrument',         studentRow[studentHdrMap[norm('Instrument')] - 1]);
+      setCol('Teacher',            studentRow[studentHdrMap[norm('Teacher')] - 1]);
+      setCol('Enrollment',         entry.enrollment);
+
+      // Parent fields
+      setCol('Parent First Name', parentRow[parentHdrMap[norm('Parent First Name')] - 1]);
+      setCol('Parent Last Name',  parentRow[parentHdrMap[norm('Parent Last Name')] - 1]);
+      setCol('Parent ID',         entry.parentId);
+      setCol('Salutation',        parentRow[parentHdrMap[norm('Salutation')] - 1]);
+      setCol('Parent Address',    parentRow[parentHdrMap[norm('Address Formatted')] - 1]);
+
+      // Registration fields
+      setCol('Lesson Length',   entry.lessonLength);
+      setCol('Lesson Quantity', entry.lessonCount);
+      setCol('Lesson Price',    entry.lessonPrice);
+      setCol('Lesson Hours',    entry.lessonCount * entry.lessonLength / 60);
+
+      // Letter type
+      setCol('Letter Type', 'returning');
+
+      billingSheet.getRange(nextRow, 1, 1, totalCols).setValues([newRow]);
+      appendedIds[entry.studentId] = true;
+
+      UtilityScriptLibrary.debugLog('appendReregistrationNewStudents', 'INFO',
+        'Appended re-registration student',
+        'Student ID: ' + entry.studentId + ', Row: ' + nextRow, '');
+
+      nextRow++;
+    }
+
+    UtilityScriptLibrary.debugLog('appendReregistrationNewStudents', 'INFO',
+      'Append pass complete', 'Count: ' + Object.keys(appendedIds).length, '');
+
+    return appendedIds;
+
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('appendReregistrationNewStudents', 'ERROR', 'Failed', '', error.message);
+    throw error;
+  }
+}
+
 function appendToBillingMetadata(billingCycleName, customToday, semesterName) {
   UtilityScriptLibrary.debugLog("appendToBillingMetadata", "INFO", "Adding billing metadata", 
                 "Cycle: " + billingCycleName + ", Semester: " + semesterName, "");
@@ -1197,6 +1304,108 @@ function applyLetterTypeValidation(billingSheet) {
   }
 }
 
+function applyMultiStudentDiscount(billingSheet) {
+  try {
+    var norm = UtilityScriptLibrary.normalizeHeader;
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+    // Get rates
+    var ratesSheet = ss.getSheetByName('Rates');
+    var rateHeaders = ratesSheet.getRange(1, 1, 1, ratesSheet.getLastColumn()).getValues()[0];
+    var rateYearCol = UtilityScriptLibrary.getMostRecentRateColumn(rateHeaders);
+    var rateMap = UtilityScriptLibrary.buildRateMapFromSheet(ratesSheet, rateHeaders, rateYearCol);
+    var multiDiscount = parseFloat(rateMap['Multistudent Discount']) || 0;
+    var standardRate  = parseFloat(rateMap['Lesson']) || 0;
+    var floor         = standardRate - multiDiscount;
+
+    if (multiDiscount === 0) {
+      UtilityScriptLibrary.debugLog('applyMultiStudentDiscount', 'INFO',
+        'No multi-student discount configured', '', '');
+      return;
+    }
+
+    var headerMap         = UtilityScriptLibrary.getHeaderMap(billingSheet);
+    var parentIdCol       = headerMap[norm('Parent ID')];
+    var studentIdCol      = headerMap[norm('Student ID')];
+    var lessonPriceCol    = headerMap[norm('Lesson Price')];
+    var pastHoursRemCol   = headerMap[norm('Past Hours Remaining')];
+    var pastBalanceCol    = headerMap[norm('Past Balance')];
+
+    if (!parentIdCol || !lessonPriceCol) {
+      UtilityScriptLibrary.debugLog('applyMultiStudentDiscount', 'WARNING',
+        'Required columns not found — skipping multi-student discount pass', '', '');
+      return;
+    }
+
+    var data = billingSheet.getDataRange().getValues();
+
+    // Group rows by Parent ID
+    var familyMap = {};
+    for (var i = 1; i < data.length; i++) {
+      var parentId = String(data[i][parentIdCol - 1] || '').trim();
+      if (!parentId) continue;
+
+      if (!familyMap[parentId]) familyMap[parentId] = [];
+      familyMap[parentId].push({
+        rowIndex:          i + 1,
+        studentId:         String(data[i][studentIdCol - 1] || '').trim(),
+        lessonPrice:       parseFloat(data[i][lessonPriceCol - 1]) || 0,
+        pastHoursRemaining: parseFloat(pastHoursRemCol ? data[i][pastHoursRemCol - 1] : 0) || 0,
+        pastBalance:       parseFloat(pastBalanceCol ? data[i][pastBalanceCol - 1] : 0) || 0
+      });
+    }
+
+    // Apply to multi-student families
+    for (var parentId in familyMap) {
+      var students = familyMap[parentId];
+      if (students.length < 2) continue;
+
+      for (var k = 0; k < students.length; k++) {
+        var student = students[k];
+        var currentPrice = student.lessonPrice;
+
+        if (currentPrice <= floor) {
+          UtilityScriptLibrary.debugLog('applyMultiStudentDiscount', 'INFO',
+            'Student already at or below floor — no change',
+            'Student ID: ' + student.studentId + ', Price: $' + currentPrice, '');
+          continue;
+        }
+
+        var newPrice = Math.max(currentPrice - multiDiscount, floor);
+        billingSheet.getRange(student.rowIndex, lessonPriceCol).setValue(newPrice);
+
+        // Rate-difference credit on hours remaining from previous cycle
+        if (student.pastHoursRemaining > 0 && pastBalanceCol) {
+          var creditPerHour      = currentPrice - newPrice;
+          var credit             = student.pastHoursRemaining * creditPerHour;
+          var adjustedPastBalance = student.pastBalance - credit;
+          billingSheet.getRange(student.rowIndex, pastBalanceCol).setValue(adjustedPastBalance);
+
+          UtilityScriptLibrary.debugLog('applyMultiStudentDiscount', 'INFO',
+            'Applied rate-difference credit',
+            'Student ID: ' + student.studentId +
+            ', Hours remaining: ' + student.pastHoursRemaining +
+            ', Credit/hr: $' + creditPerHour +
+            ', Total credit: $' + credit, '');
+        }
+
+        UtilityScriptLibrary.debugLog('applyMultiStudentDiscount', 'INFO',
+          'Applied multi-student discount',
+          'Student ID: ' + student.studentId +
+          ', $' + currentPrice + ' → $' + newPrice, '');
+      }
+    }
+
+    SpreadsheetApp.flush();
+    UtilityScriptLibrary.debugLog('applyMultiStudentDiscount', 'INFO',
+      'Multi-student discount pass complete', '', '');
+
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('applyMultiStudentDiscount', 'ERROR', 'Failed', '', error.message);
+    throw error;
+  }
+}
+
 function applyPastDataToRow(newRow, prevRow, context, currencyCols) {
   var h = context.headerMap;
   var prevH = context.prevHeaderMap;
@@ -1255,6 +1464,62 @@ function applyPastDataToRow(newRow, prevRow, context, currencyCols) {
     } else {
       newRow[lessonCreditCol - 1] = 0;
     }
+  }
+}
+
+function applyReregistrationOverwrites(billingSheet, reregMap, formStudentIds) {
+  try {
+    var norm = UtilityScriptLibrary.normalizeHeader;
+    var headerMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
+
+    var studentIdCol  = headerMap[norm('Student ID')];
+    var lessonQtyCol  = headerMap[norm('Lesson Quantity')];
+    var lessonHrsCol  = headerMap[norm('Lesson Hours')];
+    var lessonLenCol  = headerMap[norm('Lesson Length')];
+    var lessonPriceCol = headerMap[norm('Lesson Price')];
+    var enrollmentCol = headerMap[norm('Enrollment')];
+
+    if (!studentIdCol) throw new Error('Student ID column not found in billing sheet');
+
+    var data = billingSheet.getDataRange().getValues();
+    var processedIds = {};
+
+    for (var i = 1; i < data.length; i++) {
+      var studentId = String(data[i][studentIdCol - 1] || '').trim();
+      if (!studentId || !reregMap[studentId]) continue;
+
+      var entry = reregMap[studentId];
+      var sheetRow = i + 1;
+
+      if (formStudentIds && formStudentIds[studentId]) {
+        UtilityScriptLibrary.debugLog('applyReregistrationOverwrites', 'WARNING',
+          'Student submitted both form and re-registration — re-registration data used',
+          'Student ID: ' + studentId, '');
+      }
+
+      if (lessonQtyCol)   billingSheet.getRange(sheetRow, lessonQtyCol).setValue(entry.lessonCount);
+      if (lessonLenCol)   billingSheet.getRange(sheetRow, lessonLenCol).setValue(entry.lessonLength);
+      if (lessonPriceCol) billingSheet.getRange(sheetRow, lessonPriceCol).setValue(entry.lessonPrice);
+      if (enrollmentCol)  billingSheet.getRange(sheetRow, enrollmentCol).setValue(entry.enrollment);
+      if (lessonHrsCol)   billingSheet.getRange(sheetRow, lessonHrsCol).setValue(
+        entry.lessonCount * entry.lessonLength / 60
+      );
+
+      processedIds[studentId] = true;
+
+      UtilityScriptLibrary.debugLog('applyReregistrationOverwrites', 'INFO',
+        'Applied re-registration overwrite',
+        'Student ID: ' + studentId + ', Row: ' + sheetRow, '');
+    }
+
+    UtilityScriptLibrary.debugLog('applyReregistrationOverwrites', 'INFO',
+      'Overwrite pass complete', 'Count: ' + Object.keys(processedIds).length, '');
+
+    return processedIds;
+
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('applyReregistrationOverwrites', 'ERROR', 'Failed', '', error.message);
+    throw error;
   }
 }
 
@@ -3227,7 +3492,7 @@ function copyStaticFieldsToBillingRow(newRow, sourceRow, context, getFn) {
   var fields = [
     "Student Last Name", "Student First Name", "Student ID", "Instrument",
     "Teacher", "Enrollment", "Salutation", "Parent First Name",
-    "Parent Last Name"
+    "Parent Last Name", "Parent ID"
   ];
 
   for (var i = 0; i < fields.length; i++) {
@@ -3277,44 +3542,32 @@ function copyStaticFieldsToBillingRow(newRow, sourceRow, context, getFn) {
     newRow[lessonPriceCol - 1] = prevLessonPriceCol ? sourceRow[prevLessonPriceCol - 1] : 0;
   }
 
-  // NEW: Handle Agreement Form and Media Release from previous billing cycle
-  // These carry over within semester automatically, and cross-semester if user confirms
+  // Handle Agreement Form and Media Release
   if (!getFn) {
     var agreementFormCol = context.headerMap[UtilityScriptLibrary.normalizeHeader("Agreement Form")];
     var mediaReleaseCol = context.headerMap[UtilityScriptLibrary.normalizeHeader("Media Release")];
-    
+
     if (agreementFormCol) {
       var prevAgreementCol = context.prevHeaderMap[UtilityScriptLibrary.normalizeHeader("Agreement Form")];
-      // Check if we should carry over forms (context.carryOverForms is set during billing cycle creation)
-      if (prevAgreementCol && context.carryOverForms !== false) {
-        newRow[agreementFormCol - 1] = sourceRow[prevAgreementCol - 1] === true;
-      } else {
-        newRow[agreementFormCol - 1] = false; // Default to false if not carrying over
-      }
+      newRow[agreementFormCol - 1] = (prevAgreementCol && context.carryOverForms !== false)
+        ? sourceRow[prevAgreementCol - 1] === true
+        : false;
     }
-    
+
     if (mediaReleaseCol) {
       var prevMediaCol = context.prevHeaderMap[UtilityScriptLibrary.normalizeHeader("Media Release")];
-      if (prevMediaCol && context.carryOverForms !== false) {
-        newRow[mediaReleaseCol - 1] = sourceRow[prevMediaCol - 1] === true;
-      } else {
-        newRow[mediaReleaseCol - 1] = false; // Default to false if not carrying over
-      }
+      newRow[mediaReleaseCol - 1] = (prevMediaCol && context.carryOverForms !== false)
+        ? sourceRow[prevMediaCol - 1] === true
+        : false;
     }
   } else {
-    // When building from form (new student), default to false
     var agreementFormCol = context.headerMap[UtilityScriptLibrary.normalizeHeader("Agreement Form")];
     var mediaReleaseCol = context.headerMap[UtilityScriptLibrary.normalizeHeader("Media Release")];
-    
-    if (agreementFormCol) {
-      newRow[agreementFormCol - 1] = false;
-    }
-    if (mediaReleaseCol) {
-      newRow[mediaReleaseCol - 1] = false;
-    }
+    if (agreementFormCol) newRow[agreementFormCol - 1] = false;
+    if (mediaReleaseCol) newRow[mediaReleaseCol - 1] = false;
   }
 
-  // Handle Past data fields (for continuing semester billing only)
+  // Handle Past data fields (continuing semester only)
   if (!getFn) {
     var pastFieldMappings = [
       { pastField: "Past Balance", currentField: "Current Balance" },
@@ -3322,19 +3575,16 @@ function copyStaticFieldsToBillingRow(newRow, sourceRow, context, getFn) {
       { pastField: "Past Cumulative Hours Taught", currentField: "Current Cumulative Hours Taught" },
       { pastField: "Past Cumulative Hours Billed", currentField: "Current Cumulative Hours Billed" }
     ];
-    
+
     for (var j = 0; j < pastFieldMappings.length; j++) {
       var mapping = pastFieldMappings[j];
       var pastCol = context.headerMap[UtilityScriptLibrary.normalizeHeader(mapping.pastField)];
       if (pastCol) {
         var prevCurrentCol = context.prevHeaderMap[UtilityScriptLibrary.normalizeHeader(mapping.currentField)];
         newRow[pastCol - 1] = prevCurrentCol ? sourceRow[prevCurrentCol - 1] : '';
-        
-        // Track hours columns for special formatting (CURRENCY FIX)
+
         if (mapping.pastField.indexOf("Hours") !== -1) {
-          if (!context.hoursColumnsToFormat) {
-            context.hoursColumnsToFormat = [];
-          }
+          if (!context.hoursColumnsToFormat) context.hoursColumnsToFormat = [];
           context.hoursColumnsToFormat.push(pastCol);
         }
       }
@@ -7007,6 +7257,96 @@ function isHeaderRow(row, dateIdx, lengthIdx) {
   return false;
 }
 
+function loadReregistrationData() {
+  try {
+    var reregSheet = UtilityScriptLibrary.getSheet('reregistration');
+    if (!reregSheet) {
+      UtilityScriptLibrary.debugLog('loadReregistrationData', 'INFO', 'Reregistration sheet not found', '', '');
+      return { map: {}, sheet: null };
+    }
+
+    if (reregSheet.getLastRow() < 2) {
+      UtilityScriptLibrary.debugLog('loadReregistrationData', 'INFO', 'No reregistration entries found', '', '');
+      return { map: {}, sheet: reregSheet };
+    }
+
+    var headerMap = UtilityScriptLibrary.getHeaderMap(reregSheet);
+    var norm = UtilityScriptLibrary.normalizeHeader;
+
+    var parentIdCol  = headerMap[norm('Parent ID')];
+    var studentIdCol = headerMap[norm('Student ID')];
+    var lengthCol    = headerMap[norm('Lesson Length')];
+    var packageCol   = headerMap[norm('Package Name')];
+    var countCol     = headerMap[norm('Lesson Count')];
+    var enrollCol    = headerMap[norm('Enrollment')];
+    var processedCol = headerMap[norm('Processed')];
+
+    if (!studentIdCol || !processedCol) {
+      throw new Error('Required columns (Student ID, Processed) missing from Reregistration sheet');
+    }
+
+    // Standard lesson rate
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ratesSheet = ss.getSheetByName('Rates');
+    var rateHeaders = ratesSheet.getRange(1, 1, 1, ratesSheet.getLastColumn()).getValues()[0];
+    var rateYearCol = UtilityScriptLibrary.getMostRecentRateColumn(rateHeaders);
+    var rateMap = UtilityScriptLibrary.buildRateMapFromSheet(ratesSheet, rateHeaders, rateYearCol);
+    var standardRate = parseFloat(rateMap['Lesson']) || 0;
+
+    // Package discounts
+    var packageDiscounts = {};
+    var packagesSheet = UtilityScriptLibrary.getSheet('packages');
+    if (packagesSheet) {
+      var pkgData = packagesSheet.getDataRange().getValues();
+      var pkgHeaders = pkgData[0];
+      var pkgNameIdx     = pkgHeaders.indexOf('Package Name');
+      var pkgDiscountIdx = pkgHeaders.indexOf('Discount Amount');
+      var pkgActiveIdx   = pkgHeaders.indexOf('Active');
+      for (var p = 1; p < pkgData.length; p++) {
+        if (pkgData[p][pkgActiveIdx] === true) {
+          var discount = parseFloat(pkgData[p][pkgDiscountIdx]) || 0;
+          packageDiscounts[String(pkgData[p][pkgNameIdx]).toLowerCase()] = discount;
+        }
+      }
+    }
+
+    var data = reregSheet.getDataRange().getValues();
+    var map = {};
+
+    for (var i = 1; i < data.length; i++) {
+      var row = data[i];
+      if (row[processedCol - 1] === true) continue;
+
+      var studentId = String(row[studentIdCol - 1] || '').trim();
+      if (!studentId) continue;
+
+      var packageName = String(row[packageCol - 1] || '').trim();
+      var pkgDiscount = packageName ? (packageDiscounts[packageName.toLowerCase()] || 0) : 0;
+      var lessonPrice = standardRate - pkgDiscount;
+
+      map[studentId] = {
+        parentId:     String(row[parentIdCol - 1] || '').trim(),
+        studentId:    studentId,
+        lessonLength: parseInt(row[lengthCol - 1]) || 30,
+        packageName:  packageName,
+        lessonCount:  parseInt(row[countCol - 1]) || 0,
+        enrollment:   row[enrollCol - 1] || '',
+        lessonPrice:  lessonPrice,
+        sheetRowIndex: i + 1
+      };
+    }
+
+    UtilityScriptLibrary.debugLog('loadReregistrationData', 'INFO', 'Reregistration data loaded',
+      'Entries: ' + Object.keys(map).length, '');
+
+    return { map: map, sheet: reregSheet };
+
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('loadReregistrationData', 'ERROR', 'Failed', '', error.message);
+    throw error;
+  }
+}
+
 function locateStudentRecord(rowData, paymentSheet, billingInfo) {
   var norm = UtilityScriptLibrary.normalizeHeader;
   var headerMap = UtilityScriptLibrary.getHeaderMap(paymentSheet);
@@ -7205,6 +7545,40 @@ function logMysteryStudents(mysteryStudents) {
     } catch (error) {
       UtilityScriptLibrary.debugLog('âŒ Error logging mystery students: ' + error.message);
     }
+}
+
+function markReregistrationProcessed(reregSheet, processedIds) {
+  try {
+    if (!reregSheet || Object.keys(processedIds).length === 0) return;
+
+    var norm         = UtilityScriptLibrary.normalizeHeader;
+    var headerMap    = UtilityScriptLibrary.getHeaderMap(reregSheet);
+    var studentIdCol = headerMap[norm('Student ID')];
+    var processedCol = headerMap[norm('Processed')];
+
+    if (!studentIdCol || !processedCol) {
+      throw new Error('Required columns missing from Reregistration sheet');
+    }
+
+    var data  = reregSheet.getDataRange().getValues();
+    var count = 0;
+
+    for (var i = 1; i < data.length; i++) {
+      var studentId = String(data[i][studentIdCol - 1] || '').trim();
+      if (processedIds[studentId]) {
+        reregSheet.getRange(i + 1, processedCol).setValue(true);
+        count++;
+      }
+    }
+
+    SpreadsheetApp.flush();
+    UtilityScriptLibrary.debugLog('markReregistrationProcessed', 'INFO',
+      'Marked reregistration rows processed', 'Count: ' + count, '');
+
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('markReregistrationProcessed', 'ERROR', 'Failed', '', error.message);
+    throw error;
+  }
 }
 
 function markStudentsInactive() {
