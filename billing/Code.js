@@ -793,50 +793,6 @@ function addMissingStudentsToAttendanceSheet(sheet, activeStudents) {
   }
 }
 
-function addOveragesToBillingSheet(billingSheet, overageStudents, headerMap) {
-  try {
-    // Find or create "Lesson Overages" column
-    var overageAmountCol = headerMap[UtilityScriptLibrary.normalizeHeader('Lesson Overages')];
-    
-    if (!overageAmountCol) {
-      // Add column if it doesn't exist
-      var lastCol = billingSheet.getLastColumn();
-      billingSheet.getRange(1, lastCol + 1).setValue('Lesson Overages');
-      overageAmountCol = lastCol + 1;
-    }
-    
-    // FIXED: Use correct column name "Current Cumulative Hours Billed"
-    var hoursBilledCol = headerMap[UtilityScriptLibrary.normalizeHeader('Current Cumulative Hours Billed')];
-    
-    if (!hoursBilledCol) {
-      UtilityScriptLibrary.debugLog('addOveragesToBillingSheet', 'ERROR', 
-                    'Current Cumulative Hours Billed column not found', '', '');
-      throw new Error('Current Cumulative Hours Billed column not found in billing sheet');
-    }
-    
-    for (var i = 0; i < overageStudents.length; i++) {
-      var student = overageStudents[i];
-      var rate = getCurrentSemesterRateForLength(student.lessonLength);
-      var overageAmount = student.overageHours * rate;
-      
-      // Add overage amount to billing sheet
-      billingSheet.getRange(student.rowIndex, overageAmountCol).setValue(overageAmount);
-      
-      // Update cumulative hours billed
-      var newBilled = student.billedHours + student.overageHours;
-      billingSheet.getRange(student.rowIndex, hoursBilledCol).setValue(newBilled);
-      
-      UtilityScriptLibrary.debugLog('💰 Added overage to billing sheet - Student ' + student.studentId + ': $' + overageAmount);
-    }
-    
-    UtilityScriptLibrary.debugLog('✅ Added overages to billing sheet for ' + overageStudents.length + ' students');
-    
-  } catch (error) {
-    UtilityScriptLibrary.debugLog('❌ Error adding overages to billing sheet: ' + error.message);
-    throw error;
-  }
-}
-
 function appendReregistrationNewStudents(billingSheet, reregMap, overwroteIds, context) {
   try {
     var norm = UtilityScriptLibrary.normalizeHeader;
@@ -1406,55 +1362,60 @@ function applyPastDataToRow(newRow, prevRow, context, currencyCols) {
   var h = context.headerMap;
   var prevH = context.prevHeaderMap;
   var norm = UtilityScriptLibrary.normalizeHeader;
-  
+
   // Define all past data mappings
   var mappings = [
-    { newCol: "Past Invoice Number", prevCol: "Invoice Number", type: "string" },
-    { newCol: "Past Cumulative Hours Taught", prevCol: "Current Cumulative Hours Taught", type: "number" },
-    { newCol: "Past Cumulative Hours Billed", prevCol: "Current Cumulative Hours Billed", type: "number" },
-    { newCol: "Past Hours Remaining", prevCol: "Hours Remaining", type: "number" }
+    { newCol: "Past Invoice Number",            prevCol: "Invoice Number",                    type: "string" },
+    { newCol: "Past Cumulative Hours Taught",   prevCol: "Current Cumulative Hours Taught",   type: "number" },
+    { newCol: "Past Cumulative Hours Billed",   prevCol: "Current Cumulative Hours Billed",   type: "number" },
+    { newCol: "Past Hours Remaining",           prevCol: "Hours Remaining",                   type: "number" }
   ];
-  
+
   // Copy all mapped fields
   for (var i = 0; i < mappings.length; i++) {
     var mapping = mappings[i];
     var newCol = h[norm(mapping.newCol)];
     var prevCol = prevH[norm(mapping.prevCol)];
-    
+
     if (newCol && prevCol && prevRow.length >= prevCol) {
       if (mapping.type === "number") {
         newRow[newCol - 1] = UtilityScriptLibrary.safeParseFloat(prevRow[prevCol - 1]);
       } else {
         newRow[newCol - 1] = prevRow[prevCol - 1] || '';
       }
+
+      // Track hours columns for formatting
+      if (mapping.newCol.indexOf("Hours") !== -1) {
+        if (!context.hoursColumnsToFormat) context.hoursColumnsToFormat = [];
+        context.hoursColumnsToFormat.push(newCol);
+      }
     }
   }
-  
+
   // Handle Past Balance / Credit (special case - can be positive or negative)
   var pastBalanceCol = h[norm("Past Balance")];
-  var creditCol = h[norm("Credit")];
   var currentBalanceCol = prevH[norm("Current Balance")];
-  
+
   if (currentBalanceCol && prevRow.length >= currentBalanceCol) {
     var previousBalance = UtilityScriptLibrary.safeParseFloat(prevRow[currentBalanceCol - 1]);
-    
+
     if (previousBalance !== 0 && pastBalanceCol) {
-      newRow[pastBalanceCol - 1] = previousBalance; // Keep the sign (+/-)
+      newRow[pastBalanceCol - 1] = previousBalance;
       UtilityScriptLibrary.addToCurrencyCols(currencyCols, pastBalanceCol, "Past Balance");
     }
   }
-  
+
   // Calculate Lesson Credit if applicable
   var lessonCreditCol = h[norm("Lesson Credit")];
   var lessonQuantityCol = h[norm("Lesson Quantity")];
   var lessonLengthCol = h[norm("Lesson Length")];
   var pastHoursRemainingCol = h[norm("Past Hours Remaining")];
-  
+
   if (lessonCreditCol && lessonQuantityCol && lessonLengthCol && pastHoursRemainingCol) {
     var pastHoursRemaining = UtilityScriptLibrary.safeParseFloat(newRow[pastHoursRemainingCol - 1]);
     var lessonQuantity = UtilityScriptLibrary.safeParseFloat(newRow[lessonQuantityCol - 1]);
     var lessonLength = UtilityScriptLibrary.safeParseFloat(newRow[lessonLengthCol - 1]);
-    
+
     if (pastHoursRemaining > 0 && lessonQuantity > 0 && lessonLength > 0) {
       newRow[lessonCreditCol - 1] = pastHoursRemaining / (lessonLength / 60);
     } else {
@@ -1561,15 +1522,14 @@ function applyWarningsToTeacherWorkbook(teacherSS, warningStudents, targetDate) 
                                 warningStudents.length + " warning students", "");
 }
 
-function buildBillingContext(customToday, semesterName, billingCycleName) {
-  UtilityScriptLibrary.debugLog("buildBillingContext", "INFO", "Building billing context for new cycle", 
+function buildBillingContext(customToday, semesterName, billingCycleName, programConfig) {
+  UtilityScriptLibrary.debugLog("buildBillingContext", "INFO", "Building billing context for new cycle",
           "Date: " + customToday.toLocaleDateString() + ", Semester: " + semesterName, "");
-  
+
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var formResponsesSS = UtilityScriptLibrary.getWorkbook('formResponses');
   var formSheet;
-  
-  // STANDARDIZED: Get form sheet by exact semester name, fail if not found
+
   try {
     formSheet = formResponsesSS.getSheetByName(semesterName);
     if (!formSheet) {
@@ -1579,87 +1539,52 @@ function buildBillingContext(customToday, semesterName, billingCycleName) {
     UtilityScriptLibrary.debugLog("buildBillingContext", "ERROR", "Could not access form sheet", "", e.message);
     throw new Error("Could not access form responses sheet: " + e.message);
   }
-  
+
   var billingSheet = ss.getSheetByName(billingCycleName);
-  if (!billingSheet) {
-    throw new Error("Billing sheet not found: " + billingCycleName);
-  }
-  
+  if (!billingSheet) throw new Error("Billing sheet not found: " + billingCycleName);
+
   var headerMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
-  
-  // Build program map
-  var programSheet = ss.getSheetByName("Programs List");
-  var programData = programSheet.getDataRange().getValues();
-  var headers = programData[0];
-  var nameCol = headers.indexOf("Program Name");
-  var typeCol = headers.indexOf("Type");
-  var prefixCol = headers.indexOf("Billing Sheet Prefix");
-  var rateKeyCol = headers.indexOf("Rate Key");
-  var quantityTypeCol = headers.indexOf("Quantity Type");
-  
-  var programMap = {};
-  for (var i = 1; i < programData.length; i++) {
-    var row = programData[i];
-    var active = row[headers.indexOf("Active")];
-    if (active === true && row[typeCol] !== "Package") {
-      var programName = row[nameCol];
-      programMap[programName] = {
-        prefix: row[prefixCol],
-        rateKey: row[rateKeyCol],
-        quantityType: row[quantityTypeCol]
-      };
-    }
-  }
-  
-  // Load field mapping
+
   var fieldMapSheet = formResponsesSS.getSheetByName("FieldMap");
-  if (!fieldMapSheet) {
-    throw new Error("FieldMap sheet not found in Form Responses workbook");
-  }
+  if (!fieldMapSheet) throw new Error("FieldMap sheet not found in Form Responses workbook");
   var fieldMap = UtilityScriptLibrary.getFieldMappingFromSheet(fieldMapSheet);
-  
-  // Create column index helper with field mapping support
+
   var formHeaderMap = UtilityScriptLibrary.getHeaderMap(formSheet);
-  
+
   var getColIndex = function(internalFieldName) {
-  var formHeader = null;
+    var formHeader = null;
     for (var key in fieldMap) {
       if (fieldMap[key] === internalFieldName) {
         formHeader = key;
         break;
       }
     }
-    
-    if (!formHeader) {
-      return -1;
-    }
-    
-    // formHeader is already normalized (it's a key from fieldMap)
+    if (!formHeader) return -1;
     var colIndex = formHeaderMap[formHeader];
     return colIndex ? colIndex - 1 : -1;
   };
-  
+
   var context = {
-    ss: ss,
-    semesterName: semesterName,
+    ss:              ss,
+    semesterName:    semesterName,
     billingCycleName: billingCycleName,
-    today: UtilityScriptLibrary.formatDateFlexible(customToday, "yyyyMMdd"),
-    billingSheet: billingSheet,
-    formSheet: formSheet,
-    headerMap: headerMap,
-    programMap: programMap,
-    programData: programData,
-    nameCol: nameCol,
-    typeCol: typeCol,
-    aliasCol: headers.indexOf("Alias For"),
-    getColIndex: getColIndex,
-    fieldMap: fieldMap,
-    prevHeaderMap: {} // Will be set later if there's previous data
+    today:           UtilityScriptLibrary.formatDateFlexible(customToday, "yyyyMMdd"),
+    billingSheet:    billingSheet,
+    formSheet:       formSheet,
+    headerMap:       headerMap,
+    programMap:      programConfig.programMap,
+    programData:     programConfig.programData,
+    nameCol:         programConfig.nameCol,
+    typeCol:         programConfig.typeCol,
+    aliasCol:        programConfig.aliasCol,
+    getColIndex:     getColIndex,
+    fieldMap:        fieldMap,
+    prevHeaderMap:   {}
   };
-  
-  UtilityScriptLibrary.debugLog("buildBillingContext", "INFO", "Billing context built successfully", 
-                "Programs: " + Object.keys(programMap).length, "");
-  
+
+  UtilityScriptLibrary.debugLog("buildBillingContext", "INFO", "Billing context built successfully",
+                "Programs: " + Object.keys(programConfig.programMap).length, "");
+
   return context;
 }
 
@@ -1891,151 +1816,98 @@ function buildDocumentSentence(billingData, deliveryMethod) {
 
 function buildDynamicAmounts(billingData) {
   try {
-    UtilityScriptLibrary.debugLog('buildDynamicAmounts', 'DEBUG', 'Starting function', 
+    UtilityScriptLibrary.debugLog('buildDynamicAmounts', 'DEBUG', 'Starting function',
                   'billingData keys: ' + Object.keys(billingData).join(', '), '');
-    
+
     var amounts = [];
     var ss = SpreadsheetApp.getActiveSpreadsheet();
-    
-    // Get Programs List to understand packages
-    var programSheet = ss.getSheetByName('Programs List');
-    if (!programSheet) {
-      UtilityScriptLibrary.debugLog('buildDynamicAmounts', 'ERROR', 'Programs List sheet not found', '', '');
-      throw new Error('Programs List sheet not found');
-    }
-    
-    var programData = programSheet.getDataRange().getValues();
-    var headers = programData[0];
-    var nameCol = headers.indexOf('Program Name');
-    var typeCol = headers.indexOf('Type');
-    var aliasCol = headers.indexOf('Alias For');
-    var activeCol = headers.indexOf('Active');
-    
-    UtilityScriptLibrary.debugLog('buildDynamicAmounts', 'DEBUG', 'Column indices', 
-                  'Name: ' + nameCol + ', Type: ' + typeCol + ', Alias: ' + aliasCol + ', Active: ' + activeCol, '');
-    
-    if (nameCol === -1 || typeCol === -1 || activeCol === -1) {
-      throw new Error('Required columns not found in Programs List');
-    }
-    
-    // Build package lookup
-    var packageAliases = {};
-    
-    for (var i = 1; i < programData.length; i++) {
-      var row = programData[i];
-      var programName = row[nameCol];
-      var isActive = row[activeCol] === true;
-      var type = row[typeCol];
-      var aliasFor = row[aliasCol] || '';
-      
-      if (isActive && type === 'Package' && aliasFor) {
-        var components = aliasFor.split(',')
-          .map(function(comp) { return comp.trim().toLowerCase(); })
-          .filter(function(comp) { return comp; });
-        packageAliases[programName.toLowerCase()] = components;
-      }
-    }
-    
-    // Track covered programs
+    var packageAliases = loadProgramConfig(ss).packageAliases;
     var coveredPrograms = [];
-    
-    // 1. Previous balance amount
+
+    // 1. Previous balance
     if (billingData.pastBalance && billingData.pastBalance > 0) {
       amounts.push(UtilityScriptLibrary.formatCurrency(billingData.pastBalance));
     }
-    
-    // 1b. Credit from previous billing (negative past balance)
+
+    // 1b. Credit from previous billing
     if (billingData.pastBalance && billingData.pastBalance < 0) {
       amounts.push(UtilityScriptLibrary.formatCurrency(billingData.pastBalance));
     }
-    
-    // 2. PASS 1: Add charge amounts (quantity > 0)
+
+    // 2. PASS 1: Charge amounts (quantity > 0)
     if (billingData.programTotals && billingData.programTotals.programs) {
-      UtilityScriptLibrary.debugLog('buildDynamicAmounts', 'DEBUG', 'Processing programs for charge amounts', 
+      UtilityScriptLibrary.debugLog('buildDynamicAmounts', 'DEBUG', 'Processing programs for charge amounts',
                     'Program count: ' + billingData.programTotals.programs.length, '');
-      
+
       for (var i = 0; i < billingData.programTotals.programs.length; i++) {
         var program = billingData.programTotals.programs[i];
         var programNameLower = program.name.toLowerCase();
-        
-        // Skip if covered by a package
-        if (coveredPrograms.indexOf(programNameLower) !== -1) {
-          continue;
-        }
-        
-        // Check if this is a package that covers other programs
+
+        if (coveredPrograms.indexOf(programNameLower) !== -1) continue;
+
         if (packageAliases[programNameLower]) {
           coveredPrograms = coveredPrograms.concat(packageAliases[programNameLower]);
         }
-        
-        // Add charge amount if quantity > 0
+
         var quantity = parseFloat(program.quantity) || 0;
         if (quantity > 0) {
           var price = parseFloat(program.price) || 0;
           var chargeAmount = 0;
-          
+
           if (programNameLower === 'lesson') {
-            // For lessons, calculate based on hours
             var lessonLength = parseInt(billingData.lessonLength) || 30;
             var hours = quantity * lessonLength / 60;
             chargeAmount = hours * price;
           } else {
-            // For other programs
             chargeAmount = quantity * price;
           }
-          
+
           amounts.push(UtilityScriptLibrary.formatCurrency(chargeAmount));
         }
       }
     }
-    
-    // 3. PASS 2: Add credit amounts (credit > 0)
+
+    // 3. PASS 2: Credit amounts (credit > 0)
     if (billingData.programTotals && billingData.programTotals.programs) {
-      UtilityScriptLibrary.debugLog('buildDynamicAmounts', 'DEBUG', 'Processing programs for credit amounts', 
+      UtilityScriptLibrary.debugLog('buildDynamicAmounts', 'DEBUG', 'Processing programs for credit amounts',
                     'Program count: ' + billingData.programTotals.programs.length, '');
-      
+
       for (var i = 0; i < billingData.programTotals.programs.length; i++) {
         var program = billingData.programTotals.programs[i];
         var programNameLower = program.name.toLowerCase();
-        
-        // Skip if covered by a package
-        if (coveredPrograms.indexOf(programNameLower) !== -1) {
-          continue;
-        }
-        
-        // Add credit amount if credit > 0
+
+        if (coveredPrograms.indexOf(programNameLower) !== -1) continue;
+
         var credit = parseFloat(program.credit) || 0;
         if (credit > 0) {
           var price = parseFloat(program.price) || 0;
           var creditAmount = 0;
-          
+
           if (programNameLower === 'lesson') {
-            // For lessons, calculate based on hours
             var lessonLength = parseInt(billingData.lessonLength) || 30;
             var hours = credit * lessonLength / 60;
-            creditAmount = -(hours * price); // Make negative
+            creditAmount = -(hours * price);
           } else {
-            // For other programs
-            creditAmount = -(credit * price); // Make negative
+            creditAmount = -(credit * price);
           }
-          
+
           amounts.push(UtilityScriptLibrary.formatCurrency(creditAmount));
         }
       }
     }
-    
-    // 4. Late fee amount
+
+    // 4. Late fee
     if (billingData.lateFee && billingData.lateFee > 0) {
       amounts.push(UtilityScriptLibrary.formatCurrency(billingData.lateFee));
     }
-    
-    UtilityScriptLibrary.debugLog('buildDynamicAmounts', 'INFO', 'Amounts built successfully', 
+
+    UtilityScriptLibrary.debugLog('buildDynamicAmounts', 'INFO', 'Amounts built successfully',
                   'Amount count: ' + amounts.length, '');
-    
+
     return amounts.join('\n');
-    
+
   } catch (error) {
-    UtilityScriptLibrary.debugLog('buildDynamicAmounts', 'ERROR', 'Failed to build amounts', 
+    UtilityScriptLibrary.debugLog('buildDynamicAmounts', 'ERROR', 'Failed to build amounts',
                   '', error.message + ' | ' + error.stack);
     return 'Error: ' + error.message;
   }
@@ -2043,122 +1915,68 @@ function buildDynamicAmounts(billingData) {
 
 function buildDynamicLineItems(billingData) {
   try {
-    UtilityScriptLibrary.debugLog('buildDynamicLineItems', 'DEBUG', 'Starting function', 
+    UtilityScriptLibrary.debugLog('buildDynamicLineItems', 'DEBUG', 'Starting function',
                   'billingData keys: ' + Object.keys(billingData).join(', '), '');
-    
+
     var lineItems = [];
     var ss = SpreadsheetApp.getActiveSpreadsheet();
-    
-    // Get Programs List to understand packages
-    var programSheet = ss.getSheetByName('Programs List');
-    if (!programSheet) {
-      UtilityScriptLibrary.debugLog('buildDynamicLineItems', 'ERROR', 'Programs List sheet not found', '', '');
-      throw new Error('Programs List sheet not found');
-    }
-    
-    var programData = programSheet.getDataRange().getValues();
-    var headers = programData[0];
-    var nameCol = headers.indexOf('Program Name');
-    var typeCol = headers.indexOf('Type');
-    var aliasCol = headers.indexOf('Alias For');
-    var activeCol = headers.indexOf('Active');
-    
-    UtilityScriptLibrary.debugLog('buildDynamicLineItems', 'DEBUG', 'Column indices', 
-                  'Name: ' + nameCol + ', Type: ' + typeCol + ', Alias: ' + aliasCol + ', Active: ' + activeCol, '');
-    
-    if (nameCol === -1 || typeCol === -1 || activeCol === -1) {
-      throw new Error('Required columns not found in Programs List');
-    }
-    
-    // Build lookup maps
-    var packageAliases = {}; // package name -> array of component programs
-    var activePrograms = [];
-    
-    for (var i = 1; i < programData.length; i++) {
-      var row = programData[i];
-      var programName = row[nameCol];
-      var isActive = row[activeCol] === true;
-      var type = row[typeCol];
-      var aliasFor = row[aliasCol] || '';
-      
-      if (isActive) {
-        activePrograms.push(programName.toLowerCase());
-        
-        if (type === 'Package' && aliasFor) {
-          var components = aliasFor.split(',')
-            .map(function(comp) { return comp.trim().toLowerCase(); })
-            .filter(function(comp) { return comp; });
-          packageAliases[programName.toLowerCase()] = components;
-        }
-      }
-    }
-    
-    // Track which individual programs are covered by packages
+    var packageAliases = loadProgramConfig(ss).packageAliases;
     var coveredPrograms = [];
-    
+
     // 1. Previous balance (if >0)
     if (billingData.pastBalance && billingData.pastBalance > 0) {
       lineItems.push('Previous Balance');
     }
-    
+
     // 1b. Credit from previous billing (if <0)
     if (billingData.pastBalance && billingData.pastBalance < 0) {
       lineItems.push('Credit from Previous Billing');
     }
-    
-    // 2. PASS 1: Add charge line items (quantity > 0)
+
+    // 2. PASS 1: Charge line items (quantity > 0)
     if (billingData.programTotals && billingData.programTotals.programs) {
-      UtilityScriptLibrary.debugLog('buildDynamicLineItems', 'DEBUG', 'Processing programs for charges', 
+      UtilityScriptLibrary.debugLog('buildDynamicLineItems', 'DEBUG', 'Processing programs for charges',
                     'Program count: ' + billingData.programTotals.programs.length, '');
-      
+
       for (var i = 0; i < billingData.programTotals.programs.length; i++) {
         var program = billingData.programTotals.programs[i];
         var programNameLower = program.name.toLowerCase();
-        
+
+        if (coveredPrograms.indexOf(programNameLower) !== -1) continue;
+
         var quantity = parseFloat(program.quantity) || 0;
-        
+
         if (quantity > 0) {
-          // Check if this is a package
           if (packageAliases[programNameLower]) {
-            // This is a package - build description with components
             var packageComponents = [];
             var components = packageAliases[programNameLower];
-            
+
             for (var k = 0; k < components.length; k++) {
               var componentName = components[k];
-              
               if (componentName === 'lesson') {
-                // Special handling for lessons - include quantity and length
                 packageComponents.push(quantity + ' ' + billingData.lessonLength + '-minute lessons');
               } else {
-                // For other components, find their quantity if available
-                var componentQuantity = 1; // default
+                var componentQuantity = 1;
                 for (var l = 0; l < billingData.programTotals.programs.length; l++) {
-                  var otherProgram = billingData.programTotals.programs[l];
-                  if (otherProgram.name.toLowerCase() === componentName) {
-                    componentQuantity = otherProgram.quantity;
+                  if (billingData.programTotals.programs[l].name.toLowerCase() === componentName) {
+                    componentQuantity = billingData.programTotals.programs[l].quantity;
                     break;
                   }
                 }
                 packageComponents.push(componentQuantity + ' ' + componentName + ' session' + (componentQuantity === 1 ? '' : 's'));
               }
             }
-            
-            var packageDescription = program.name + ' (' + packageComponents.join(', ') + ')';
-            lineItems.push(packageDescription);
-            
-            // Mark components as covered
+
+            lineItems.push(program.name + ' (' + packageComponents.join(', ') + ')');
+
             for (var m = 0; m < components.length; m++) {
               coveredPrograms.push(components[m]);
             }
           } else {
-            // Check if this individual program is not covered by a package
             if (coveredPrograms.indexOf(programNameLower) === -1) {
               if (programNameLower === 'lesson') {
-                // Special formatting for individual lessons
                 lineItems.push(quantity + ' ' + billingData.lessonLength + '-minute lessons');
               } else {
-                // Other individual programs
                 lineItems.push(quantity + ' ' + program.name.toLowerCase() + ' session' + (quantity === 1 ? '' : 's'));
               }
             }
@@ -2166,47 +1984,41 @@ function buildDynamicLineItems(billingData) {
         }
       }
     }
-    
-    // 3. PASS 2: Add credit line items (credit > 0)
+
+    // 3. PASS 2: Credit line items (credit > 0)
     if (billingData.programTotals && billingData.programTotals.programs) {
-      UtilityScriptLibrary.debugLog('buildDynamicLineItems', 'DEBUG', 'Processing programs for credits', 
+      UtilityScriptLibrary.debugLog('buildDynamicLineItems', 'DEBUG', 'Processing programs for credits',
                     'Program count: ' + billingData.programTotals.programs.length, '');
-      
+
       for (var i = 0; i < billingData.programTotals.programs.length; i++) {
         var program = billingData.programTotals.programs[i];
         var programNameLower = program.name.toLowerCase();
-        
-        // Skip if covered by a package
-        if (coveredPrograms.indexOf(programNameLower) !== -1) {
-          continue;
-        }
-        
+
+        if (coveredPrograms.indexOf(programNameLower) !== -1) continue;
+
         var credit = parseFloat(program.credit) || 0;
-        
         if (credit > 0) {
           if (programNameLower === 'lesson') {
-            // Special formatting for lesson credits
             lineItems.push(credit + ' ' + billingData.lessonLength + '-minute lessons Credit');
           } else {
-            // Other program credits
             lineItems.push(credit + ' ' + program.name.toLowerCase() + ' session' + (credit === 1 ? '' : 's') + ' Credit');
           }
         }
       }
     }
-    
-    // 4. Late fee (if >0)
+
+    // 4. Late fee
     if (billingData.lateFee && billingData.lateFee > 0) {
       lineItems.push('Late Fee');
     }
-    
-    UtilityScriptLibrary.debugLog('buildDynamicLineItems', 'INFO', 'Line items built successfully', 
+
+    UtilityScriptLibrary.debugLog('buildDynamicLineItems', 'INFO', 'Line items built successfully',
                   'Item count: ' + lineItems.length, '');
-    
+
     return lineItems.join('\n');
-    
+
   } catch (error) {
-    UtilityScriptLibrary.debugLog('buildDynamicLineItems', 'ERROR', 'Failed to build line items', 
+    UtilityScriptLibrary.debugLog('buildDynamicLineItems', 'ERROR', 'Failed to build line items',
                   '', error.message + ' | ' + error.stack);
     return 'Error: ' + error.message;
   }
@@ -2655,6 +2467,35 @@ function buildMissingDocumentSentence(billingData) {
   }
 }
 
+function buildPackageAliases(ss) {
+  var programSheet = ss.getSheetByName('Programs List');
+  if (!programSheet) throw new Error('Programs List sheet not found');
+
+  var programData = programSheet.getDataRange().getValues();
+  var headers = programData[0];
+  var nameCol = headers.indexOf('Program Name');
+  var typeCol = headers.indexOf('Type');
+  var aliasCol = headers.indexOf('Alias For');
+  var activeCol = headers.indexOf('Active');
+
+  if (nameCol === -1 || typeCol === -1 || activeCol === -1) {
+    throw new Error('Required columns not found in Programs List');
+  }
+
+  var packageAliases = {};
+  for (var i = 1; i < programData.length; i++) {
+    var row = programData[i];
+    if (row[activeCol] === true && row[typeCol] === 'Package' && row[aliasCol]) {
+      var components = row[aliasCol].split(',')
+        .map(function(comp) { return comp.trim().toLowerCase(); })
+        .filter(function(comp) { return comp; });
+      packageAliases[row[nameCol].toLowerCase()] = components;
+    }
+  }
+
+  return packageAliases;
+}
+
 function buildProgramDescription(programTotals, lessonLength) {
   var descriptions = [];
   
@@ -2760,7 +2601,7 @@ function buildTemplateVariables(studentData, billingData, templateType) {
 }
 
 function calculateLateFee(pastBalance, paymentReceived, pastInvoiceNumber, rateMap) {
-  var lessonRate = parseFloat(rateMap["Lessons"]) || 0;
+  var lessonRate = parseFloat(rateMap["Lesson"]) || 0;
   var gracePeriod = parseInt(rateMap["Grace Period"]) || 10;
   
   if (pastBalance <= lessonRate || paymentReceived > 0 || !pastInvoiceNumber) {
@@ -3562,67 +3403,30 @@ function copyStaticFieldsToBillingRow(newRow, sourceRow, context, getFn) {
     if (agreementFormCol) newRow[agreementFormCol - 1] = false;
     if (mediaReleaseCol) newRow[mediaReleaseCol - 1] = false;
   }
-
-  // Handle Past data fields (continuing semester only)
-  if (!getFn) {
-    var pastFieldMappings = [
-      { pastField: "Past Balance", currentField: "Current Balance" },
-      { pastField: "Past Invoice Number", currentField: "Invoice Number" },
-      { pastField: "Past Cumulative Hours Taught", currentField: "Current Cumulative Hours Taught" },
-      { pastField: "Past Cumulative Hours Billed", currentField: "Current Cumulative Hours Billed" }
-    ];
-
-    for (var j = 0; j < pastFieldMappings.length; j++) {
-      var mapping = pastFieldMappings[j];
-      var pastCol = context.headerMap[UtilityScriptLibrary.normalizeHeader(mapping.pastField)];
-      if (pastCol) {
-        var prevCurrentCol = context.prevHeaderMap[UtilityScriptLibrary.normalizeHeader(mapping.currentField)];
-        newRow[pastCol - 1] = prevCurrentCol ? sourceRow[prevCurrentCol - 1] : '';
-
-        if (mapping.pastField.indexOf("Hours") !== -1) {
-          if (!context.hoursColumnsToFormat) context.hoursColumnsToFormat = [];
-          context.hoursColumnsToFormat.push(pastCol);
-        }
-      }
-    }
-  }
 }
 
-function createBillingSheet(billingMonth) {
-  UtilityScriptLibrary.debugLog("createBillingSheet", "INFO", "Creating billing sheet", 
+function createBillingSheet(billingMonth, programConfig) {
+  UtilityScriptLibrary.debugLog("createBillingSheet", "INFO", "Creating billing sheet",
                 "Billing month: " + billingMonth, "");
-  
+
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var templateSheet = ss.getSheetByName("Billing Template");
-    
-    if (!templateSheet) {
-      throw new Error("Billing Template sheet not found.");
-    }
 
-    // Sanitize name (ES5 compatible)
+    if (!templateSheet) throw new Error("Billing Template sheet not found.");
+
     var safeName = billingMonth.replace(/[\\\/:*?\[\]\n\r]/g, '').substring(0, 100);
-    if (!safeName) {
-      throw new Error("Billing month name is invalid or empty.");
-    }
-    
-    if (ss.getSheetByName(safeName)) {
-      throw new Error('A sheet named "' + safeName + '" already exists.');
-    }
+    if (!safeName) throw new Error("Billing month name is invalid or empty.");
 
-    // Use utility function for sheet copying with protections
+    if (ss.getSheetByName(safeName)) throw new Error('A sheet named "' + safeName + '" already exists.');
+
     var copyResult = UtilityScriptLibrary.copySheetWithProtections(templateSheet, ss, safeName);
-    if (!copyResult.success) {
-      throw new Error("Failed to copy template sheet: " + copyResult.error);
-    }
-    
+    if (!copyResult.success) throw new Error("Failed to copy template sheet: " + copyResult.error);
+
     var newSheet = copyResult.sheet;
     ss.setActiveSheet(newSheet);
-    
-    // Move new sheet to first position (leftmost)
     ss.moveActiveSheet(1);
 
-    // Find dynamic columns marker
     var headerRow = newSheet.getRange(1, 1, 1, newSheet.getLastColumn()).getValues()[0];
     var markerIndex = -1;
     for (var i = 0; i < headerRow.length; i++) {
@@ -3631,64 +3435,22 @@ function createBillingSheet(billingMonth) {
         break;
       }
     }
-    
-    if (markerIndex === -1) {
-      throw new Error("Marker <<DYNAMIC_COLUMNS_START>> not found.");
-    }
 
-    // Get active programs for dynamic headers
-    var programSheet = ss.getSheetByName("Programs List");
-    var data = programSheet.getDataRange().getValues();
-    var headers = data[0];
-    var nameCol = headers.indexOf("Program Name");
-    var activeCol = headers.indexOf("Active");
-    var prefixCol = headers.indexOf("Billing Sheet Prefix");
-    var typeCol = headers.indexOf("Type");
+    if (markerIndex === -1) throw new Error("Marker <<DYNAMIC_COLUMNS_START>> not found.");
 
-    var dynamicHeaders = [];
-    for (var i = 1; i < data.length; i++) {
-      var row = data[i];
-      if (row[activeCol] === true && row[typeCol] !== "Package") {
-        var prefix = row[prefixCol] ? row[prefixCol].toString().trim() : '';
-        if (prefix) {
-          // Updated column order for Lesson programs
-          if (prefix.toLowerCase() === 'lesson') {
-            dynamicHeaders.push(
-              prefix + ' Quantity', 
-              prefix + ' Credit',
-              prefix + ' Hours',
-              prefix + ' Price',
-              prefix + ' Total'
-            );
-          } else {
-            dynamicHeaders.push(
-              prefix + ' Quantity',
-              prefix + ' Credit', 
-              prefix + ' Price',
-              prefix + ' Total'
-            );
-          }
-        }
-      }
-    }
-
-    // Insert dynamic columns
+    var dynamicHeaders = programConfig.dynamicHeaders;
     var insertAt = markerIndex + 2;
     newSheet.insertColumnsBefore(insertAt, dynamicHeaders.length);
     newSheet.getRange(1, insertAt, 1, dynamicHeaders.length).setValues([dynamicHeaders]);
     newSheet.deleteColumn(markerIndex + 1);
 
-    // REMOVED: newSheet.getDataRange().clearDataValidations();
-    // This line was clearing ALL data validations including the Letter Type dropdown
-    // Data validations don't interfere with number formatting, so this line serves no purpose
-    
-    UtilityScriptLibrary.debugLog("createBillingSheet", "INFO", "Billing sheet created successfully", 
+    UtilityScriptLibrary.debugLog("createBillingSheet", "INFO", "Billing sheet created successfully",
                   "Sheet: " + safeName + ", Dynamic columns: " + dynamicHeaders.length, "");
-    
+
     return newSheet;
-    
+
   } catch (error) {
-    UtilityScriptLibrary.debugLog("createBillingSheet", "ERROR", "Failed to create billing sheet", 
+    UtilityScriptLibrary.debugLog("createBillingSheet", "ERROR", "Failed to create billing sheet",
                   "Billing month: " + billingMonth, error.message);
     throw error;
   }
@@ -4223,93 +3985,6 @@ function createSingleRegistrationPacketWithSelection(studentData, billingData, p
       documentsIncluded: [],
       packetType: packetType
     };
-  }
-}
-
-function detectAndBillOverages(billingSheet, billingCycleName) {
-  try {
-    UtilityScriptLibrary.debugLog('Detecting lesson overages for billing cycle: ' + billingCycleName);
-    
-    var headerMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
-    var lastRow = billingSheet.getLastRow();
-    
-    // Check if there are any data rows (must have at least row 2)
-    if (lastRow < 2) {
-      UtilityScriptLibrary.debugLog('No data rows found in billing sheet - skipping overage detection');
-      return [];
-    }
-    
-    var numDataRows = lastRow - 1; // Subtract header row
-    if (numDataRows <= 0) {
-      UtilityScriptLibrary.debugLog('No data rows to process - skipping overage detection');
-      return [];
-    }
-    
-    var dataRange = billingSheet.getRange(2, 1, numDataRows, billingSheet.getLastColumn());
-    var data = dataRange.getValues();
-    
-    // Use the actual column names from your billing template
-    var studentIdCol = headerMap[UtilityScriptLibrary.normalizeHeader('Student ID')];
-    var currentCumTaughtCol = headerMap[UtilityScriptLibrary.normalizeHeader('Current Cumulative Hours Taught')];
-    var currentCumBilledCol = headerMap[UtilityScriptLibrary.normalizeHeader('Current Cumulative Hours Billed')];
-    var lessonLengthCol = headerMap[UtilityScriptLibrary.normalizeHeader('Lesson Length')];
-    var lessonHoursCol = headerMap[UtilityScriptLibrary.normalizeHeader('Lesson Hours')];
-    
-    // Check for required columns
-    if (!studentIdCol || !lessonLengthCol) {
-      UtilityScriptLibrary.debugLog('Required overage detection columns not found - Student ID: ' + studentIdCol + ', Lesson Length: ' + lessonLengthCol);
-      return [];
-    }
-    
-    // If cumulative columns don't exist, skip overage detection
-    if (!currentCumTaughtCol || !currentCumBilledCol || !lessonHoursCol) {
-      UtilityScriptLibrary.debugLog('Cumulative hours columns not found - skipping overage detection for this cycle');
-      return [];
-    }
-    
-    var overageStudents = [];
-    
-    // Check each student for overages
-    for (var i = 0; i < data.length; i++) {
-      var row = data[i];
-      var studentId = row[studentIdCol - 1];
-      
-      if (!studentId) continue;
-      
-      var registeredHours = parseFloat(row[lessonHoursCol - 1]) || 0;
-      var taughtHours = parseFloat(row[currentCumTaughtCol - 1]) || 0;
-      var billedHours = parseFloat(row[currentCumBilledCol - 1]) || 0;
-      var lessonLength = row[lessonLengthCol - 1] || '30';
-      
-      // Calculate unbilled overages: hours taught beyond registered amount that haven't been billed yet
-      var unbilledOverage = Math.max(0, taughtHours - registeredHours - (billedHours - registeredHours));
-      
-      if (unbilledOverage > 0) {
-        overageStudents.push({
-          studentId: studentId,
-          overageHours: unbilledOverage,
-          lessonLength: lessonLength,
-          rowIndex: i + 2, // +2 for header row and 0-based index
-          registeredHours: registeredHours,
-          taughtHours: taughtHours,
-          billedHours: billedHours
-        });
-        
-        UtilityScriptLibrary.debugLog('Overage detected - Student ' + studentId + ': ' + unbilledOverage + ' hour equivalents');
-      }
-    }
-    
-    // Add overages to billing sheet if any found
-    if (overageStudents.length > 0) {
-      addOveragesToBillingSheet(billingSheet, overageStudents, headerMap);
-    }
-    
-    UtilityScriptLibrary.debugLog('Overage detection complete: ' + overageStudents.length + ' students with overages');
-    return overageStudents;
-    
-  } catch (error) {
-    UtilityScriptLibrary.debugLog('Error detecting overages: ' + error.message);
-    throw error;
   }
 }
 
@@ -6796,75 +6471,6 @@ function getPreviousSemesterBalance(studentId) {
   }
 }
 
-function getRateForSemester(semesterName, rateType) {
-  try {
-    // Get the rate chart name for this semester
-    var rateChartName = getRateChartForSemester(semesterName);
-    
-    // Get the rate from the Rates sheet
-    var billingSS = SpreadsheetApp.getActiveSpreadsheet();
-    var ratesSheet = billingSS.getSheetByName('Rates');
-    if (!ratesSheet) throw new Error('Rates sheet not found.');
-
-    var data = ratesSheet.getDataRange().getValues();
-    var headers = data[0];
-    
-    // Find the rate chart column
-    var rateChartColIndex = headers.indexOf(rateChartName);
-    if (rateChartColIndex === -1) {
-      throw new Error(`Rate chart "${rateChartName}" not found in Rates sheet.`);
-    }
-    
-    // Find the rate type row
-    for (var i = 1; i < data.length; i++) {
-      if (data[i][0] === rateType) { // Column A contains rate titles
-        var rate = data[i][rateChartColIndex];
-        if (rate === undefined || rate === null || rate === '') {
-          throw new Error(`Rate for "${rateType}" not found in chart "${rateChartName}"`);
-        }
-        return rate;
-      }
-    }
-    
-    throw new Error(`Rate type "${rateType}" not found in Rates sheet.`);
-    
-  } catch (error) {
-    UtilityScriptLibrary.debugLog(`❌ Error getting rate: ${error.message}`);
-    throw error;
-  }
-}
-
-function getRateChartForSemester(semesterName) {
-  try {
-    var billingSS = SpreadsheetApp.getActiveSpreadsheet();
-    var metadataSheet = billingSS.getSheetByName('semesterMetadata');
-    if (!metadataSheet) throw new Error('Semester Metadata sheet not found.');
-
-    var data = metadataSheet.getDataRange().getValues();
-    var headers = data[0];
-    
-    var semesterCol = 0; // Column A
-    var rateChartCol = 3; // Column D (was "Rates Verification", now rate chart name)
-    
-    // Find the semester row
-    for (var i = 1; i < data.length; i++) {
-      if (data[i][semesterCol] === semesterName) {
-        var rateChart = data[i][rateChartCol];
-        if (!rateChart || typeof rateChart !== 'string') {
-          throw new Error(`No rate chart found for semester "${semesterName}"`);
-        }
-        return rateChart;
-      }
-    }
-    
-    throw new Error(`Semester "${semesterName}" not found in metadata.`);
-    
-  } catch (error) {
-    UtilityScriptLibrary.debugLog(`❌ Error getting rate chart for semester: ${error.message}`);
-    throw error;
-  }
-}
-
 function getRateColumnFromMetadata(semesterName) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var metadataSheet = ss.getSheetByName("Semester Metadata");
@@ -7251,6 +6857,84 @@ function isHeaderRow(row, dateIdx, lengthIdx) {
   }
   
   return false;
+}
+
+function loadProgramConfig(ss) {
+  var programSheet = ss.getSheetByName('Programs List');
+  if (!programSheet) throw new Error('Programs List sheet not found');
+
+  var programData = programSheet.getDataRange().getValues();
+  var headers = programData[0];
+  var nameCol         = headers.indexOf('Program Name');
+  var typeCol         = headers.indexOf('Type');
+  var aliasCol        = headers.indexOf('Alias For');
+  var activeCol       = headers.indexOf('Active');
+  var prefixCol       = headers.indexOf('Billing Sheet Prefix');
+  var rateKeyCol      = headers.indexOf('Rate Key');
+  var quantityTypeCol = headers.indexOf('Quantity Type');
+
+  if (nameCol === -1 || typeCol === -1 || activeCol === -1) {
+    throw new Error('Required columns not found in Programs List');
+  }
+
+  var programMap     = {};
+  var packageAliases = {};
+  var dynamicHeaders = [];
+
+  for (var i = 1; i < programData.length; i++) {
+    var row        = programData[i];
+    var isActive   = row[activeCol] === true;
+    var type       = row[typeCol];
+    var programName = row[nameCol];
+
+    if (!isActive) continue;
+
+    if (type === 'Package') {
+      var aliasFor = row[aliasCol] || '';
+      if (aliasFor) {
+        var components = aliasFor.split(',')
+          .map(function(comp) { return comp.trim().toLowerCase(); })
+          .filter(function(comp) { return comp; });
+        packageAliases[programName.toLowerCase()] = components;
+      }
+    } else {
+      programMap[programName] = {
+        prefix:       row[prefixCol],
+        rateKey:      row[rateKeyCol],
+        quantityType: row[quantityTypeCol]
+      };
+
+      var prefix = row[prefixCol] ? row[prefixCol].toString().trim() : '';
+      if (prefix) {
+        if (prefix.toLowerCase() === 'lesson') {
+          dynamicHeaders.push(
+            prefix + ' Quantity',
+            prefix + ' Credit',
+            prefix + ' Hours',
+            prefix + ' Price',
+            prefix + ' Total'
+          );
+        } else {
+          dynamicHeaders.push(
+            prefix + ' Quantity',
+            prefix + ' Credit',
+            prefix + ' Price',
+            prefix + ' Total'
+          );
+        }
+      }
+    }
+  }
+
+  return {
+    programData:    programData,
+    programMap:     programMap,
+    packageAliases: packageAliases,
+    dynamicHeaders: dynamicHeaders,
+    nameCol:        nameCol,
+    typeCol:        typeCol,
+    aliasCol:       aliasCol
+  };
 }
 
 function loadReregistrationData() {
@@ -7712,51 +7396,18 @@ function populateAllCumulativeColumns() {
 }
 
 function populateBillingSheet(context, carryOverData) {
-  UtilityScriptLibrary.debugLog("populateBillingSheet", "INFO", "Starting billing sheet population", "", "");
-
   try {
-    var formData     = context.formSheet.getDataRange().getValues();
-    var get          = context.getColIndex;
-    var timestampCol = get("Timestamp");
-    var studentIdCol = get("Student ID");
+    UtilityScriptLibrary.debugLog("populateBillingSheet", "INFO", "Starting", "", "");
+
     var billingSheet = context.billingSheet;
-    var existingIds  = {};
-    var prevDataMap  = (carryOverData && carryOverData.rowsToCarry) ? carryOverData.rowsToCarry : {};
-    var allStudents  = [];
+    var existingIds  = [];
 
-    var currentRowIndex = 2;
-    for (var i = 1; i < formData.length; i++) {
-      var row       = formData[i];
-      var studentId = row[studentIdCol];
-      var timestamp = new Date(row[timestampCol]);
+    var formResult = buildFormStudents(context.formSheet, null, carryOverData.rowsToCarry, context, [], 2);
+    existingIds.push.apply(existingIds, formResult.formStudentIds);
 
-      if (!studentId || isNaN(timestamp.getTime())) continue;
+    buildCarryoverStudents(carryOverData.rowsToCarry, existingIds, context, [], formResult.nextRowIndex);
 
-      var prevRow = prevDataMap[studentId];
-      var result  = buildBillingRowFromForm(row, prevRow, context, currentRowIndex);
-
-      allStudents.push(result);
-      existingIds[studentId] = true;
-      currentRowIndex++;
-    }
-
-    var carryoverCount = 0;
-    for (var studentId in prevDataMap) {
-      if (existingIds[studentId]) continue;
-
-      var prevRow = prevDataMap[studentId];
-      if (!prevRow || !Array.isArray(prevRow)) continue;
-
-      var result = buildBillingRowFromPrevious(prevRow, context, currentRowIndex);
-
-      allStudents.push(result);
-      carryoverCount++;
-      currentRowIndex++;
-    }
-
-    UtilityScriptLibrary.debugLog("populateBillingSheet", "INFO", "Built all students",
-      "Form: " + Object.keys(existingIds).length + ", Carryover: " + carryoverCount, "");
-
+    var allStudents = formResult.students || [];
     writeAndFormatRows(billingSheet, allStudents);
 
     // Re-registration pass
@@ -7771,14 +7422,6 @@ function populateBillingSheet(context, carryOverData) {
     context.processedReregIds = processedReregIds;
 
     populateAllCumulativeColumns();
-
-    if (carryOverData && carryOverData.previousSheetName) {
-      var overages = detectAndBillOverages(billingSheet, context.billingCycleName);
-      if (overages.length > 0) {
-        UtilityScriptLibrary.debugLog("populateBillingSheet", "INFO", "Overages detected",
-          "Count: " + overages.length, "");
-      }
-    }
 
   } catch (error) {
     UtilityScriptLibrary.debugLog("populateBillingSheet", "ERROR", "Failed", "", error.message);
@@ -7821,14 +7464,6 @@ function populateBillingSheetContinuingSemester(context, billingSheet, existingS
     context.processedReregIds = processedReregIds;
 
     populateAllCumulativeColumns();
-
-    if (previousData && Object.keys(previousData).length > 0) {
-      var overages = detectAndBillOverages(billingSheet, context.billingCycleName);
-      if (overages.length > 0) {
-        UtilityScriptLibrary.debugLog("populateBillingSheetContinuingSemester", "INFO", "Overages detected",
-          "Count: " + overages.length, "");
-      }
-    }
 
   } catch (error) {
     UtilityScriptLibrary.debugLog("populateBillingSheetContinuingSemester", "ERROR", "Failed", "", error.message);
@@ -7949,7 +7584,7 @@ function populateLateFee(newRow, context, currencyCols) {
     var rateYearCol = UtilityScriptLibrary.getMostRecentRateColumn(rateHeaders);
     var rateMap = UtilityScriptLibrary.buildRateMapFromSheet(ratesSheet, rateHeaders, rateYearCol);
     
-    var lessonRate = parseFloat(rateMap["Lessons"]) || 0;
+    var lessonRate = parseFloat(rateMap["Lesson"]) || 0;
     var gracePeriod = parseInt(rateMap["Grace Period"]) || 10;
     
     if (pastBalance > lessonRate && paymentReceived === 0 && pastInvoiceNumber) {
