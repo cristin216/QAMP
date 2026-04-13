@@ -1668,18 +1668,18 @@ function buildBillingRowFromForm(formRow, prevRow, context, rowIndex) {
 }
 
 function buildBillingRowFromPrevious(prevRow, context, rowIndex) {
-  UtilityScriptLibrary.debugLog("buildBillingRowFromPrevious", "DEBUG", "Building complete row from previous", 
+  UtilityScriptLibrary.debugLog("buildBillingRowFromPrevious", "DEBUG", "Building complete row from previous",
                 "Row: " + rowIndex, "");
-  
+
   if (!context || !context.headerMap) {
     throw new Error("Context or headerMap is missing");
   }
-  
+
   var newRow = new Array(Object.keys(context.headerMap).length).fill("");
   var quantityCols = [];
   var currencyCols = [];
   var norm = UtilityScriptLibrary.normalizeHeader;
-  
+
   // Get Student ID
   var studentId = UtilityScriptLibrary.getStudentIdFromRow(prevRow, context.prevHeaderMap);
   if (!studentId) {
@@ -1688,15 +1688,15 @@ function buildBillingRowFromPrevious(prevRow, context, rowIndex) {
 
   // Copy static fields
   copyStaticFieldsToBillingRow(newRow, prevRow, context);
-  
+
   // Delivery preference from previous
   setDeliveryPreference(newRow, prevRow, context, false);
-  
+
   // Invoice metadata
   populateInvoiceMetadata(newRow, studentId, context, rowIndex);
 
   // Copy lesson length from previous
-  UtilityScriptLibrary.copyPreviousColumnToNew(newRow, prevRow, context, context.headerMap, context.prevHeaderMap, 
+  UtilityScriptLibrary.copyPreviousColumnToNew(newRow, prevRow, context.headerMap, context.prevHeaderMap,
                           { newCol: "Lesson Length", prevCol: "Lesson Length" });
 
   // Set all program quantities to 0 with current rates
@@ -1712,14 +1712,14 @@ function buildBillingRowFromPrevious(prevRow, context, rowIndex) {
   // Formulas
   addInvoiceTotalFormula(newRow, context, rowIndex, currencyCols);
   populateCurrentBalanceFormula(newRow, context, rowIndex);
-  
+
   // Letter Type
   populateLetterType(newRow, context, "previous", prevRow);
 
-  return { 
-    newRow: newRow, 
-    quantityCols: quantityCols, 
-    currencyCols: currencyCols 
+  return {
+    newRow: newRow,
+    quantityCols: quantityCols,
+    currencyCols: currencyCols
   };
 }
 
