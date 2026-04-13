@@ -593,6 +593,17 @@ function combineDocumentsIntoPDF(documents, fileName, destinationFolder) {
   }
 }
 
+function copyPreviousColumnToNew(newRow, prevRow, currMap, prevMap, mapping) {
+  var newCol  = currMap[normalizeHeader(mapping.newCol)];
+  var prevCol = prevMap[normalizeHeader(mapping.prevCol)];
+
+  if (newCol && prevCol && prevRow.length >= prevCol) {
+    newRow[newCol - 1] = prevRow[prevCol - 1];
+    return true;
+  }
+  return false;
+}
+
 function copyTextAttributes(sourcePara, targetPara) {
   try {
     var text = sourcePara.getText();
@@ -2190,6 +2201,57 @@ function getSemesterDates(semesterName) {
     return null;
     
   } catch (error) {
+    return null;
+  }
+}
+
+function getSemesterForDate(targetDate) {
+  try {
+    var semesterMetadataSheet = getSheet('semesterMetadata');
+    if (!semesterMetadataSheet) {
+      debugLog("getSemesterForDate", "ERROR", "Semester Metadata sheet not found", "", "");
+      return null;
+    }
+
+    var data = semesterMetadataSheet.getDataRange().getValues();
+    var headers = data[0];
+
+    var nameCol = -1, startCol = -1, endCol = -1;
+    for (var i = 0; i < headers.length; i++) {
+      var header = normalizeHeader(headers[i]);
+      if (header.indexOf('semester') !== -1 || header.indexOf('name') !== -1) {
+        nameCol = i;
+      } else if (header.indexOf('start') !== -1) {
+        startCol = i;
+      } else if (header.indexOf('end') !== -1) {
+        endCol = i;
+      }
+    }
+
+    if (nameCol === -1 || startCol === -1 || endCol === -1) {
+      debugLog("getSemesterForDate", "ERROR", "Required columns not found", "", "");
+      return null;
+    }
+
+    for (var i = 1; i < data.length; i++) {
+      var row = data[i];
+      var semesterName = row[nameCol];
+      var startDate = new Date(row[startCol]);
+      var endDate = new Date(row[endCol]);
+
+      if (targetDate >= startDate && targetDate <= endDate) {
+        debugLog("getSemesterForDate", "INFO", "Found semester for date",
+                 "Date: " + targetDate.toDateString() + ", Semester: " + semesterName, "");
+        return semesterName;
+      }
+    }
+
+    debugLog("getSemesterForDate", "WARNING", "No semester found for date",
+             targetDate.toDateString(), "");
+    return null;
+
+  } catch (error) {
+    debugLog("getSemesterForDate", "ERROR", "Error finding semester", "", error.message);
     return null;
   }
 }
