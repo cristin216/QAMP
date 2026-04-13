@@ -24,7 +24,6 @@ function onOpen() {
         .addItem('Generate Documents', 'runRegistrationPacketGenerationUI')
         .addItem('Print Documents', 'convertFolderDocsToPdfUI')
         .addItem('Create New Attendance Sheets', 'createNewAttendanceSheets')
-        .addItem('Verify Payments 2024-2025', 'verifyPayments2024_2025')
         .addItem('Verify Payments (Detailed)', 'verifyPaymentsDetailed')
         .addItem('Send Re-Registration Links', 'sendReregistrationLinks')
         .addToUi();
@@ -1597,7 +1596,7 @@ function buildBillingRowFromForm(formRow, prevRow, context, rowIndex) {
   var quantityCols = [];
   var currencyCols = [];
 
-  UtilityScriptLibrary.debugLog('buildBillingRowFromForm', 'DEBUG', 'Building complete billing row', 
+  UtilityScriptLibrary.debugLog('buildBillingRowFromForm', 'DEBUG', 'Building complete billing row',
                                 'Student ID: ' + studentId + ', Has prev: ' + !!prevRow, '');
 
   // Copy static fields from form
@@ -1608,7 +1607,7 @@ function buildBillingRowFromForm(formRow, prevRow, context, rowIndex) {
 
   // Invoice metadata
   populateInvoiceMetadata(newRow, studentId, context, rowIndex);
-  
+
   // Letter Type
   populateLetterType(newRow, context, "form", null);
 
@@ -1619,37 +1618,16 @@ function buildBillingRowFromForm(formRow, prevRow, context, rowIndex) {
   var qty30Package = get("Qty30") !== -1 ? formRow[get("Qty30")] : "";
   var qty45Package = get("Qty45") !== -1 ? formRow[get("Qty45")] : "";
   var qty60Package = get("Qty60") !== -1 ? formRow[get("Qty60")] : "";
-  
-  var quantities = UtilityScriptLibrary.parseAllPackageQuantities(qty30Package, qty45Package, qty60Package);
+
+  var quantities  = UtilityScriptLibrary.parseAllPackageQuantities(qty30Package, qty45Package, qty60Package);
   var lessonLength = UtilityScriptLibrary.getLessonLengthFromPackages(qty30Package, qty45Package, qty60Package);
 
-  // Apply lesson credits if available
-  var creditApplication = context.lessonCredits && context.lessonCredits[studentId] 
-    ? context.lessonCredits[studentId] : null;
-  
-  if (creditApplication && creditApplication.totalCredits > 0) {
-    var result = buildDynamicProgramColumnsWithCredits(
-      newRow, formRow, enrolledPrograms, context,
-      quantityCols, currencyCols, rowIndex, creditApplication
-    );
-    quantityCols = result.quantityCols;
-    currencyCols = result.currencyCols;
-
-    // Update Admin Comments
-    var adminCommentsCol = context.headerMap[UtilityScriptLibrary.normalizeHeader("Admin Comments")];
-    if (adminCommentsCol) {
-      var existingComments = newRow[adminCommentsCol - 1] || '';
-      var creditNote = "Credits applied: " + creditApplication.explanation;
-      newRow[adminCommentsCol - 1] = existingComments ? existingComments + "; " + creditNote : creditNote;
-    }
-  } else {
-    var result = buildDynamicProgramColumns(
-      newRow, formRow, enrolledPrograms, context,
-      quantityCols, currencyCols, rowIndex
-    );
-    quantityCols = result.quantityCols;
-    currencyCols = result.currencyCols;
-  }
+  var result = buildDynamicProgramColumns(
+    newRow, formRow, enrolledPrograms, context,
+    quantityCols, currencyCols, rowIndex, quantities.totalQuantity
+  );
+  quantityCols = result.quantityCols;
+  currencyCols = result.currencyCols;
 
   // Set lesson length
   var lengthCol = context.headerMap[UtilityScriptLibrary.normalizeHeader("Lesson Length")];
@@ -1670,15 +1648,14 @@ function buildBillingRowFromForm(formRow, prevRow, context, rowIndex) {
     newRow[paymentCol - 1] = 0;
   }
 
-    // Apply past data if student existed in previous cycle
+  // Apply past data if student existed in previous cycle
   if (prevRow) {
     applyPastDataToRow(newRow, prevRow, context, currencyCols);
     applyLateFeeToRow(newRow, context, currencyCols);
   } else {
-    // NEW: If no prevRow (student wasn't carried over), check cumulative tracking
-    var studentId = get("Student ID") !== -1 ? formRow[get("Student ID")] : null;
-    if (studentId) {
-      applyCumulativeHistory(newRow, studentId, context, currencyCols);
+    var studentIdForHistory = get("Student ID") !== -1 ? formRow[get("Student ID")] : null;
+    if (studentIdForHistory) {
+      applyCumulativeHistory(newRow, studentIdForHistory, context, currencyCols);
     }
   }
 
@@ -1719,7 +1696,7 @@ function buildBillingRowFromPrevious(prevRow, context, rowIndex) {
   populateInvoiceMetadata(newRow, studentId, context, rowIndex);
 
   // Copy lesson length from previous
-  copyPreviousColumnToNew(newRow, prevRow, context, context.headerMap, context.prevHeaderMap, 
+  UtilityScriptLibrary.copyPreviousColumnToNew(newRow, prevRow, context, context.headerMap, context.prevHeaderMap, 
                           { newCol: "Lesson Length", prevCol: "Lesson Length" });
 
   // Set all program quantities to 0 with current rates
@@ -2026,119 +2003,54 @@ function buildDynamicLineItems(billingData) {
   }
 }
 
-function buildDynamicProgramColumns(newRow, row, enrolledPrograms, context, quantityCols, currencyCols, rowNum) {
-    UtilityScriptLibrary.debugLog('buildDynamicProgramColumns', 'DEBUG', 'FUNCTION ENTERED',
-                                'enrolledPrograms: ' + JSON.stringify(enrolledPrograms) + ', type: ' + (Array.isArray(enrolledPrograms) ? 'array' : typeof enrolledPrograms), '');
-  var get = context.getColIndex;
-  var h = context.headerMap;
-  var ratesSheet = context.ss.getSheetByName("Rates");
-  var rateHeaders = ratesSheet.getRange(1, 1, 1, ratesSheet.getLastColumn()).getValues()[0];
-  var rateYearCol = UtilityScriptLibrary.getMostRecentRateColumn(rateHeaders);
-  var rateMap = UtilityScriptLibrary.buildRateMapFromSheet(ratesSheet, rateHeaders, rateYearCol);
+function buildDynamicProgramColumns(newRow, row, enrolledPrograms, context, quantityCols, currencyCols, rowNum, lessonQuantity) {
+  UtilityScriptLibrary.debugLog('buildDynamicProgramColumns', 'DEBUG', 'FUNCTION ENTERED',
+    'enrolledPrograms: ' + JSON.stringify(enrolledPrograms), '');
 
-  // FIXED: Convert Set to Array for ES5 compatibility
-  var enrolledArray = [];
-  if (enrolledPrograms && typeof enrolledPrograms === 'object') {
-    if (enrolledPrograms.forEach) {
-      // It's a Set - convert to array
-      enrolledPrograms.forEach(function(program) {
-        enrolledArray.push(program);
-      });
-    } else if (enrolledPrograms.length !== undefined) {
-      // It's already an array
-      enrolledArray = enrolledPrograms;
-    }
-  }
+  var get = context.getColIndex;
+  var h   = context.headerMap;
+  var rateMap = getRateMap(context);
 
   for (var programName in context.programMap) {
-    var program = context.programMap[programName];
-    var prefix = program.prefix;
-    var rateKey = program.rateKey;
-    var qtyType = program.quantityType;
-    
-    // FIXED: ES5-compatible enrollment check
+    var program  = context.programMap[programName];
+    var prefix   = program.prefix;
+    var rateKey  = program.rateKey;
+    var qtyType  = program.quantityType;
+
     var isEnrolled = false;
-    for (var i = 0; i < enrolledArray.length; i++) {
-      if (enrolledArray[i] === programName.toLowerCase()) {
+    for (var i = 0; i < enrolledPrograms.length; i++) {
+      if (enrolledPrograms[i] === programName.toLowerCase()) {
         isEnrolled = true;
         break;
       }
     }
-    
+
     UtilityScriptLibrary.debugLog('buildDynamicProgramColumns', 'DEBUG', 'Checking program enrollment',
-                                  'Program: ' + programName + ', isEnrolled: ' + isEnrolled + ', enrolledArray: ' + JSON.stringify(enrolledArray), '');
-    
-    var price = rateMap[rateKey] || 0;
-    var qtyCol = h[UtilityScriptLibrary.normalizeHeader(prefix + " Quantity")];
+      'Program: ' + programName + ', isEnrolled: ' + isEnrolled, '');
+
+    var price    = rateMap[rateKey] || 0;
+    var qtyCol   = h[UtilityScriptLibrary.normalizeHeader(prefix + " Quantity")];
     var creditCol = h[UtilityScriptLibrary.normalizeHeader(prefix + " Credit")];
-    var priceCol = h[UtilityScriptLibrary.normalizeHeader(prefix + " Price")];
-    var hoursCol = h[UtilityScriptLibrary.normalizeHeader(prefix + " Hours")];
+    var priceCol  = h[UtilityScriptLibrary.normalizeHeader(prefix + " Price")];
+    var hoursCol  = h[UtilityScriptLibrary.normalizeHeader(prefix + " Hours")];
 
-    UtilityScriptLibrary.debugLog('buildDynamicProgramColumns', 'DEBUG', 'Prefix check',
-                              'Program: ' + programName + ', Prefix: "' + prefix + '", prefix.toLowerCase(): "' + prefix.toLowerCase() + '"', '');
-
-    // Extract actual quantities from form data
     var quantity = 0;
+
     if (isEnrolled && programName.toLowerCase() === "lessons") {
-      UtilityScriptLibrary.debugLog('buildDynamicProgramColumns', 'DEBUG', 'ENTERED LESSON BLOCK',
-                                    'Program: ' + programName, '');
-      
-      // Add this diagnostic block
-      var qty60Col = get("Qty60");
-      var qty45Col = get("Qty45");
-      var qty30Col = get("Qty30");
-      
-      UtilityScriptLibrary.debugLog('buildDynamicProgramColumns', 'DEBUG', 'Column indices retrieved',
-                                    'qty60Col: ' + qty60Col + ', qty45Col: ' + qty45Col + ', qty30Col: ' + qty30Col, '');
-      
-      var qty60 = 0;
-      var qty45 = 0;
-      var qty30 = 0;
-      
-      if (qty60Col !== -1 && row[qty60Col]) {
-        qty60 = UtilityScriptLibrary.extractLessonQuantityFromPackage(row[qty60Col]) || 0;
-      }
-      if (qty45Col !== -1 && row[qty45Col]) {
-        qty45 = UtilityScriptLibrary.extractLessonQuantityFromPackage(row[qty45Col]) || 0;
-      }
-      if (qty30Col !== -1 && row[qty30Col]) {
-        qty30 = UtilityScriptLibrary.extractLessonQuantityFromPackage(row[qty30Col]) || 0;
-      }
-      
-      UtilityScriptLibrary.debugLog('buildDynamicProgramColumns', 'DEBUG', 'Quantities extracted',
-                                    'qty60: ' + qty60 + ', qty45: ' + qty45 + ', qty30: ' + qty30, '');
-      
-      quantity = qty60 + qty45 + qty30;
-      UtilityScriptLibrary.debugLog("buildDynamicProgramColumnsWithCredits", "DEBUG", "Lesson quantity calculated", 
-                    "Qty60: " + qty60 + ", Qty45: " + qty45 + ", Qty30: " + qty30 + ", Total: " + quantity, "");
-      
+      quantity = lessonQuantity || 0;
     } else if (isEnrolled && qtyType === "Multiple") {
       quantity = row[get(qtyType)] || 1;
     } else if (isEnrolled) {
-      // FIXED: For non-lesson programs, look up quantity from rates
-      if (prefix.toLowerCase() !== "lessons") {
-        var rateSheet = context.ss.getSheetByName('Rates');
-        if (rateSheet) {
-          var rateData = rateSheet.getDataRange().getValues();
-          var rateHeaders = rateData[0];
-          var bestColIndex = UtilityScriptLibrary.getMostRecentRateColumn(rateHeaders);
-          
-          if (bestColIndex !== -1) {
-            // Look for "[Prefix] Number" in rates - e.g. "Group Number", "Concerts Number", etc.
-            var rateKey = prefix + " Number";
-            for (var j = 1; j < rateData.length; j++) {
-              if (rateData[j][0] === rateKey) {
-                quantity = rateData[j][bestColIndex] || 0; // Use 0 as fallback to indicate problem
-                break;
-              }
-            }
-          }
-        }
+      var quantityKey = prefix + " Number";
+      quantity = rateMap[quantityKey] || 0;
+      if (quantity === 0) {
+        UtilityScriptLibrary.debugLog('buildDynamicProgramColumns', 'WARNING', 'Quantity not found in rates',
+          'Key: "' + quantityKey + '"', '');
       }
-      
-      // Fallback for any programs that don't have rates entries: keep at 0
-      // This way you'll know immediately if a rate is missing
     }
+
+    UtilityScriptLibrary.debugLog('buildDynamicProgramColumns', 'DEBUG', 'Final quantity',
+      'Program: ' + programName + ', Quantity: ' + quantity, '');
 
     if (qtyCol) {
       newRow[qtyCol - 1] = quantity;
@@ -2152,8 +2064,7 @@ function buildDynamicProgramColumns(newRow, row, enrolledPrograms, context, quan
       newRow[priceCol - 1] = price;
       currencyCols.push(priceCol);
     }
-    
-    // Hours column for lesson programs
+
     if (hoursCol && prefix.toLowerCase() === "lesson") {
       var lessonLength = getLessonLengthFromRow(row, get);
       var lengthMinutes = parseInt(lessonLength) || 30;
@@ -2162,167 +2073,9 @@ function buildDynamicProgramColumns(newRow, row, enrolledPrograms, context, quan
       quantityCols.push(hoursCol);
     }
   }
-  
-  // Generate formulas
+
   generateProgramFormulas(newRow, context, rowNum, quantityCols, currencyCols);
-  
-  return { quantityCols: quantityCols, currencyCols: currencyCols };
-}
 
-function buildDynamicProgramColumnsWithCredits(newRow, row, enrolledPrograms, context, quantityCols, currencyCols, rowNum, creditAdjustment) {
-  var h = context.headerMap;
-  var get = context.getColIndex;
-  
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var ratesSheet = ss.getSheetByName("Rates");
-  var rateHeaders = ratesSheet.getRange(1, 1, 1, ratesSheet.getLastColumn()).getValues()[0];
-  var rateYearCol = UtilityScriptLibrary.getMostRecentRateColumn(rateHeaders);
-  var rateMap = UtilityScriptLibrary.buildRateMapFromSheet(ratesSheet, rateHeaders, rateYearCol);
-  
-  UtilityScriptLibrary.debugLog("buildDynamicProgramColumnsWithCredits", "DEBUG", "Starting program processing", 
-                "Row: " + rowNum + ", Enrolled programs count: " + enrolledPrograms.length, "");
-  
-  for (var i = 0; i < enrolledPrograms.length; i++) {
-    var program = enrolledPrograms[i];
-    var programName = program.name;
-    var prefix = program.prefix;
-    var isEnrolled = program.enrolled;
-    var qtyType = program.quantityType;
-    var price = parseFloat(rateMap[programName + " Price"]) || 0;
-    
-    UtilityScriptLibrary.debugLog("buildDynamicProgramColumnsWithCredits", "DEBUG", "Processing program", 
-                  "Program: " + programName + ", Prefix: " + prefix + ", Enrolled: " + isEnrolled + ", QtyType: " + qtyType, "");
-    
-    var qtyCol = h[UtilityScriptLibrary.normalizeHeader(prefix + " Quantity")];
-    var creditCol = h[UtilityScriptLibrary.normalizeHeader(prefix + " Credit")];
-    var priceCol = h[UtilityScriptLibrary.normalizeHeader(prefix + " Price")];
-    var hoursCol = h[UtilityScriptLibrary.normalizeHeader(prefix + " Hours")];
-
-    UtilityScriptLibrary.debugLog("buildDynamicProgramColumnsWithCredits", "DEBUG", "Column mapping", 
-                  "Program: " + programName + ", QtyCol: " + qtyCol + ", CreditCol: " + creditCol, "");
-
-    UtilityScriptLibrary.debugLog('buildDynamicProgramColumns', 'DEBUG', 'Prefix check',
-                              'Program: ' + programName + ', Prefix: "' + prefix + '", prefix.toLowerCase(): "' + prefix.toLowerCase() + '"', '');
-
-    // Extract actual quantities from form data
-    var quantity = 0;
-    
-    if (isEnrolled && programName.toLowerCase() === "lessons") {
-      UtilityScriptLibrary.debugLog('buildDynamicProgramColumns', 'DEBUG', 'ENTERED LESSON BLOCK',
-                                    'Program: ' + programName, '');
-      // Extract lesson quantities from package selections
-      var qty60Col = get("Qty60");
-      var qty45Col = get("Qty45");
-      var qty30Col = get("Qty30");
-      
-      var qty60 = 0;
-      var qty45 = 0;
-      var qty30 = 0;
-      
-      if (qty60Col !== -1 && row[qty60Col]) {
-        qty60 = UtilityScriptLibrary.extractLessonQuantityFromPackage(row[qty60Col]) || 0;
-      }
-      if (qty45Col !== -1 && row[qty45Col]) {
-        qty45 = UtilityScriptLibrary.extractLessonQuantityFromPackage(row[qty45Col]) || 0;
-      }
-      if (qty30Col !== -1 && row[qty30Col]) {
-        qty30 = UtilityScriptLibrary.extractLessonQuantityFromPackage(row[qty30Col]) || 0;
-      }
-      
-      quantity = qty60 + qty45 + qty30;
-    } else if (isEnrolled && qtyType === "Multiple") {
-      quantity = row[get(qtyType)] || 1;
-      UtilityScriptLibrary.debugLog("buildDynamicProgramColumnsWithCredits", "DEBUG", "Multiple quantity type", 
-                    "Program: " + programName + ", Quantity: " + quantity, "");
-      
-    } else if (isEnrolled) {
-      UtilityScriptLibrary.debugLog("buildDynamicProgramColumnsWithCredits", "DEBUG", "Enrolled non-lesson program", 
-                    "Program: " + programName + ", Prefix: " + prefix, "");
-      
-      // FIXED: For non-lesson programs, look up quantity from rates
-      if (prefix.toLowerCase() !== "lessons") {
-        UtilityScriptLibrary.debugLog("buildDynamicProgramColumnsWithCredits", "DEBUG", "Looking up rates for non-lesson program", 
-                      "Program: " + programName + ", Prefix: " + prefix, "");
-        
-        var rateSheet = ss.getSheetByName('Rates');
-        if (rateSheet) {
-          var rateData = rateSheet.getDataRange().getValues();
-          var rateHeaders = rateData[0];
-          var bestColIndex = UtilityScriptLibrary.getMostRecentRateColumn(rateHeaders);
-          
-          UtilityScriptLibrary.debugLog("buildDynamicProgramColumnsWithCredits", "DEBUG", "Rate sheet access", 
-                        "Headers: " + rateHeaders.join(', ') + ", BestColIndex: " + bestColIndex, "");
-          
-          if (bestColIndex !== -1) {
-            // Look for "[Prefix] Number" in rates - e.g. "Group Number", "Concerts Number", etc.
-            var rateKey = prefix + " Number";
-            UtilityScriptLibrary.debugLog("buildDynamicProgramColumnsWithCredits", "DEBUG", "Looking for rate key", 
-                          "RateKey: '" + rateKey + "'", "");
-            
-            for (var j = 1; j < rateData.length; j++) {
-              var rateTitle = rateData[j][0];
-              UtilityScriptLibrary.debugLog("buildDynamicProgramColumnsWithCredits", "DEBUG", "Checking rate row", 
-                            "Row " + j + ": Title='" + rateTitle + "', Value=" + rateData[j][bestColIndex], "");
-              
-              if (rateTitle === rateKey) {
-                quantity = rateData[j][bestColIndex] || 0; // Use 0 as fallback to indicate problem
-                UtilityScriptLibrary.debugLog("buildDynamicProgramColumnsWithCredits", "DEBUG", "FOUND MATCHING RATE", 
-                              "RateKey: '" + rateKey + "', Quantity: " + quantity, "");
-                break;
-              }
-            }
-            
-            if (quantity === 0) {
-              UtilityScriptLibrary.debugLog("buildDynamicProgramColumnsWithCredits", "WARNING", "Rate not found", 
-                            "RateKey: '" + rateKey + "' not found in rates", "");
-            }
-          } else {
-            UtilityScriptLibrary.debugLog("buildDynamicProgramColumnsWithCredits", "WARNING", "No valid rate column found", "", "");
-          }
-        } else {
-          UtilityScriptLibrary.debugLog("buildDynamicProgramColumnsWithCredits", "ERROR", "Rates sheet not found", "", "");
-        }
-      } else {
-        UtilityScriptLibrary.debugLog("buildDynamicProgramColumnsWithCredits", "DEBUG", "Lesson program in else clause - should not happen", 
-                      "Program: " + programName, "");
-      }
-      
-      // Fallback for any programs that don't have rates entries: keep at 0
-      // This way you'll know immediately if a rate is missing
-    } else {
-      UtilityScriptLibrary.debugLog("buildDynamicProgramColumnsWithCredits", "DEBUG", "Program not enrolled or other condition", 
-                    "Program: " + programName + ", Enrolled: " + isEnrolled, "");
-    }
-
-    UtilityScriptLibrary.debugLog("buildDynamicProgramColumnsWithCredits", "DEBUG", "Final quantity setting", 
-                  "Program: " + programName + ", Final Quantity: " + quantity + ", Column: " + qtyCol, "");
-
-    if (qtyCol) {
-      newRow[qtyCol - 1] = quantity;
-      quantityCols.push(qtyCol);
-    }
-    if (creditCol) {
-      newRow[creditCol - 1] = 0;
-      quantityCols.push(creditCol);
-    }
-    if (priceCol) {
-      newRow[priceCol - 1] = price;
-      currencyCols.push(priceCol);
-    }
-    
-    // Hours column for lesson programs
-    if (hoursCol && prefix.toLowerCase() === "lesson") {
-      var lessonLength = getLessonLengthFromRow(row, get);
-      var lengthMinutes = parseInt(lessonLength) || 30;
-      var hours = quantity * (lengthMinutes / 60);
-      newRow[hoursCol - 1] = hours;
-      quantityCols.push(hoursCol);
-    }
-  }
-  
-  // Generate formulas
-  generateProgramFormulas(newRow, context, rowNum, quantityCols, currencyCols);
-  
   return { quantityCols: quantityCols, currencyCols: currencyCols };
 }
 
@@ -2467,35 +2220,6 @@ function buildMissingDocumentSentence(billingData) {
                                   '', error.message);
     return 'the required documentation';
   }
-}
-
-function buildPackageAliases(ss) {
-  var programSheet = ss.getSheetByName('Programs List');
-  if (!programSheet) throw new Error('Programs List sheet not found');
-
-  var programData = programSheet.getDataRange().getValues();
-  var headers = programData[0];
-  var nameCol = headers.indexOf('Program Name');
-  var typeCol = headers.indexOf('Type');
-  var aliasCol = headers.indexOf('Alias For');
-  var activeCol = headers.indexOf('Active');
-
-  if (nameCol === -1 || typeCol === -1 || activeCol === -1) {
-    throw new Error('Required columns not found in Programs List');
-  }
-
-  var packageAliases = {};
-  for (var i = 1; i < programData.length; i++) {
-    var row = programData[i];
-    if (row[activeCol] === true && row[typeCol] === 'Package' && row[aliasCol]) {
-      var components = row[aliasCol].split(',')
-        .map(function(comp) { return comp.trim().toLowerCase(); })
-        .filter(function(comp) { return comp; });
-      packageAliases[row[nameCol].toLowerCase()] = components;
-    }
-  }
-
-  return packageAliases;
 }
 
 function buildProgramDescription(programTotals, lessonLength) {
@@ -3032,7 +2756,7 @@ function continueAttendanceSheetCreation(targetMonthName, targetYear) {
     var targetDate = new Date(targetYear, monthIndex, 15); // Use middle of month
     
     // Step 2: Get semester for target date
-    var semesterName = getSemesterForDate(targetDate);
+    var semesterName = UtilityScriptLibrary.getSemesterForDate(targetDate);
     if (!semesterName) {
       ui.alert('⚠️ Semester Not Found',
                'Could not find a semester for ' + targetMonthName + ' ' + targetYear + '.\n\n' +
@@ -3313,18 +3037,6 @@ function convertFolderDocsToPdfUI() {
     'Skipped ' + skippedCount + ' already converted.\n' +
     'PDF folder: ' + pdfFolder.getUrl()
   );
-}
-
-function copyPreviousColumnToNew(newRow, prevRow, context, currMap, prevMap, mapping) {
-  // mapping = { newCol: "New Column Name", prevCol: "Previous Column Name" }
-  var newCol = currMap[UtilityScriptLibrary.normalizeHeader(mapping.newCol)];
-  var prevCol = prevMap[UtilityScriptLibrary.normalizeHeader(mapping.prevCol)];
-  
-  if (newCol && prevCol && prevRow.length >= prevCol) {
-    newRow[newCol - 1] = prevRow[prevCol - 1];
-    return true;
-  }
-  return false;
 }
 
 function copyStaticFieldsToBillingRow(newRow, sourceRow, context, getFn) {
@@ -6526,61 +6238,6 @@ function getRateMap(context) {
   // Use Utility function to build rate map
   context.rateMap = UtilityScriptLibrary.buildRateMapFromSheet(rateSheet, rateHeaders, bestColIndex);
   return context.rateMap;
-}
-
-function getSemesterForDate(targetDate) {
-  try {
-    var semesterMetadataSheet = UtilityScriptLibrary.getSheet('semesterMetadata');
-    if (!semesterMetadataSheet) {
-      UtilityScriptLibrary.debugLog("getSemesterForDate", "ERROR", "Semester Metadata sheet not found", "", "");
-      return null;
-    }
-    
-    var data = semesterMetadataSheet.getDataRange().getValues();
-    var headers = data[0];
-    
-    // Find columns
-    var nameCol = -1, startCol = -1, endCol = -1;
-    for (var i = 0; i < headers.length; i++) {
-      var header = UtilityScriptLibrary.normalizeHeader(headers[i]);
-      if (header.indexOf('semester') !== -1 || header.indexOf('name') !== -1) {
-        nameCol = i;
-      } else if (header.indexOf('start') !== -1) {
-        startCol = i;
-      } else if (header.indexOf('end') !== -1) {
-        endCol = i;
-      }
-    }
-    
-    if (nameCol === -1 || startCol === -1 || endCol === -1) {
-      UtilityScriptLibrary.debugLog("getSemesterForDate", "ERROR", "Required columns not found", "", "");
-      return null;
-    }
-    
-    // Find semester where targetDate falls between start and end
-    for (var i = 1; i < data.length; i++) {
-      var row = data[i];
-      var semesterName = row[nameCol];
-      var startDate = new Date(row[startCol]);
-      var endDate = new Date(row[endCol]);
-      
-      if (targetDate >= startDate && targetDate <= endDate) {
-        UtilityScriptLibrary.debugLog("getSemesterForDate", "INFO", 
-                                      "Found semester for date", 
-                                      "Date: " + targetDate.toDateString() + ", Semester: " + semesterName, "");
-        return semesterName;
-      }
-    }
-    
-    UtilityScriptLibrary.debugLog("getSemesterForDate", "WARNING", 
-                                  "No semester found for date", 
-                                  targetDate.toDateString(), "");
-    return null;
-    
-  } catch (error) {
-    UtilityScriptLibrary.debugLog("getSemesterForDate", "ERROR", "Error finding semester", "", error.message);
-    return null;
-  }
 }
 
 function getStudentBalancesFromBilling(billingSheet, teacherName) {
@@ -10555,338 +10212,6 @@ function verifyAndGetParentData(parentId, lastFourPhone) {
   }
 }
 
-function verifyCumulativeFormulas() {
-  return UtilityScriptLibrary.executeWithErrorHandling(function() {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var issues = [];
-    
-    // Define month order
-    var months = ['January', 'February', 'March', 'April', 'May', 'June', 
-                  'July', 'August', 'September', 'October', 'November', 'December'];
-    var years = [2024, 2025];
-    var allMonths = [];
-    
-    // Build ordered list of month sheets
-    for (var y = 0; y < years.length; y++) {
-      for (var m = 0; m < months.length; m++) {
-        allMonths.push(months[m] + ' ' + years[y]);
-      }
-    }
-    
-    UtilityScriptLibrary.debugLog('verifyCumulativeFormulas', 'INFO', 'Starting verification', 
-                                  'Total months to check: ' + allMonths.length, '');
-    
-    // Process each month
-    for (var i = 0; i < allMonths.length; i++) {
-      var currentMonth = allMonths[i];
-      var previousMonth = i > 0 ? allMonths[i - 1] : null;
-      
-      var sheet = ss.getSheetByName(currentMonth);
-      if (!sheet) {
-        UtilityScriptLibrary.debugLog('verifyCumulativeFormulas', 'WARNING', 
-                                      'Sheet not found', currentMonth, '');
-        continue;
-      }
-      
-      // Get header map for this sheet
-      var headerMap = UtilityScriptLibrary.getHeaderMap(sheet);
-      
-      // Find required columns
-      var studentIdCol = headerMap[UtilityScriptLibrary.normalizeHeader('Student ID')];
-      var pastCumTaughtCol = headerMap[UtilityScriptLibrary.normalizeHeader('Past Cumulative Hours Taught')];
-      var pastCumBilledCol = headerMap[UtilityScriptLibrary.normalizeHeader('Past Cumulative Hours Billed')];
-      var currentHoursTaughtCol = headerMap[UtilityScriptLibrary.normalizeHeader('Current Hours Taught This Billing Cycle')];
-      var currentCumTaughtCol = headerMap[UtilityScriptLibrary.normalizeHeader('Current Cumulative Hours Taught')];
-      var currentCumBilledCol = headerMap[UtilityScriptLibrary.normalizeHeader('Current Cumulative Hours Billed')];
-      var lessonHoursCol = headerMap[UtilityScriptLibrary.normalizeHeader('Lesson Hours')];
-      var hoursRemainingCol = headerMap[UtilityScriptLibrary.normalizeHeader('Hours Remaining')];
-      
-      if (!studentIdCol || !pastCumTaughtCol || !pastCumBilledCol || 
-          !currentHoursTaughtCol || !currentCumTaughtCol || !currentCumBilledCol || 
-          !lessonHoursCol || !hoursRemainingCol) {
-        issues.push({
-          sheet: currentMonth,
-          studentId: 'N/A',
-          column: 'Multiple',
-          issue: 'Required columns not found'
-        });
-        continue;
-      }
-      
-      // Get data range (start from row 2)
-      var lastRow = sheet.getLastRow();
-      if (lastRow < 2) continue;
-      
-      var dataRange = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn());
-      var data = dataRange.getValues();
-      
-      // Check each row
-      for (var row = 0; row < data.length; row++) {
-        var rowNum = row + 2;
-        var studentId = data[row][studentIdCol - 1];
-        
-        if (!studentId) continue;
-        
-        // Check Past Cumulative columns
-        if (i === 0) {
-          // January 2024 - should be empty or no formula
-          var pastTaughtFormula = sheet.getRange(rowNum, pastCumTaughtCol).getFormula();
-          var pastBilledFormula = sheet.getRange(rowNum, pastCumBilledCol).getFormula();
-          
-          if (pastTaughtFormula) {
-            issues.push({
-              sheet: currentMonth,
-              studentId: studentId,
-              column: 'Past Cumulative Hours Taught',
-              issue: 'Should be empty/hardcoded for first month, found formula: ' + pastTaughtFormula
-            });
-          }
-          
-          if (pastBilledFormula) {
-            issues.push({
-              sheet: currentMonth,
-              studentId: studentId,
-              column: 'Past Cumulative Hours Billed',
-              issue: 'Should be empty/hardcoded for first month, found formula: ' + pastBilledFormula
-            });
-          }
-        } else {
-          // Other months - should have VLOOKUP to previous month
-          var pastTaughtFormula = sheet.getRange(rowNum, pastCumTaughtCol).getFormula();
-          var pastBilledFormula = sheet.getRange(rowNum, pastCumBilledCol).getFormula();
-          
-          // Verify Past Cumulative Hours Taught
-          if (!pastTaughtFormula) {
-            issues.push({
-              sheet: currentMonth,
-              studentId: studentId,
-              column: 'Past Cumulative Hours Taught',
-              issue: 'Missing formula (should be VLOOKUP to previous month)'
-            });
-          } else {
-            if (pastTaughtFormula.indexOf(previousMonth) === -1) {
-              issues.push({
-                sheet: currentMonth,
-                studentId: studentId,
-                column: 'Past Cumulative Hours Taught',
-                issue: 'Formula does not reference "' + previousMonth + '". Found: ' + pastTaughtFormula
-              });
-            }
-            if (pastTaughtFormula.toUpperCase().indexOf('VLOOKUP') === -1 || 
-                pastTaughtFormula.toUpperCase().indexOf('IFNA') === -1) {
-              issues.push({
-                sheet: currentMonth,
-                studentId: studentId,
-                column: 'Past Cumulative Hours Taught',
-                issue: 'Formula pattern incorrect (expected IFNA(VLOOKUP(...))). Found: ' + pastTaughtFormula
-              });
-            }
-          }
-          
-          // Verify Past Cumulative Hours Billed
-          if (!pastBilledFormula) {
-            issues.push({
-              sheet: currentMonth,
-              studentId: studentId,
-              column: 'Past Cumulative Hours Billed',
-              issue: 'Missing formula (should be VLOOKUP to previous month)'
-            });
-          } else {
-            if (pastBilledFormula.indexOf(previousMonth) === -1) {
-              issues.push({
-                sheet: currentMonth,
-                studentId: studentId,
-                column: 'Past Cumulative Hours Billed',
-                issue: 'Formula does not reference "' + previousMonth + '". Found: ' + pastBilledFormula
-              });
-            }
-            if (pastBilledFormula.toUpperCase().indexOf('VLOOKUP') === -1 || 
-                pastBilledFormula.toUpperCase().indexOf('IFNA') === -1) {
-              issues.push({
-                sheet: currentMonth,
-                studentId: studentId,
-                column: 'Past Cumulative Hours Billed',
-                issue: 'Formula pattern incorrect (expected IFNA(VLOOKUP(...))). Found: ' + pastBilledFormula
-              });
-            }
-          }
-        }
-        
-        // Check Current Cumulative Hours Taught = Past + Current
-        var currentCumTaughtFormula = sheet.getRange(rowNum, currentCumTaughtCol).getFormula();
-        if (!currentCumTaughtFormula) {
-          issues.push({
-            sheet: currentMonth,
-            studentId: studentId,
-            column: 'Current Cumulative Hours Taught',
-            issue: 'Missing formula (should be Past + Current)'
-          });
-        } else {
-          var pastTaughtCell = UtilityScriptLibrary.columnToLetter(pastCumTaughtCol) + rowNum;
-          var currentTaughtCell = UtilityScriptLibrary.columnToLetter(currentHoursTaughtCol) + rowNum;
-          var expectedFormula = '=' + pastTaughtCell + '+' + currentTaughtCell;
-          
-          var normalizedFormula = currentCumTaughtFormula.replace(/\s/g, '').toUpperCase();
-          var normalizedExpected = expectedFormula.replace(/\s/g, '').toUpperCase();
-          
-          if (normalizedFormula !== normalizedExpected) {
-            issues.push({
-              sheet: currentMonth,
-              studentId: studentId,
-              column: 'Current Cumulative Hours Taught',
-              issue: 'Incorrect formula. Expected: ' + expectedFormula + ', Found: ' + currentCumTaughtFormula
-            });
-          }
-        }
-        
-        // Check Current Cumulative Hours Billed = Past + Lesson Hours
-        var currentCumBilledFormula = sheet.getRange(rowNum, currentCumBilledCol).getFormula();
-        if (!currentCumBilledFormula) {
-          issues.push({
-            sheet: currentMonth,
-            studentId: studentId,
-            column: 'Current Cumulative Hours Billed',
-            issue: 'Missing formula (should be Past + Lesson Hours)'
-          });
-        } else {
-          var pastBilledCell = UtilityScriptLibrary.columnToLetter(pastCumBilledCol) + rowNum;
-          var lessonHoursCell = UtilityScriptLibrary.columnToLetter(lessonHoursCol) + rowNum;
-          var expectedFormula = '=' + pastBilledCell + '+' + lessonHoursCell;
-          
-          var normalizedFormula = currentCumBilledFormula.replace(/\s/g, '').toUpperCase();
-          var normalizedExpected = expectedFormula.replace(/\s/g, '').toUpperCase();
-          
-          if (normalizedFormula !== normalizedExpected) {
-            issues.push({
-              sheet: currentMonth,
-              studentId: studentId,
-              column: 'Current Cumulative Hours Billed',
-              issue: 'Incorrect formula. Expected: ' + expectedFormula + ', Found: ' + currentCumBilledFormula
-            });
-          }
-        }
-        
-        // Check Hours Remaining = Current Cum Billed - Current Cum Taught
-        var hoursRemainingFormula = sheet.getRange(rowNum, hoursRemainingCol).getFormula();
-        if (!hoursRemainingFormula) {
-          issues.push({
-            sheet: currentMonth,
-            studentId: studentId,
-            column: 'Hours Remaining',
-            issue: 'Missing formula (should be Cum Billed - Cum Taught)'
-          });
-        } else {
-          var cumBilledCell = UtilityScriptLibrary.columnToLetter(currentCumBilledCol) + rowNum;
-          var cumTaughtCell = UtilityScriptLibrary.columnToLetter(currentCumTaughtCol) + rowNum;
-          var expectedFormula = '=' + cumBilledCell + '-' + cumTaughtCell;
-          
-          var normalizedFormula = hoursRemainingFormula.replace(/\s/g, '').toUpperCase();
-          var normalizedExpected = expectedFormula.replace(/\s/g, '').toUpperCase();
-          
-          if (normalizedFormula !== normalizedExpected) {
-            issues.push({
-              sheet: currentMonth,
-              studentId: studentId,
-              column: 'Hours Remaining',
-              issue: 'Incorrect formula. Expected: ' + expectedFormula + ', Found: ' + hoursRemainingFormula
-            });
-          }
-        }
-        
-        // Check Current Hours Taught This Billing Cycle has NO formula
-        var currentTaughtFormula = sheet.getRange(rowNum, currentHoursTaughtCol).getFormula();
-        if (currentTaughtFormula) {
-          issues.push({
-            sheet: currentMonth,
-            studentId: studentId,
-            column: 'Current Hours Taught This Billing Cycle',
-            issue: 'Should be hardcoded (no formula), found: ' + currentTaughtFormula
-          });
-        }
-      }
-    }
-    
-    // Create results sheet
-    var resultsSheetName = 'Formula Verification Results';
-    var resultsSheet = ss.getSheetByName(resultsSheetName);
-    
-    if (resultsSheet) {
-      ss.deleteSheet(resultsSheet);
-    }
-    
-    resultsSheet = ss.insertSheet(resultsSheetName);
-    
-    var headers = ['Sheet Name', 'Student ID', 'Column Name', 'Issue'];
-    resultsSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-    resultsSheet.getRange(1, 1, 1, headers.length)
-      .setBackground('#4a4a4a')
-      .setFontColor('#ffffff')
-      .setFontWeight('bold');
-    
-    if (issues.length > 0) {
-      var outputData = [];
-      for (var i = 0; i < issues.length; i++) {
-        outputData.push([
-          issues[i].sheet,
-          issues[i].studentId,
-          issues[i].column,
-          issues[i].issue
-        ]);
-      }
-      resultsSheet.getRange(2, 1, outputData.length, 4).setValues(outputData);
-      resultsSheet.autoResizeColumns(1, 4);
-    } else {
-      resultsSheet.getRange(2, 1).setValue('No issues found!');
-    }
-    
-    UtilityScriptLibrary.debugLog('verifyCumulativeFormulas', 'SUCCESS', 
-                                  'Verification complete', 
-                                  'Issues found: ' + issues.length, '');
-    
-    return {
-      success: true,
-      issuesFound: issues.length,
-      issues: issues
-    };
-    
-  }, 'Formula verification completed', 'verifyCumulativeFormulas', {
-    showUI: false,
-    logLevel: 'INFO'
-  }).data;
-}
-
-function verifyPayments2024_2025() {
-  try {
-    var env = UtilityScriptLibrary.EnvironmentManager.get();
-    var config = UtilityScriptLibrary.getConfig();
-    
-    var paymentsId = config[env].paymentsId;
-    
-    if (!paymentsId) {
-      throw new Error('Payments workbook ID not found in config');
-    }
-    
-    UtilityScriptLibrary.debugLog('verifyPayments2024_2025', 'INFO', 'Starting payment verification', '2024-2025', '');
-    
-    // Get current workbook (Billing) and open Payments
-    var billingWB = SpreadsheetApp.getActiveSpreadsheet();
-    var paymentsWB = SpreadsheetApp.openById(paymentsId);
-    
-    // Collect data from both workbooks
-    var paymentsData = collectPaymentsData(paymentsWB);
-    var billingData = collectBillingData(billingWB);
-    
-    // Create verification report in current workbook
-    createPaymentVerificationReport(billingWB, paymentsData, billingData);
-    
-    SpreadsheetApp.getUi().alert('✅ Payment verification complete!\n\nCheck "Payment Verification 2024-2025" sheet.');
-    
-  } catch (error) {
-    UtilityScriptLibrary.debugLog('verifyPayments2024_2025', 'ERROR', 'Verification failed', '', error.message);
-    SpreadsheetApp.getUi().alert('❌ Error: ' + error.message);
-  }
-}
-
 function verifyPaymentsDetailed() {
   var ui = SpreadsheetApp.getUi();
   var response = ui.prompt('Student IDs', 'Enter student IDs separated by commas (e.g., Q0009, Q0010):', ui.ButtonSet.OK_CANCEL);
@@ -11582,4 +10907,304 @@ function testTemplateLiteral() {
   const name = "Bob";
   const msg = `Hello, ${name}`;
   UtilityScriptLibrary.debugLog(msg);
+}
+
+function verifyCumulativeFormulas() {
+  return UtilityScriptLibrary.executeWithErrorHandling(function() {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var issues = [];
+    
+    // Define month order
+    var months = ['January', 'February', 'March', 'April', 'May', 'June', 
+                  'July', 'August', 'September', 'October', 'November', 'December'];
+    var years = [2024, 2025];
+    var allMonths = [];
+    
+    // Build ordered list of month sheets
+    for (var y = 0; y < years.length; y++) {
+      for (var m = 0; m < months.length; m++) {
+        allMonths.push(months[m] + ' ' + years[y]);
+      }
+    }
+    
+    UtilityScriptLibrary.debugLog('verifyCumulativeFormulas', 'INFO', 'Starting verification', 
+                                  'Total months to check: ' + allMonths.length, '');
+    
+    // Process each month
+    for (var i = 0; i < allMonths.length; i++) {
+      var currentMonth = allMonths[i];
+      var previousMonth = i > 0 ? allMonths[i - 1] : null;
+      
+      var sheet = ss.getSheetByName(currentMonth);
+      if (!sheet) {
+        UtilityScriptLibrary.debugLog('verifyCumulativeFormulas', 'WARNING', 
+                                      'Sheet not found', currentMonth, '');
+        continue;
+      }
+      
+      // Get header map for this sheet
+      var headerMap = UtilityScriptLibrary.getHeaderMap(sheet);
+      
+      // Find required columns
+      var studentIdCol = headerMap[UtilityScriptLibrary.normalizeHeader('Student ID')];
+      var pastCumTaughtCol = headerMap[UtilityScriptLibrary.normalizeHeader('Past Cumulative Hours Taught')];
+      var pastCumBilledCol = headerMap[UtilityScriptLibrary.normalizeHeader('Past Cumulative Hours Billed')];
+      var currentHoursTaughtCol = headerMap[UtilityScriptLibrary.normalizeHeader('Current Hours Taught This Billing Cycle')];
+      var currentCumTaughtCol = headerMap[UtilityScriptLibrary.normalizeHeader('Current Cumulative Hours Taught')];
+      var currentCumBilledCol = headerMap[UtilityScriptLibrary.normalizeHeader('Current Cumulative Hours Billed')];
+      var lessonHoursCol = headerMap[UtilityScriptLibrary.normalizeHeader('Lesson Hours')];
+      var hoursRemainingCol = headerMap[UtilityScriptLibrary.normalizeHeader('Hours Remaining')];
+      
+      if (!studentIdCol || !pastCumTaughtCol || !pastCumBilledCol || 
+          !currentHoursTaughtCol || !currentCumTaughtCol || !currentCumBilledCol || 
+          !lessonHoursCol || !hoursRemainingCol) {
+        issues.push({
+          sheet: currentMonth,
+          studentId: 'N/A',
+          column: 'Multiple',
+          issue: 'Required columns not found'
+        });
+        continue;
+      }
+      
+      // Get data range (start from row 2)
+      var lastRow = sheet.getLastRow();
+      if (lastRow < 2) continue;
+      
+      var dataRange = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn());
+      var data = dataRange.getValues();
+      
+      // Check each row
+      for (var row = 0; row < data.length; row++) {
+        var rowNum = row + 2;
+        var studentId = data[row][studentIdCol - 1];
+        
+        if (!studentId) continue;
+        
+        // Check Past Cumulative columns
+        if (i === 0) {
+          // January 2024 - should be empty or no formula
+          var pastTaughtFormula = sheet.getRange(rowNum, pastCumTaughtCol).getFormula();
+          var pastBilledFormula = sheet.getRange(rowNum, pastCumBilledCol).getFormula();
+          
+          if (pastTaughtFormula) {
+            issues.push({
+              sheet: currentMonth,
+              studentId: studentId,
+              column: 'Past Cumulative Hours Taught',
+              issue: 'Should be empty/hardcoded for first month, found formula: ' + pastTaughtFormula
+            });
+          }
+          
+          if (pastBilledFormula) {
+            issues.push({
+              sheet: currentMonth,
+              studentId: studentId,
+              column: 'Past Cumulative Hours Billed',
+              issue: 'Should be empty/hardcoded for first month, found formula: ' + pastBilledFormula
+            });
+          }
+        } else {
+          // Other months - should have VLOOKUP to previous month
+          var pastTaughtFormula = sheet.getRange(rowNum, pastCumTaughtCol).getFormula();
+          var pastBilledFormula = sheet.getRange(rowNum, pastCumBilledCol).getFormula();
+          
+          // Verify Past Cumulative Hours Taught
+          if (!pastTaughtFormula) {
+            issues.push({
+              sheet: currentMonth,
+              studentId: studentId,
+              column: 'Past Cumulative Hours Taught',
+              issue: 'Missing formula (should be VLOOKUP to previous month)'
+            });
+          } else {
+            if (pastTaughtFormula.indexOf(previousMonth) === -1) {
+              issues.push({
+                sheet: currentMonth,
+                studentId: studentId,
+                column: 'Past Cumulative Hours Taught',
+                issue: 'Formula does not reference "' + previousMonth + '". Found: ' + pastTaughtFormula
+              });
+            }
+            if (pastTaughtFormula.toUpperCase().indexOf('VLOOKUP') === -1 || 
+                pastTaughtFormula.toUpperCase().indexOf('IFNA') === -1) {
+              issues.push({
+                sheet: currentMonth,
+                studentId: studentId,
+                column: 'Past Cumulative Hours Taught',
+                issue: 'Formula pattern incorrect (expected IFNA(VLOOKUP(...))). Found: ' + pastTaughtFormula
+              });
+            }
+          }
+          
+          // Verify Past Cumulative Hours Billed
+          if (!pastBilledFormula) {
+            issues.push({
+              sheet: currentMonth,
+              studentId: studentId,
+              column: 'Past Cumulative Hours Billed',
+              issue: 'Missing formula (should be VLOOKUP to previous month)'
+            });
+          } else {
+            if (pastBilledFormula.indexOf(previousMonth) === -1) {
+              issues.push({
+                sheet: currentMonth,
+                studentId: studentId,
+                column: 'Past Cumulative Hours Billed',
+                issue: 'Formula does not reference "' + previousMonth + '". Found: ' + pastBilledFormula
+              });
+            }
+            if (pastBilledFormula.toUpperCase().indexOf('VLOOKUP') === -1 || 
+                pastBilledFormula.toUpperCase().indexOf('IFNA') === -1) {
+              issues.push({
+                sheet: currentMonth,
+                studentId: studentId,
+                column: 'Past Cumulative Hours Billed',
+                issue: 'Formula pattern incorrect (expected IFNA(VLOOKUP(...))). Found: ' + pastBilledFormula
+              });
+            }
+          }
+        }
+        
+        // Check Current Cumulative Hours Taught = Past + Current
+        var currentCumTaughtFormula = sheet.getRange(rowNum, currentCumTaughtCol).getFormula();
+        if (!currentCumTaughtFormula) {
+          issues.push({
+            sheet: currentMonth,
+            studentId: studentId,
+            column: 'Current Cumulative Hours Taught',
+            issue: 'Missing formula (should be Past + Current)'
+          });
+        } else {
+          var pastTaughtCell = UtilityScriptLibrary.columnToLetter(pastCumTaughtCol) + rowNum;
+          var currentTaughtCell = UtilityScriptLibrary.columnToLetter(currentHoursTaughtCol) + rowNum;
+          var expectedFormula = '=' + pastTaughtCell + '+' + currentTaughtCell;
+          
+          var normalizedFormula = currentCumTaughtFormula.replace(/\s/g, '').toUpperCase();
+          var normalizedExpected = expectedFormula.replace(/\s/g, '').toUpperCase();
+          
+          if (normalizedFormula !== normalizedExpected) {
+            issues.push({
+              sheet: currentMonth,
+              studentId: studentId,
+              column: 'Current Cumulative Hours Taught',
+              issue: 'Incorrect formula. Expected: ' + expectedFormula + ', Found: ' + currentCumTaughtFormula
+            });
+          }
+        }
+        
+        // Check Current Cumulative Hours Billed = Past + Lesson Hours
+        var currentCumBilledFormula = sheet.getRange(rowNum, currentCumBilledCol).getFormula();
+        if (!currentCumBilledFormula) {
+          issues.push({
+            sheet: currentMonth,
+            studentId: studentId,
+            column: 'Current Cumulative Hours Billed',
+            issue: 'Missing formula (should be Past + Lesson Hours)'
+          });
+        } else {
+          var pastBilledCell = UtilityScriptLibrary.columnToLetter(pastCumBilledCol) + rowNum;
+          var lessonHoursCell = UtilityScriptLibrary.columnToLetter(lessonHoursCol) + rowNum;
+          var expectedFormula = '=' + pastBilledCell + '+' + lessonHoursCell;
+          
+          var normalizedFormula = currentCumBilledFormula.replace(/\s/g, '').toUpperCase();
+          var normalizedExpected = expectedFormula.replace(/\s/g, '').toUpperCase();
+          
+          if (normalizedFormula !== normalizedExpected) {
+            issues.push({
+              sheet: currentMonth,
+              studentId: studentId,
+              column: 'Current Cumulative Hours Billed',
+              issue: 'Incorrect formula. Expected: ' + expectedFormula + ', Found: ' + currentCumBilledFormula
+            });
+          }
+        }
+        
+        // Check Hours Remaining = Current Cum Billed - Current Cum Taught
+        var hoursRemainingFormula = sheet.getRange(rowNum, hoursRemainingCol).getFormula();
+        if (!hoursRemainingFormula) {
+          issues.push({
+            sheet: currentMonth,
+            studentId: studentId,
+            column: 'Hours Remaining',
+            issue: 'Missing formula (should be Cum Billed - Cum Taught)'
+          });
+        } else {
+          var cumBilledCell = UtilityScriptLibrary.columnToLetter(currentCumBilledCol) + rowNum;
+          var cumTaughtCell = UtilityScriptLibrary.columnToLetter(currentCumTaughtCol) + rowNum;
+          var expectedFormula = '=' + cumBilledCell + '-' + cumTaughtCell;
+          
+          var normalizedFormula = hoursRemainingFormula.replace(/\s/g, '').toUpperCase();
+          var normalizedExpected = expectedFormula.replace(/\s/g, '').toUpperCase();
+          
+          if (normalizedFormula !== normalizedExpected) {
+            issues.push({
+              sheet: currentMonth,
+              studentId: studentId,
+              column: 'Hours Remaining',
+              issue: 'Incorrect formula. Expected: ' + expectedFormula + ', Found: ' + hoursRemainingFormula
+            });
+          }
+        }
+        
+        // Check Current Hours Taught This Billing Cycle has NO formula
+        var currentTaughtFormula = sheet.getRange(rowNum, currentHoursTaughtCol).getFormula();
+        if (currentTaughtFormula) {
+          issues.push({
+            sheet: currentMonth,
+            studentId: studentId,
+            column: 'Current Hours Taught This Billing Cycle',
+            issue: 'Should be hardcoded (no formula), found: ' + currentTaughtFormula
+          });
+        }
+      }
+    }
+    
+    // Create results sheet
+    var resultsSheetName = 'Formula Verification Results';
+    var resultsSheet = ss.getSheetByName(resultsSheetName);
+    
+    if (resultsSheet) {
+      ss.deleteSheet(resultsSheet);
+    }
+    
+    resultsSheet = ss.insertSheet(resultsSheetName);
+    
+    var headers = ['Sheet Name', 'Student ID', 'Column Name', 'Issue'];
+    resultsSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    resultsSheet.getRange(1, 1, 1, headers.length)
+      .setBackground('#4a4a4a')
+      .setFontColor('#ffffff')
+      .setFontWeight('bold');
+    
+    if (issues.length > 0) {
+      var outputData = [];
+      for (var i = 0; i < issues.length; i++) {
+        outputData.push([
+          issues[i].sheet,
+          issues[i].studentId,
+          issues[i].column,
+          issues[i].issue
+        ]);
+      }
+      resultsSheet.getRange(2, 1, outputData.length, 4).setValues(outputData);
+      resultsSheet.autoResizeColumns(1, 4);
+    } else {
+      resultsSheet.getRange(2, 1).setValue('No issues found!');
+    }
+    
+    UtilityScriptLibrary.debugLog('verifyCumulativeFormulas', 'SUCCESS', 
+                                  'Verification complete', 
+                                  'Issues found: ' + issues.length, '');
+    
+    return {
+      success: true,
+      issuesFound: issues.length,
+      issues: issues
+    };
+    
+  }, 'Formula verification completed', 'verifyCumulativeFormulas', {
+    showUI: false,
+    logLevel: 'INFO'
+  }).data;
 }
