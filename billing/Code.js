@@ -43,9 +43,9 @@ function runBillingCycleAutomation() {
   try {
     UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "INFO", "Starting billing cycle automation", "", "");
 
-    var ss              = SpreadsheetApp.getActiveSpreadsheet();
-    var ui              = SpreadsheetApp.getUi();
-    var customToday     = promptForCustomToday();
+    var ss               = SpreadsheetApp.getActiveSpreadsheet();
+    var ui               = SpreadsheetApp.getUi();
+    var customToday      = promptForCustomToday();
     var billingCycleName = promptForBillingCycleName(customToday);
     if (!billingCycleName) return;
 
@@ -68,7 +68,9 @@ function runBillingCycleAutomation() {
 
     UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "DEBUG", "All validations passed", "", "");
 
-    createBillingSheet(billingCycleName);
+    var programConfig = loadProgramConfig(ss);
+
+    createBillingSheet(billingCycleName, programConfig);
     var newBillingSheet = ss.getSheetByName(billingCycleName);
     ss.setActiveSheet(newBillingSheet);
 
@@ -130,7 +132,7 @@ function runBillingCycleAutomation() {
       "Entries: " + Object.keys(reregResult.map).length, "");
 
     ss.setActiveSheet(newBillingSheet);
-    var context = buildBillingContext(customToday, semesterName, billingCycleName);
+    var context = buildBillingContext(customToday, semesterName, billingCycleName, programConfig);
     context.prevHeaderMap  = carryOverData.previousSheetName
       ? UtilityScriptLibrary.getHeaderMap(ss.getSheetByName(carryOverData.previousSheetName))
       : {};
@@ -5079,15 +5081,6 @@ function findMostRecentRosterSheet(workbook) {
   }
 }
 
-function findStudentInContacts(contactsData, studentIdCol, targetStudentId) {
-  for (var i = 1; i < contactsData.length; i++) {
-    if (contactsData[i][studentIdCol - 1] === targetStudentId) {
-      return i;
-    }
-  }
-  return -1;
-}
-
 function formatRow(sheet, rowIndex, quantityCols, currencyCols) {
   UtilityScriptLibrary.debugLog('formatRow', 'DEBUG', 'Formatting row ' + rowIndex, 
                                 'Quantity cols: ' + quantityCols.length + ', Currency cols: ' + currencyCols.length, '');
@@ -7959,7 +7952,7 @@ function processFormsData(paymentSheet, studentsSheet) {
     
     try {
       // Find student in contacts
-      var contactsRowIndex = findStudentInContacts(contactsData, contactsStudentIdCol, studentId);
+      var contactsRowIndex = UtilityScriptLibrary.findStudentInContacts(contactsData, contactsStudentIdCol, studentId);
       
       if (contactsRowIndex === -1) {
         results.errors++;
@@ -8058,7 +8051,7 @@ function processFormsReconciliationForRow(rowData, studentsSheet, studentIdInput
       };
     }
     
-    var contactsRowIndex = findStudentInContacts(contactsData, contactsStudentIdCol, studentId);
+    var contactsRowIndex = UtilityScriptLibrary.findStudentInContacts(contactsData, contactsStudentIdCol, studentId);
     
     if (contactsRowIndex === -1) {
       return {
