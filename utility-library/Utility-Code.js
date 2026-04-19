@@ -1,7 +1,5 @@
 
 
-var _executionCache = {};
-
 var EnvironmentManager = (function () {
   var currentEnv = 'test'; // set to 'test' as default
 
@@ -1854,11 +1852,6 @@ function getColumnIndices(sheet, columnNames) {
   
   // Cache and return
   return setCached(cacheKey, indices);
-}
-
-function getConfig() {
-  var env = EnvironmentManager.get();
-  return CONFIG[env];
 }
 
 function getCurrentAcademicYearInfo() {
