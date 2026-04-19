@@ -2,7 +2,7 @@
  * SETUP INSTRUCTIONS:
  * 1. In Google Apps Script Editor, create and run setupScriptProperties() 
  *    with your actual Google IDs (one time only)
- * 2. After running, delete that function or change the ID to a generic placeholder
+ * 2. After running, delete that function
  * 3. This template shows the structure but uses Properties Service for security
  */
 
@@ -12,7 +12,7 @@ function setupScriptProperties() {
   
   props.setProperties({
     // Test Environment IDs
-    'RECEIPTS_FOLDER_ID': '1I9iMyiEkp9YmQTIrmSlB245MiM5a4SHY',
+    'RECEIPTS_FOLDER_ID': 'YOUR_ACTUAL_FOLDER_ID_HERE',
     'TEST_PAYMENTS_ID': 'YOUR_TEST_PAYMENTS_ID_HERE',
     'TEST_CONTACTS_ID': 'YOUR_TEST_CONTACTS_ID_HERE',
     'TEST_BILLING_ID': 'YOUR_TEST_BILLING_ID_HERE',
@@ -25,6 +25,7 @@ function setupScriptProperties() {
     'TEST_GENERATED_DOCUMENT_FOLDER_ID': 'YOUR_TEST_GENERATED_DOCUMENT_FOLDER_ID_HERE',
     
     // Prod Environment IDs
+    'RECEIPTS_FOLDER_ID': 'YOUR_ACTUAL_FOLDER_ID_HERE',
     'PROD_PAYMENTS_ID': 'YOUR_PROD_PAYMENTS_ID_HERE',
     'PROD_CONTACTS_ID': 'YOUR_PROD_CONTACTS_ID_HERE',
     'PROD_BILLING_ID': 'YOUR_PROD_BILLING_ID_HERE',
@@ -48,7 +49,7 @@ function getConfig() {
   
   return {
     test: {
-      receiptsFolderId: props.getProperty('1I9iMyiEkp9YmQTIrmSlB245MiM5a4SHY'),
+      receiptsFolderId: props.getProperty('RECEIPTS_FOLDER_ID'),
       paymentsId: props.getProperty('TEST_PAYMENTS_ID'),
       contactsId: props.getProperty('TEST_CONTACTS_ID'),
       billingId: props.getProperty('TEST_BILLING_ID'),
@@ -61,7 +62,7 @@ function getConfig() {
       generatedDocumentsFolderId: props.getProperty('TEST_GENERATED_DOCUMENT_FOLDER_ID')
     },
     prod: {
-      receiptsFolderId: props.getProperty('1I9iMyiEkp9YmQTIrmSlB245MiM5a4SHY'),
+      receiptsFolderId: props.getProperty('RECEIPTS_FOLDER_ID'),
       paymentsId: props.getProperty('PROD_PAYMENTS_ID'),
       contactsId: props.getProperty('PROD_CONTACTS_ID'),
       billingId: props.getProperty('PROD_BILLING_ID'),

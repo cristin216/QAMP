@@ -1,7 +1,7 @@
 ================================================================================
 UTILITY LIBRARY FUNCTION DIRECTORY
 ================================================================================
-    Total Functions: 113 (111 standard functions + 2 EnvironmentManager methods)
+    Total Functions: 121 (119 standard functions + 2 EnvironmentManager methods)
      Most Recent version: 87
 
     This directory provides a quick reference for all functions in Utility script.
@@ -30,6 +30,7 @@ UTILITY LIBRARY FUNCTION DIRECTORY
     columnToLetter
     combineDocumentsIntoPDF
     convertYesNoToBoolean
+    copyPreviousColumnToNew
     copySheetWithProtections
     copyTextAttributes
     createColumnFinder
@@ -43,7 +44,6 @@ UTILITY LIBRARY FUNCTION DIRECTORY
     debugLog
     deleteExtraColumns
     determineIfStudentIsAdult
-    determineLessonLengthFromPackages
     documentAlreadyExists
     enableDatePickerForColumn
     executeWithErrorHandling
@@ -55,6 +55,7 @@ UTILITY LIBRARY FUNCTION DIRECTORY
     extractTotalLessonsFromPackages
     findColumnByPartialName
     findParentRow
+    findStudentInContacts
     findStudentRow
     formatAddress
     formatAttendanceColumns
@@ -66,7 +67,6 @@ UTILITY LIBRARY FUNCTION DIRECTORY
     formatPhoneNumber
     formatRosterColumns
     freezeSheetFormulas
-    generateAutoId
     generateDocumentFromTemplate
     generateKey
     generateNextId
@@ -77,8 +77,8 @@ UTILITY LIBRARY FUNCTION DIRECTORY
     getColumnIndices
     getConfig
     getCurrentAcademicYearInfo
-    getCurrentMonthName
     getCurrentSemesterMonth
+    getCurrentSemesterName
     getDateForWeekday
     getFieldMappingFromSheet
     getGeneratedDocumentsFolder
@@ -92,6 +92,7 @@ UTILITY LIBRARY FUNCTION DIRECTORY
     getRosterFolder
     getRosterFolderUrlForYear
     getSemesterDates
+    getSemesterForDate
     getSheet
     getStudentIdFromRow
     getTeacherGroupAssignments
@@ -104,11 +105,11 @@ UTILITY LIBRARY FUNCTION DIRECTORY
     inferWorkbookKey
     insertCountFormula
     interpretAgeField
-    isAttendanceSheet
     isCurrentOrFutureMonth
     isHistoricalDataInputEnabled
     isIdAlreadyUsed
     isMonthSheet
+    logAllSheetHeaders
     normalizeHeader
     parseAllPackageQuantities
     parseAndFormatAddress
@@ -134,6 +135,7 @@ UTILITY LIBRARY FUNCTION DIRECTORY
     validateProgramConfiguration
     validateTemplateVariables
     verifyConfigurationWithUser
+  ================================================================================
   ================================================================================
   ENVIRONMENT MANAGER (Special Module)
   ================================================================================
@@ -252,6 +254,13 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Category: DATA_MANIPULATION
         Dependencies: None
         Called by: 
+
+    copyPreviousColumnToNew(newRow, prevRow, currMap, prevMap, mapping) -> Boolean
+        Copies a value from a previous row into a new row using header map lookups.
+        Returns true if copy succeeded, false if columns not found.
+        Category: DATA_MANIPULATION
+        Dependencies: normalizeHeader()
+        Called by:
 
     copySheetWithProtections(sourceSheet, targetWorkbook, newName, options?) -> Object
         Copies a sheet to another workbook while preserving protections and formatting.
@@ -423,6 +432,13 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Dependencies: normalizeHeader()
         Called by: 
 
+    findStudentInContacts(contactsData, studentIdCol, targetStudentId) -> Number
+        Searches a contacts data array for a student by ID.
+        Returns 0-based row index, or -1 if not found.
+        Category: DATA_RETRIEVAL
+        Dependencies: None
+        Called by:
+
     findStudentRow(studentSheet, studentKey) -> Number
         Finds the row number for a student using various lookup strategies
         (Student ID, first/last name combinations). Returns -1 if not found.
@@ -573,6 +589,13 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Dependencies: None
         Called by: 
 
+    getCurrentSemesterName() -> String|null
+        Returns the current semester name from the last row of Semester Metadata.
+        Returns null if sheet not found or empty.
+        Category: CONFIGURATION
+        Dependencies: debugLog(), getSheet()
+        Called by:
+
     getDateForWeekday(weekStartDate, weekdayName) -> Date
         Calculates date for a specific weekday within a week starting at weekStartDate.
         Category: DATE_TIME
@@ -656,12 +679,19 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Dependencies: extractSeasonFromSemester(), getYearFromSemesterName()
         Called by: 
 
+    getSemesterForDate(targetDate) -> String|null
+        Finds and returns the semester name whose date range contains the given date.
+        Returns null if no matching semester found.
+        Category: DATE_TIME
+        Dependencies: debugLog(), getSheet(), normalizeHeader()
+        Called by:
+
     getSheet(sheetKey) -> Sheet
         Returns a sheet object by its SHEET_MAP key (e.g., 'students', 'parents').
         Automatically infers which workbook to use.
         Category: CONFIGURATION
         Dependencies: getWorkbook(), inferWorkbookKey()
-        Called by: TeacherInvoice, TeacherResponses, (internal: getCurrentSemesterMonth, getMonthSheets, getSemesterDates, getTeacherGroupAssignments)
+        Called by: TeacherInvoice, TeacherResponses, (internal: getCurrentSemesterMonth, getCurrentSemesterName, getMonthSheets, getSemesterDates, getTeacherGroupAssignments)
 
     getStudentIdFromRow(row, headerMap) -> String|null
         Extracts student ID from a data row using flexible column name matching.
@@ -758,6 +788,13 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Category: VALIDATION
         Dependencies: getCached(), getMonthNames(), setCached()
         Called by: (internal: getAttendanceSheetForDate, getMonthSheets)
+
+    logAllSheetHeaders() -> void
+        Logs all sheet names and their header rows to the Apps Script logger.
+        Used for diagnostics.
+        Category: DEBUG
+        Dependencies: None
+        Called by: Contacts (runLogHeaders)
 
     normalizeHeader(header) -> String
         Normalizes header string for comparison (lowercase, no spaces/punctuation).
@@ -947,10 +984,11 @@ ATTENDANCE (1 function):
     getCached
     setCached
 
-  CONFIGURATION (11 functions):
+  CONFIGURATION (12 functions):
     EnvironmentManager.get
     EnvironmentManager.set
     getConfig
+    getCurrentSemesterName
     getGeneratedDocumentsFolder
     getRateSummary
     getRosterFolder
@@ -969,9 +1007,10 @@ ATTENDANCE (1 function):
     extractTotalLessonsFromPackages
     getStudentIdFromRow
 
-  DATA_MANIPULATION (13 functions):
+  DATA_MANIPULATION (14 functions):
     cleanName
     convertYesNoToBoolean
+    copyPreviousColumnToNew
     createDisplayName
     getLessonLengthFromPackages
     interpretAgeField
@@ -984,28 +1023,31 @@ ATTENDANCE (1 function):
     prefillAttendanceDatesForStudent
     safeParseFloat
 
-  DATA_RETRIEVAL (7 functions):
+  DATA_RETRIEVAL (8 functions):
     findColumnByPartialName
     findParentRow
+    findStudentInContacts
     findStudentRow
     getColumnHeaders
     getColumnIndices
     getHeaderMap
     getMonthSheets
 
-  DATE_TIME (9 functions):
+  DATE_TIME (10 functions):
     getCurrentAcademicYearInfo
     getCurrentSemesterMonth
     getDateForWeekday
     getMonthNameFromDate
     getMonthNames
     getSemesterDates
+    getSemesterForDate
     getWeekdayName
     getWeekdayNumber
     getYearFromSemesterName
 
-  DEBUG (1 function):
+  DEBUG (2 functions):
     debugLog
+    logAllSheetHeaders
 
   DOCUMENT_GENERATION (2 functions):
     combineDocumentsIntoPDF
