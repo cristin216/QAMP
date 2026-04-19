@@ -1867,47 +1867,47 @@ function getActiveStudentsFromRoster(rosterSheet) {
 
 function getActiveTeachersForDropdown() {
   try {
-    UtilityScriptLibrary.debugLog("🎯 Getting active and potential teachers for dropdown");
-    
+    UtilityScriptLibrary.debugLog('getActiveTeachersForDropdown', 'INFO', 'Getting teachers for dropdown', '', '');
+
     var lookupSheet = getTeacherRosterLookupSheet();
-    
+
     if (!lookupSheet || lookupSheet.getLastRow() <= 1) {
-      UtilityScriptLibrary.debugLog("⚠️ Teacher Roster Lookup sheet not found or empty");
+      UtilityScriptLibrary.debugLog('getActiveTeachersForDropdown', 'WARNING', 'Teacher Roster Lookup sheet not found or empty', '', '');
       return [];
     }
-    
+
     var getCol = UtilityScriptLibrary.createColumnFinder(lookupSheet);
     var displayNameCol = getCol('Display Name');
     var statusCol = getCol('Status');
-    
+
     if (!displayNameCol || !statusCol) {
-      UtilityScriptLibrary.debugLog("⚠️ Required columns (Display Name or Status) not found");
+      UtilityScriptLibrary.debugLog('getActiveTeachersForDropdown', 'WARNING', 'Required columns not found', 'Display Name or Status missing', '');
       return [];
     }
-    
+
     var lastCol = Math.max(displayNameCol, statusCol);
     var data = lookupSheet.getRange(2, 1, lookupSheet.getLastRow() - 1, lastCol).getValues();
     var displayNames = [];
-    
+
     for (var i = 0; i < data.length; i++) {
       var row = data[i];
       var status = String(row[statusCol - 1]).trim().toLowerCase();
       var displayName = row[displayNameCol - 1];
-      
-      if ((status === 'active' || status === 'potential') && displayName && String(displayName).trim() !== '') {
+
+      if ((status === 'active' || status === 'potential' || status === 'inactive') && displayName && String(displayName).trim() !== '') {
         displayNames.push(String(displayName).trim());
       }
     }
-    
+
     displayNames = displayNames.sort().filter(function(value, index, self) {
       return self.indexOf(value) === index;
     });
-    
-    UtilityScriptLibrary.debugLog("✅ Found " + displayNames.length + " teachers for dropdown: " + displayNames.join(', '));
+
+    UtilityScriptLibrary.debugLog('getActiveTeachersForDropdown', 'INFO', 'Found teachers for dropdown', displayNames.length + ' teachers', '');
     return displayNames;
-    
+
   } catch (error) {
-    UtilityScriptLibrary.debugLog("❌ Error getting teachers for dropdown: " + error.message);
+    UtilityScriptLibrary.debugLog('getActiveTeachersForDropdown', 'ERROR', 'Error getting teachers for dropdown', '', error.message);
     return [];
   }
 }
