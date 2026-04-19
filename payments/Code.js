@@ -2,8 +2,8 @@
 ================================================================================
 PAYMENTS CODE
 ================================================================================
-Version: 1
-Documentation: See Payments-Functions.md
+Version: 2
+Documentation: See Payments-Functions.md 
 ================================================================================
 */
 
@@ -25,15 +25,16 @@ function onEditInstallable(e) {
   var existingUrl = sheet.getRange(row, receiptUrlCol).getValue();
   if (existingUrl && String(existingUrl).trim() !== '') return;
 
+  var env = UtilityScriptLibrary.EnvironmentManager.get();
   var config = UtilityScriptLibrary.getConfig();
-  if (!config.receiptsFolderId) {
+  if (!config[env].receiptsFolderId) {
     UtilityScriptLibrary.debugLog('onEditInstallable', 'ERROR', 'receiptsFolderId not found in config', '', '');
     return;
   }
 
   var receiptsFolder;
   try {
-    receiptsFolder = DriveApp.getFolderById(config.receiptsFolderId);
+    receiptsFolder = DriveApp.getFolderById(config[env].receiptsFolderId);
   } catch (err) {
     UtilityScriptLibrary.debugLog('onEditInstallable', 'ERROR', 'Cannot access receipts folder', config.receiptsFolderId, err.message);
     return;
