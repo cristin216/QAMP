@@ -1,4 +1,4 @@
-
+var _executionCache = {};
 
 var EnvironmentManager = (function () {
   var currentEnv = 'test'; // set to 'test' as default
@@ -143,6 +143,18 @@ var STYLES = {
     background: '#ffffff'
   }
 };
+
+var INSTRUMENT_FAMILIES = {
+  Strings: ['Violin', 'Viola', 'Cello', 'Bass'],
+  Winds: ['Flute', 'Piccolo', 'Oboe', 'Bassoon', 'Clarinet', 'Saxophone'],
+  Brass: ['French Horn', 'Trumpet', 'Trombone', 'Baritone', 'Euphonium', 'Tuba'],
+  Auxiliary: ['Harp', 'Piano', 'Percussion', 'Voice', 'Guitar']
+};
+
+var MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+];
 
 function addToCurrencyCols(currencyCols, columnNumber, headerName) {
   // CURRENCY VALIDATION: Never add hours columns to currencyCols
@@ -1506,7 +1518,7 @@ function formatAttendanceSheet(sheet) {
     // Set up data validation for Status column (column E) - skip student header rows
     if (lastRow > 1) {
       var data = sheet.getDataRange().getValues();
-      var monthNames = getMonthNames().map(function(name) {
+      var monthNames = MONTH_NAMES.map(function(name) {
         return name.toLowerCase();
       });
       
@@ -1904,12 +1916,12 @@ function getCurrentSemesterMonth(semesterName) {
   try {
     var semesterMetadataSheet = getSheet('semesterMetadata');
     if (!semesterMetadataSheet) {
-      return "January";
+      return 'January';
     }
-    
+
     var data = semesterMetadataSheet.getDataRange().getValues();
     var headers = data[0];
-    
+
     var nameCol = -1, startCol = -1;
     for (var i = 0; i < headers.length; i++) {
       var header = normalizeHeader(headers[i]);
@@ -1919,28 +1931,23 @@ function getCurrentSemesterMonth(semesterName) {
         startCol = i;
       }
     }
-    
+
     if (nameCol === -1 || startCol === -1) {
-      return "January";
+      return 'January';
     }
-    
+
     for (var i = 1; i < data.length; i++) {
       var row = data[i];
       if (row[nameCol] && row[nameCol].toString().trim() === semesterName) {
         var startDate = new Date(row[startCol]);
-        var monthNames = [
-          "January", "February", "March", "April", "May", "June",
-          "July", "August", "September", "October", "November", "December"
-        ];
-        var monthName = monthNames[startDate.getMonth()];
-        return monthName;
+        return MONTH_NAMES[startDate.getMonth()];
       }
     }
-    
-    return "January";
-    
+
+    return 'January';
+
   } catch (error) {
-    return "January";
+    return 'January';
   }
 }
 
@@ -2030,6 +2037,20 @@ function getHeaderMap(sheet) {
   return map;
 }
 
+function getInstrumentFamily(instrument) {
+  if (!instrument) return '';
+  var normalized = instrument.toString().trim().toLowerCase();
+  for (var family in INSTRUMENT_FAMILIES) {
+    var members = INSTRUMENT_FAMILIES[family];
+    for (var i = 0; i < members.length; i++) {
+      if (members[i].toLowerCase() === normalized) {
+        return family;
+      }
+    }
+  }
+  return '';
+}
+
 function getLessonLengthFromPackages(qty30Package, qty45Package, qty60Package) {
   // This function determines which lesson length was selected and returns that length
   try {
@@ -2050,43 +2071,24 @@ function getLessonLengthFromPackages(qty30Package, qty45Package, qty60Package) {
 
 function getMonthNameFromDate(date, capitalize) {
   if (!date || typeof date.getMonth !== 'function') return null;
-  
-  var monthNames = getMonthNames();
-  var monthName = monthNames[date.getMonth()];
-  
-  // If capitalize parameter is true, return capitalized
-  if (capitalize) {
-    return monthName;
-  }
-  
-  return monthName.toLowerCase(); // Default lowercase for backend
-}
-
-function getMonthNames() {
-  return ['January', 'February', 'March', 'April', 'May', 'June',
-          'July', 'August', 'September', 'October', 'November', 'December'];
+  var monthName = MONTH_NAMES[date.getMonth()];
+  if (capitalize) return monthName;
+  return monthName.toLowerCase();
 }
 
 function getMonthSheets(ss) {
   if (!ss) return [];
-  
-  // Check cache first
   var ssId = ss.getId();
   var cacheKey = 'monthSheets_' + ssId;
   var cached = getCached(cacheKey);
   if (cached !== undefined) return cached;
-  
-  // Perform search
-  var sheets = ss.getSheet();
+  var sheets = ss.getSheets();
   var monthSheets = [];
-  
   for (var i = 0; i < sheets.length; i++) {
     if (isMonthSheet(sheets[i].getName())) {
       monthSheets.push(sheets[i]);
     }
   }
-  
-  // Cache and return
   return setCached(cacheKey, monthSheets);
 }
 
@@ -2517,24 +2519,19 @@ function interpretAgeField(ageResponse) {
 }
 
 function isCurrentOrFutureMonth(sheetName, targetDate) {
-  // Map month names to numbers (0-11)
-  var monthMap = {
-    'january': 0, 'february': 1, 'march': 2, 'april': 3,
-    'may': 4, 'june': 5, 'july': 6, 'august': 7,
-    'september': 8, 'october': 9, 'november': 10, 'december': 11
-  };
-  
+  var monthMap = {};
+  for (var i = 0; i < MONTH_NAMES.length; i++) {
+    monthMap[MONTH_NAMES[i].toLowerCase()] = i;
+  }
+
   var sheetNameLower = sheetName.toLowerCase().trim();
   var sheetMonth = monthMap[sheetNameLower];
-  
-  // If sheet name isn't a recognized month, return false
+
   if (sheetMonth === undefined) {
     return false;
   }
-  
-  var targetMonth = targetDate.getMonth(); // 0-11
-  
-  // Simple comparison: sheet month >= target month means current or future
+
+  var targetMonth = targetDate.getMonth();
   return sheetMonth >= targetMonth;
 }
 
@@ -2567,21 +2564,11 @@ function isIdAlreadyUsed(sheet, columnName, idToCheck) {
 
 function isMonthSheet(sheetName) {
   if (!sheetName) return false;
-  
-  // Check cache first
   var cacheKey = 'isMonth_' + sheetName;
   var cached = getCached(cacheKey);
   if (cached !== undefined) return cached;
-  
-  // Perform check
-  var lowerSheetName = sheetName.toLowerCase();
-  var monthNames = getMonthNames().map(function(name) {
-    return name.toLowerCase();
-  });
-  
-  var result = monthNames.indexOf(lowerSheetName) !== -1;
-  
-  // Cache and return
+  var result = MONTH_NAMES.indexOf(sheetName) !== -1 ||
+               MONTH_NAMES.map(function(m) { return m.toLowerCase(); }).indexOf(sheetName.toLowerCase().trim()) !== -1;
   return setCached(cacheKey, result);
 }
 
@@ -3133,7 +3120,7 @@ function setupStatusValidation(sheet, lastRow) {
         // Check if date contains a month name
         // Check if date contains a month name
         if (dateValue && typeof dateValue === 'string') {
-          var allMonthNames = getMonthNames();
+          var allMonthNames = MONTH_NAMES;
           var dateLower = dateValue.toLowerCase();
           for (var m = 0; m < allMonthNames.length; m++) {
             if (dateLower.indexOf(allMonthNames[m].toLowerCase()) !== -1) {
