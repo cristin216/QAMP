@@ -800,7 +800,7 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Normalizes header string for comparison (lowercase, no spaces/punctuation).
         Category: DATA_MANIPULATION
         Dependencies: None
-        Called by: Responses, TeacherInvoice, TeacherResponses, (internal: bulkUpdateStudentStatus, createColumnFinder, findParentRow, findStudentRow, generateNextId, getColumnIndices, getCurrentSemesterMonth, getFieldMappingFromSheet, getHeaderMap, getSemesterDates, isIdAlreadyUsed, parseRosterData, shouldBeCurrency, updateFieldMappings)
+        Called by: Responses, TeacherInvoice, TeacherResponses, (internal: bulkUpdateStudentStatus, createColumnFinder, findParentRow, findStudentRow, generateNextId, getColumnIndices, getCurrentSemesterMonth, getFieldMappingFromSheet, getHeaderMap, getSemesterDates, getSemesterForDate, isIdAlreadyUsed, parseRosterData, shouldBeCurrency, updateFieldMappings)
 
     parseAllPackageQuantities(qty30Package, qty45Package, qty60Package) -> Object
         Parses all package quantity strings and returns structured object.
