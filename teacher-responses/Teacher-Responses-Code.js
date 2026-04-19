@@ -242,32 +242,34 @@ function extractTeacherFormData(e) {
 
 function processSingleInstrument(instrumentSheet, instrumentData, firstName, lastName, teacherId, getCol) {
   var instrument = instrumentData.instrument;
-  var level = instrumentData.level || "all";
-  
-  // Check if this teacher/instrument combination already exists
+  var level = instrumentData.level || 'all';
+  var family = UtilityScriptLibrary.getInstrumentFamily(instrument);
+
   var existingRow = findInstrumentRow(instrumentSheet, firstName, lastName, instrument);
-  
+
   if (existingRow !== -1) {
-    UtilityScriptLibrary.debugLog("🔄 Updating existing instrument entry: " + instrument);
-    // Update existing entry
-    instrumentSheet.getRange(existingRow, getCol("Status")).setValue("Potential");
-    instrumentSheet.getRange(existingRow, getCol("Level")).setValue(level);
+    UtilityScriptLibrary.debugLog('processS ingleInstrument', 'INFO', 'Updating existing instrument entry', instrument, '');
+    instrumentSheet.getRange(existingRow, getCol('Status')).setValue('Potential');
+    instrumentSheet.getRange(existingRow, getCol('Level')).setValue(level);
+    if (getCol('Family')) {
+      instrumentSheet.getRange(existingRow, getCol('Family')).setValue(family);
+    }
     updateInstrumentAvailability(instrumentSheet, existingRow, instrumentData, getCol);
   } else {
-    UtilityScriptLibrary.debugLog("➕ Creating new instrument entry: " + instrument);
-    // Create new entry
+    UtilityScriptLibrary.debugLog('processSingleInstrument', 'INFO', 'Creating new instrument entry', instrument, '');
     var newRow = new Array(instrumentSheet.getLastColumn()).fill('');
-    
-    newRow[getCol("Instrument") - 1] = instrument;
-    newRow[getCol("First Name") - 1] = firstName;
-    newRow[getCol("Last Name") - 1] = lastName;
-    newRow[getCol("Status") - 1] = "Potential";
-    newRow[getCol("Level") - 1] = level;
-    newRow[getCol("Teacher ID") - 1] = teacherId;
-    
-    // Set availability checkboxes (removed "future")
+
+    newRow[getCol('Instrument') - 1] = instrument;
+    newRow[getCol('First Name') - 1] = firstName;
+    newRow[getCol('Last Name') - 1] = lastName;
+    newRow[getCol('Status') - 1] = 'Potential';
+    newRow[getCol('Level') - 1] = level;
+    newRow[getCol('Teacher ID') - 1] = teacherId;
+    if (getCol('Family')) {
+      newRow[getCol('Family') - 1] = family;
+    }
+
     setInstrumentAvailability(newRow, instrumentData, getCol);
-    
     instrumentSheet.appendRow(newRow);
   }
 }
