@@ -2078,7 +2078,7 @@ function getExistingGroupIds(sheet) {
 
 function getMostRecentMonthSheet(workbook) {
   try {
-    var sheets = workbook.getSheet();
+    var sheets = workbook.getSheets();
     var monthNames = UtilityScriptLibrary.getMonthNames();
     
     var foundMonthSheets = [];
