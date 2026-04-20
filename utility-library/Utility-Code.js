@@ -2746,6 +2746,35 @@ function parseDateFromString(str) {
   return isNaN(date.getTime()) ? null : date;
 }
 
+function parseGridInstruments(headers, rowValues) {
+  var GRID_PREFIX = normalizeHeader(
+    'What instrument(s) are you interested in teaching? Please check the level(s) you are comfortable teaching for those instruments you wish to teach.'
+  );
+  var BRACKET_REGEX = /\[(.+?)\]\s*$/;
+  var LEVEL_MAP = { 'beginning': 'beg', 'intermediate': 'int', 'advanced': 'adv' };
+  var results = [];
+
+  for (var i = 0; i < headers.length; i++) {
+    if (normalizeHeader(headers[i]).indexOf(GRID_PREFIX) !== 0) continue;
+
+    var bracketMatch = headers[i].match(BRACKET_REGEX);
+    if (!bracketMatch) continue;
+
+    var instrument = bracketMatch[1].trim();
+    var cellValue = (rowValues[i] || '').toString().trim();
+    if (!cellValue) continue;
+
+    var levels = cellValue.split(',').map(function(l) {
+      var t = l.trim().toLowerCase();
+      return LEVEL_MAP[t] || t;
+    }).filter(Boolean).join('/');
+
+    results.push({ instrument: instrument, levels: levels });
+  }
+
+  return results;
+}
+
 function parseRosterData(row, headerMap, fieldMap, studentIdOverride) {
   studentIdOverride = studentIdOverride || '';
   try {
