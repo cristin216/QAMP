@@ -2747,20 +2747,18 @@ function parseDateFromString(str) {
 }
 
 function parseGridInstruments(headers, rowValues) {
-  var GRID_PREFIX = normalizeHeader(
-    'What instrument(s) are you interested in teaching? Please check the level(s) you are comfortable teaching for those instruments you wish to teach.'
-  );
+  var GRID_PREFIX = 'What instrument(s) are you interested in teaching? Please check the level(s) you are comfortable teaching for those instruments you wish to teach.';
   var BRACKET_REGEX = /\[(.+?)\]\s*$/;
   var LEVEL_MAP = { 'beginning': 'beg', 'intermediate': 'int', 'advanced': 'adv' };
   var results = [];
 
   for (var i = 0; i < headers.length; i++) {
-    if (normalizeHeader(headers[i]).indexOf(GRID_PREFIX) !== 0) continue;
+    var header = headers[i].toString();
+    if (header.toLowerCase().indexOf(GRID_PREFIX.toLowerCase()) !== 0) continue;
 
-    var bracketMatch = headers[i].match(BRACKET_REGEX);
+    var bracketMatch = header.match(BRACKET_REGEX);
     if (!bracketMatch) continue;
 
-    var instrument = bracketMatch[1].trim();
     var cellValue = (rowValues[i] || '').toString().trim();
     if (!cellValue) continue;
 
@@ -2769,7 +2767,7 @@ function parseGridInstruments(headers, rowValues) {
       return LEVEL_MAP[t] || t;
     }).filter(Boolean).join('/');
 
-    results.push({ instrument: instrument, levels: levels });
+    results.push({ instrument: bracketMatch[1].trim(), levels: levels });
   }
 
   return results;
