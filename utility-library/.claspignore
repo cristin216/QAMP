@@ -1,3 +1,3 @@
 # Don't push sensitive config to Google Apps Script
 Utility-Config.js
-Config.template.gs
+Config.template.js
