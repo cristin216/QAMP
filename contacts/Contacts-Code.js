@@ -130,51 +130,6 @@ function buildInstrumentRow({
   };
 }
 
-function cascadeFormerStatus(teacherId) {
-  try {
-    UtilityScriptLibrary.debugLog('cascadeFormerStatus', 'INFO', 'Starting former status cascade',
-             'Teacher ID: ' + teacherId, '');
-
-    if (!teacherId || String(teacherId).trim() === '') {
-      throw new Error('Teacher ID is required');
-    }
-
-    var instrumentSheet = UtilityScriptLibrary.getSheet('instrumentList');
-    var headerMap = UtilityScriptLibrary.getHeaderMap(instrumentSheet);
-
-    var teacherIdCol = headerMap[UtilityScriptLibrary.normalizeHeader('Teacher ID')];
-    var statusCol = headerMap[UtilityScriptLibrary.normalizeHeader('Status')];
-
-    if (!teacherIdCol) {
-      throw new Error('Teacher ID column not found in Instrument List');
-    }
-    if (!statusCol) {
-      throw new Error('Status column not found in Instrument List');
-    }
-
-    var data = instrumentSheet.getDataRange().getValues();
-    var updatedCount = 0;
-
-    for (var i = 1; i < data.length; i++) {
-      var rowTeacherId = String(data[i][teacherIdCol - 1] || '').trim();
-      if (rowTeacherId === String(teacherId).trim()) {
-        instrumentSheet.getRange(i + 1, statusCol).setValue('Former');
-        updatedCount++;
-      }
-    }
-
-    UtilityScriptLibrary.debugLog('cascadeFormerStatus', 'SUCCESS', 'Former cascade complete',
-             'Teacher ID: ' + teacherId + ', Instrument rows updated: ' + updatedCount, '');
-
-    return updatedCount;
-
-  } catch (error) {
-    UtilityScriptLibrary.debugLog('cascadeFormerStatus', 'ERROR', 'Former cascade failed',
-             'Teacher ID: ' + teacherId, error.message);
-    throw error;
-  }
-}
-
 function getContactByKey(contactsSheet, firstName, lastName) {
   const key = UtilityScriptLibrary.generateKey(firstName, lastName);
   const data = contactsSheet.getDataRange().getValues();

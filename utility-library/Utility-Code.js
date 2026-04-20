@@ -28,6 +28,12 @@ var SHEET_MAP = {
   teacherFieldMap: {
     name: 'TeacherFieldMap'
   },
+  teacherReturningResponses: {
+    name: 'Returning Teacher Responses'
+  },  
+  teacherReturningFieldMap: {
+    name: 'ReturningTeacherFieldMap'
+  },
   // Contacts Workbook
   teachersAndAdmin: {
     name: 'Teachers and Admin'
@@ -486,6 +492,51 @@ function bulkUpdateStudentStatus(studentsSheet, statusColumn, newValue, options)
       updatedCount: 0,
       changedRows: []
     };
+  }
+}
+
+function cascadeFormerStatus(teacherId) {
+  try {
+    debugLog('cascadeFormerStatus', 'INFO', 'Starting former status cascade',
+             'Teacher ID: ' + teacherId, '');
+
+    if (!teacherId || String(teacherId).trim() === '') {
+      throw new Error('Teacher ID is required');
+    }
+
+    var instrumentSheet = getSheet('instrumentList');
+    var headerMap = getHeaderMap(instrumentSheet);
+
+    var teacherIdCol = headerMap[normalizeHeader('Teacher ID')];
+    var statusCol = headerMap[normalizeHeader('Status')];
+
+    if (!teacherIdCol) {
+      throw new Error('Teacher ID column not found in Instrument List');
+    }
+    if (!statusCol) {
+      throw new Error('Status column not found in Instrument List');
+    }
+
+    var data = instrumentSheet.getDataRange().getValues();
+    var updatedCount = 0;
+
+    for (var i = 1; i < data.length; i++) {
+      var rowTeacherId = String(data[i][teacherIdCol - 1] || '').trim();
+      if (rowTeacherId === String(teacherId).trim()) {
+        instrumentSheet.getRange(i + 1, statusCol).setValue('Former');
+        updatedCount++;
+      }
+    }
+
+    debugLog('cascadeFormerStatus', 'SUCCESS', 'Former cascade complete',
+             'Teacher ID: ' + teacherId + ', Instrument rows updated: ' + updatedCount, '');
+
+    return updatedCount;
+
+  } catch (error) {
+    debugLog('cascadeFormerStatus', 'ERROR', 'Former cascade failed',
+             'Teacher ID: ' + teacherId, error.message);
+    throw error;
   }
 }
 
