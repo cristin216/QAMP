@@ -6,6 +6,57 @@ function onOpen() {
     .addToUi();
 }
 
+function onEditContacts(e) {
+  try {
+    var sheet = e.range.getSheet();
+
+    // Only process Teachers and Admin sheet
+    if (sheet.getName() !== UtilityScriptLibrary.SHEET_MAP.teachersAndAdmin.name) {
+      return;
+    }
+
+    // Only process single-cell edits
+    if (e.range.getNumRows() > 1 || e.range.getNumColumns() > 1) {
+      return;
+    }
+
+    // Only process if new value is 'Former'
+    var newValue = String(e.value || '').trim();
+    if (newValue !== 'Former') {
+      return;
+    }
+
+    // Check that edited cell is the Status column
+    var headerMap = UtilityScriptLibrary.getHeaderMap(sheet);
+    var statusCol = headerMap[UtilityScriptLibrary.normalizeHeader('Status')];
+    if (!statusCol || e.range.getColumn() !== statusCol) {
+      return;
+    }
+
+    // Get Teacher ID from same row
+    var teacherIdCol = headerMap[UtilityScriptLibrary.normalizeHeader('Teacher ID')];
+    if (!teacherIdCol) {
+      UtilityScriptLibrary.debugLog('onEditContacts', 'ERROR', 'Teacher ID column not found', '', '');
+      return;
+    }
+
+    var teacherId = String(sheet.getRange(e.range.getRow(), teacherIdCol).getValue() || '').trim();
+
+    // Only process Teacher-prefix IDs
+    if (!teacherId || teacherId.charAt(0) !== 'T') {
+      UtilityScriptLibrary.debugLog('onEditContacts', 'INFO', 'Skipping non-teacher row',
+               'ID: ' + teacherId, '');
+      return;
+    }
+
+    cascadeFormerStatus(teacherId);
+
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('onEditContacts', 'ERROR', 'onEdit failed',
+             '', error.message);
+  }
+}
+
 function syncContactsAndInstruments() {
   try {
     processTeacherResponses();
@@ -77,6 +128,51 @@ function buildInstrumentRow({
     Notes: '',
     Comments: ''
   };
+}
+
+function cascadeFormerStatus(teacherId) {
+  try {
+    UtilityScriptLibrary.debugLog('cascadeFormerStatus', 'INFO', 'Starting former status cascade',
+             'Teacher ID: ' + teacherId, '');
+
+    if (!teacherId || String(teacherId).trim() === '') {
+      throw new Error('Teacher ID is required');
+    }
+
+    var instrumentSheet = UtilityScriptLibrary.getSheet('instrumentList');
+    var headerMap = UtilityScriptLibrary.getHeaderMap(instrumentSheet);
+
+    var teacherIdCol = headerMap[UtilityScriptLibrary.normalizeHeader('Teacher ID')];
+    var statusCol = headerMap[UtilityScriptLibrary.normalizeHeader('Status')];
+
+    if (!teacherIdCol) {
+      throw new Error('Teacher ID column not found in Instrument List');
+    }
+    if (!statusCol) {
+      throw new Error('Status column not found in Instrument List');
+    }
+
+    var data = instrumentSheet.getDataRange().getValues();
+    var updatedCount = 0;
+
+    for (var i = 1; i < data.length; i++) {
+      var rowTeacherId = String(data[i][teacherIdCol - 1] || '').trim();
+      if (rowTeacherId === String(teacherId).trim()) {
+        instrumentSheet.getRange(i + 1, statusCol).setValue('Former');
+        updatedCount++;
+      }
+    }
+
+    UtilityScriptLibrary.debugLog('cascadeFormerStatus', 'SUCCESS', 'Former cascade complete',
+             'Teacher ID: ' + teacherId + ', Instrument rows updated: ' + updatedCount, '');
+
+    return updatedCount;
+
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('cascadeFormerStatus', 'ERROR', 'Former cascade failed',
+             'Teacher ID: ' + teacherId, error.message);
+    throw error;
+  }
 }
 
 function getContactByKey(contactsSheet, firstName, lastName) {
