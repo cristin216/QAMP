@@ -29,10 +29,10 @@ var SHEET_MAP = {
     name: 'TeacherFieldMap'
   },
   teacherReturningResponses: {
-    name: 'Returning Teacher Responses'
-  },  
+  name: 'Returning Teacher Responses'
+  },
   teacherReturningFieldMap: {
-    name: 'ReturningTeacherFieldMap'
+    name: 'Returning Teacher FieldMap'
   },
   // Contacts Workbook
   teachersAndAdmin: {
@@ -2523,6 +2523,8 @@ function inferWorkbookKey(sheetKey) {
   var keyToWorkbook = {
     teacherResponses: 'teacherInterest',
     teacherFieldMap: 'teacherInterest',
+    teacherReturningResponses: 'teacherInterest',
+    teacherReturningFieldMap: 'teacherInterest',
     teachersAndAdmin: 'contacts',
     students: 'contacts',
     parents: 'contacts',
