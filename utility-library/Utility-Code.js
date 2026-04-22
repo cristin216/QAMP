@@ -2127,6 +2127,10 @@ function getMonthNameFromDate(date, capitalize) {
   return monthName.toLowerCase();
 }
 
+function getMonthNames() {
+  return MONTH_NAMES;
+}
+
 function getMonthSheets(ss) {
   if (!ss) return [];
   var ssId = ss.getId();
