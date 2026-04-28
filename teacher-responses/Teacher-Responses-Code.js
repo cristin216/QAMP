@@ -420,32 +420,30 @@ function addOrUpdateTeacherRosterLookup(formData, teacherId, get) {
   try {
     var firstName = get('First Name');
     var lastName = get('Last Name');
-    var teacherName = firstName + ' ' + lastName;
 
     var lookupSheet = UtilityScriptLibrary.getSheet('teacherRosterLookup');
     var getCol = UtilityScriptLibrary.createColumnFinder(lookupSheet);
-    var existingRow = findTeacherInRosterLookup(lookupSheet, teacherName);
+    var existingRow = findTeacherInRosterLookup(lookupSheet, teacherId);
 
     if (existingRow === -1) {
       var headers = UtilityScriptLibrary.getColumnHeaders(lookupSheet);
       var newRow = headers.map(function(h) {
-        var key = h.toLowerCase().trim();
-        if (key === 'teacher name') return teacherName;
-        if (key === 'teacher id') return teacherId;
-        if (key === 'status') return 'potential';
-        if (key === 'last updated') return new Date();
+        var key = UtilityScriptLibrary.normalizeHeader(h);
+        if (key === UtilityScriptLibrary.normalizeHeader('First Name')) return firstName;
+        if (key === UtilityScriptLibrary.normalizeHeader('Last Name')) return lastName;
+        if (key === UtilityScriptLibrary.normalizeHeader('Teacher ID')) return teacherId;
+        if (key === UtilityScriptLibrary.normalizeHeader('Status')) return 'Potential';
+        if (key === UtilityScriptLibrary.normalizeHeader('Last Updated')) return new Date();
         return '';
       });
       lookupSheet.appendRow(newRow);
       UtilityScriptLibrary.debugLog('addOrUpdateTeacherRosterLookup', 'INFO',
-        'Added new teacher', teacherName, '');
+        'Added new teacher', firstName + ' ' + lastName, '');
     } else {
-      var teacherIdCol = getCol('Teacher ID');
       var lastUpdatedCol = getCol('Last Updated');
-      if (teacherIdCol) lookupSheet.getRange(existingRow, teacherIdCol).setValue(teacherId);
       if (lastUpdatedCol) lookupSheet.getRange(existingRow, lastUpdatedCol).setValue(new Date());
       UtilityScriptLibrary.debugLog('addOrUpdateTeacherRosterLookup', 'INFO',
-        'Updated existing teacher', teacherName, '');
+        'Updated existing teacher', firstName + ' ' + lastName, '');
     }
 
   } catch (error) {
@@ -510,34 +508,28 @@ function findInstrumentRow(sheet, firstName, lastName, instrument) {
   return -1;
 }
 
-function findTeacherInRosterLookup(lookupSheet, teacherName) {
+function findTeacherInRosterLookup(lookupSheet, teacherId) {
   try {
-    var data = lookupSheet.getDataRange().getValues();
-    var headers = data[0];
-    var nameCol = -1;
-    
-    for (var i = 0; i < headers.length; i++) {
-      if (UtilityScriptLibrary.normalizeHeader(headers[i]) === UtilityScriptLibrary.normalizeHeader("Teacher Name")) {
-        nameCol = i;
-        break;
-      }
-    }
-    
-    if (nameCol === -1) {
-      UtilityScriptLibrary.debugLog("❌ Teacher Name column not found in roster lookup");
+    var getCol = UtilityScriptLibrary.createColumnFinder(lookupSheet);
+    var teacherIdCol = getCol('Teacher ID');
+
+    if (!teacherIdCol) {
+      UtilityScriptLibrary.debugLog('findTeacherInRosterLookup', 'ERROR',
+        'Teacher ID column not found', '', '');
       return -1;
     }
-    
-    for (var j = 1; j < data.length; j++) {
-      if (String(data[j][nameCol]).trim() === teacherName.trim()) {
-        return j + 1;
+
+    var data = lookupSheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][teacherIdCol - 1]).trim() === String(teacherId).trim()) {
+        return i + 1;
       }
     }
-    
+
     return -1;
-    
+
   } catch (error) {
-    UtilityScriptLibrary.debugLog("❌ Error finding teacher in roster lookup: " + error.message);
+    UtilityScriptLibrary.debugLog('findTeacherInRosterLookup', 'ERROR', 'Failed', '', error.message);
     return -1;
   }
 }
