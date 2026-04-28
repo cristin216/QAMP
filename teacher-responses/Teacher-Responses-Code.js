@@ -1,5 +1,4 @@
 
-
 // === UI MENU ===
 function onOpen() {
   var ui = SpreadsheetApp.getUi();
@@ -8,133 +7,152 @@ function onOpen() {
     .addToUi();
 }
 
-function processTeacherManually() {
+function handleReturningFormSubmit(e) {
+  var lock = LockService.getScriptLock();
   try {
-    UtilityScriptLibrary.debugLog("=== MANUAL BATCH PROCESSING INITIATED ===");
-    
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var responsesSheet = ss.getActiveSheet();
-    var trackingSheet = ss.getSheetByName("Teacher Tracking");
-    
-    // Get headers from responses sheet
-    var headers = UtilityScriptLibrary.getColumnHeaders(responsesSheet);
-    var lastRow = responsesSheet.getLastRow();
-    
-    if (lastRow < 2) {
-      SpreadsheetApp.getUi().alert('Info', 'No data to process.', SpreadsheetApp.getUi().ButtonSet.OK);
+    lock.waitLock(30000);
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('handleReturningFormSubmit', 'ERROR', 'Could not obtain lock', '', error.message);
+    return;
+  }
+
+  try {
+    UtilityScriptLibrary.debugLog('handleReturningFormSubmit', 'INFO', 'Starting', '', '');
+
+    var formData = extractReturningFormData(e);
+    var fieldMapSheet = UtilityScriptLibrary.getSheet('teacherReturningFieldMap');
+    var fieldMap = UtilityScriptLibrary.getFieldMappingFromSheet(fieldMapSheet);
+
+    var get = function(internalField) {
+      var normalizedFormHeader = Object.keys(fieldMap).find(function(key) {
+        return fieldMap[key] === internalField;
+      });
+      if (!normalizedFormHeader) return '';
+      var actualKey = Object.keys(formData).find(function(key) {
+        return UtilityScriptLibrary.normalizeHeader(key) === normalizedFormHeader;
+      });
+      return actualKey ? formData[actualKey] : '';
+    };
+
+    var firstName = get('First Name');
+    var lastName = get('Last Name');
+    var email = get('Email');
+    var interest = get('Interest').toString().trim().toLowerCase();
+    var teachAtOP = get('Teach at OP').toString().trim().toLowerCase();
+
+    UtilityScriptLibrary.debugLog('handleReturningFormSubmit', 'INFO', 'Form data extracted',
+      firstName + ' ' + lastName + ' | Interest: ' + interest, '');
+
+    var contactsSheet = UtilityScriptLibrary.getSheet('teachersAndAdmin');
+    var teacherKey = UtilityScriptLibrary.generateKey(firstName, lastName);
+    var contactRow = findTeacherRow(contactsSheet, teacherKey);
+    var headerMap = UtilityScriptLibrary.getHeaderMap(contactsSheet);
+    var statusCol = headerMap[UtilityScriptLibrary.normalizeHeader('Status')];
+    var teacherIdCol = headerMap[UtilityScriptLibrary.normalizeHeader('Teacher ID')];
+    var emailCol = headerMap[UtilityScriptLibrary.normalizeHeader('Email')];
+    var currentStatus = contactRow !== -1
+      ? String(contactsSheet.getRange(contactRow, statusCol).getValue() || '').trim()
+      : '';
+
+    // --- NO: set Unavailable or Former ---
+    if (interest === 'no') {
+      if (contactRow === -1) {
+        UtilityScriptLibrary.debugLog('handleReturningFormSubmit', 'WARNING',
+          'No-response with no Contacts match — no action', firstName + ' ' + lastName, '');
+        return;
+      }
+      if (currentStatus === 'Former') {
+        UtilityScriptLibrary.debugLog('handleReturningFormSubmit', 'INFO',
+          'Already Former — no action', firstName + ' ' + lastName, '');
+        return;
+      }
+
+      var future = get('Future').toString().trim().toLowerCase();
+      var newStatus = future.startsWith('y') ? 'Unavailable' : 'Former';
+      contactsSheet.getRange(contactRow, statusCol).setValue(newStatus);
+
+      if (newStatus === 'Former') {
+        var teacherId = String(contactsSheet.getRange(contactRow, teacherIdCol).getValue() || '').trim();
+        UtilityScriptLibrary.cascadeFormerStatus(teacherId);
+      }
+
+      UtilityScriptLibrary.debugLog('handleReturningFormSubmit', 'SUCCESS',
+        'Status set to ' + newStatus, firstName + ' ' + lastName, '');
       return;
     }
-    
-    // Get all response data
-    var allData = responsesSheet.getRange(2, 1, lastRow - 1, responsesSheet.getLastColumn()).getValues();
-    
-    // Get existing tracked teachers
-    var trackedNames = {};
-    if (trackingSheet) {
-      var trackingData = trackingSheet.getDataRange().getValues();
-      for (var i = 1; i < trackingData.length; i++) {
-        var name = trackingData[i][2]; // Column C: Name
-        if (name) {
-          trackedNames[String(name).trim()] = true;
-        }
+
+    // --- YES / MAYBE ---
+    if (!teachAtOP.startsWith('y')) {
+      UtilityScriptLibrary.debugLog('handleReturningFormSubmit', 'WARNING',
+        'Unwilling to teach at OP — no action', firstName + ' ' + lastName, '');
+      return;
+    }
+
+    // Unmatched: create partial record and exit
+    if (contactRow === -1) {
+      createPartialReturningRecord(contactsSheet, firstName, lastName, email);
+      UtilityScriptLibrary.debugLog('handleReturningFormSubmit', 'WARNING',
+        'No Contacts match — partial record created', firstName + ' ' + lastName, '');
+      return;
+    }
+
+    // Former submitted — flag for admin, no status change
+    if (currentStatus === 'Former') {
+      appendAdminFlag(contactsSheet, contactRow, headerMap,
+        'Submitted returning form while status is Former — review required');
+      UtilityScriptLibrary.debugLog('handleReturningFormSubmit', 'WARNING',
+        'Former teacher submitted returning form — flagged', firstName + ' ' + lastName, '');
+      return;
+    }
+
+    // Update email if changed
+    if (emailCol && email) {
+      var existingEmail = String(contactsSheet.getRange(contactRow, emailCol).getValue() || '').trim();
+      if (existingEmail !== email) {
+        contactsSheet.getRange(contactRow, emailCol).setValue(email);
+        UtilityScriptLibrary.debugLog('handleReturningFormSubmit', 'INFO',
+          'Email updated', firstName + ' ' + lastName, '');
       }
     }
-    
-    UtilityScriptLibrary.debugLog("Found " + Object.keys(trackedNames).length + " already tracked teachers");
-    
-    // Process each untracked row
-    var processed = 0;
-    var skipped = 0;
-    var errors = [];
-    
-    for (var i = 0; i < allData.length; i++) {
-      var rowData = allData[i];
-      var formData = {};
-      
-      // Build formData object from row
-      for (var j = 0; j < headers.length; j++) {
-        formData[headers[j]] = rowData[j];
-      }
-      
-      // Build name to check against tracking
-      var firstName = formData["First Name"] || '';
-      var lastName = formData["Last Name"] || '';
-      var fullName = (firstName + ' ' + lastName).trim();
-      
-      if (!fullName || trackedNames[fullName]) {
-        skipped++;
-        UtilityScriptLibrary.debugLog("Skipping already tracked: " + fullName);
-        continue;
-      }
-      
-      // Process this teacher
-      try {
-        UtilityScriptLibrary.debugLog("Processing untracked teacher: " + fullName);
-        
-        // Check if interested in teaching
-        var interest = formData["Are you interested in teaching lessons with the Quaker Arts Music Program?"] || '';
-        
-        if (interest !== "Yes" && interest !== "Maybe") {
-          UtilityScriptLibrary.debugLog("Skipping - not interested in teaching: " + fullName);
-          
-          // Track future prospect if applicable
-          var futureInterest = formData["Would you like us to keep your name on file for future opportunities?"] || '';
-          if (futureInterest === "Yes") {
-            trackFutureProspect(formData);
-          }
-          
-          skipped++;
-          continue;
-        }
-        
-        // Process the teacher
-        var contactsWorkbook = UtilityScriptLibrary.getWorkbook('contacts');
-        if (!contactsWorkbook) {
-          throw new Error("Could not access Contacts workbook");
-        }
-        
-        var teachersSheet = contactsWorkbook.getSheetByName("Teachers and Admin");
-        if (!teachersSheet) {
-          throw new Error("Teachers and Admin sheet not found");
-        }
-        
-        var teacherId = processTeacher(formData, teachersSheet);
-        
-        var instrumentSheet = contactsWorkbook.getSheetByName("Instrument List");
-        if (!instrumentSheet) {
-          throw new Error("Instrument List sheet not found");
-        }
-        
-        processTeacherInstruments(formData, instrumentSheet, teacherId);
-        addOrUpdateTeacherRosterLookup(formData, teacherId);
-        updateLocalTeacherTracking(formData, teacherId);
-        
-        processed++;
-        UtilityScriptLibrary.debugLog("âœ… Processed: " + fullName);
-        
-      } catch (error) {
-        errors.push(fullName + ": " + error.message);
-        UtilityScriptLibrary.debugLog("âŒ Error processing " + fullName + ": " + error.message);
+
+    // Unavailable → Returning
+    if (currentStatus === 'Unavailable') {
+      contactsSheet.getRange(contactRow, statusCol).setValue('Returning');
+      UtilityScriptLibrary.debugLog('handleReturningFormSubmit', 'INFO',
+        'Status updated Unavailable → Returning', firstName + ' ' + lastName, '');
+    }
+
+    // Parse and update instruments
+    var formHeaders = Object.keys(formData);
+    var formValues = formHeaders.map(function(h) { return formData[h]; });
+    var instruments = UtilityScriptLibrary.parseGridInstruments(formHeaders, formValues);
+
+    if (instruments.length > 0) {
+      var teacherId = String(contactsSheet.getRange(contactRow, teacherIdCol).getValue() || '').trim();
+      var instrumentSheet = UtilityScriptLibrary.getSheet('instrumentList');
+      var getCol = UtilityScriptLibrary.createColumnFinder(instrumentSheet);
+      var summer = get('Summer').toString().toLowerCase().startsWith('y');
+      var schoolYear = get('School Year').toString().toLowerCase().startsWith('y');
+
+      for (var i = 0; i < instruments.length; i++) {
+        processSingleInstrument(instrumentSheet, {
+          instrument: instruments[i].instrument,
+          level: instruments[i].levels,
+          teachAtOP: true,
+          summer: summer,
+          schoolYear: schoolYear
+        }, firstName, lastName, teacherId, getCol);
       }
     }
-    
-    // Show summary
-    var message = "Processing complete!\n\n" +
-                  "Processed: " + processed + "\n" +
-                  "Skipped: " + skipped;
-    
-    if (errors.length > 0) {
-      message += "\n\nErrors (" + errors.length + "):\n" + errors.join("\n");
-    }
-    
-    var ui = SpreadsheetApp.getUi();
-    ui.alert('Batch Processing Complete', message, ui.ButtonSet.OK);
-    UtilityScriptLibrary.debugLog("=== BATCH PROCESSING COMPLETE ===");
-    
+
+    UtilityScriptLibrary.debugLog('handleReturningFormSubmit', 'SUCCESS',
+      'Completed', firstName + ' ' + lastName, '');
+
   } catch (error) {
-    UtilityScriptLibrary.debugLog("âŒ Error in manual batch processing: " + error.message);
-    var ui = SpreadsheetApp.getUi();
-    ui.alert('Error', 'Failed to process teachers: ' + error.message, ui.ButtonSet.OK);
+    UtilityScriptLibrary.debugLog('handleReturningFormSubmit', 'ERROR',
+      'Failed', '', error.message);
+  } finally {
+    lock.releaseLock();
   }
 }
 
@@ -216,6 +234,23 @@ function handleTeacherFormSubmit(e) {
 }
 
 // === PROCESSING ===
+function extractReturningFormData(e) {
+  var formData = {};
+  if (e && e.namedValues) {
+    for (var key in e.namedValues) {
+      formData[key] = e.namedValues[key][0];
+    }
+  } else {
+    var sheet = UtilityScriptLibrary.getSheet('teacherReturningResponses');
+    var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var lastRow = sheet.getLastRow();
+    var values = sheet.getRange(lastRow, 1, 1, sheet.getLastColumn()).getValues()[0];
+    for (var i = 0; i < headers.length; i++) {
+      formData[headers[i]] = values[i];
+    }
+  }
+  return formData;
+}
 
 function extractTeacherFormData(e) {
   var formData = {};
@@ -384,7 +419,6 @@ function processTeacher(formData, teachersSheet) {
   }
 }
 
-
 function processTeacherInstruments(formData, instrumentSheet, teacherId) {
   try {
     UtilityScriptLibrary.debugLog("ðŸŽµ Starting processTeacherInstruments");
@@ -425,6 +459,136 @@ function processTeacherInstruments(formData, instrumentSheet, teacherId) {
     
   } catch (error) {
     UtilityScriptLibrary.debugLog("âŒ Error in processTeacherInstruments: " + error.message);
+  }
+}
+
+function processTeacherManually() {
+  try {
+    UtilityScriptLibrary.debugLog("=== MANUAL BATCH PROCESSING INITIATED ===");
+    
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var responsesSheet = ss.getActiveSheet();
+    var trackingSheet = ss.getSheetByName("Teacher Tracking");
+    
+    // Get headers from responses sheet
+    var headers = UtilityScriptLibrary.getColumnHeaders(responsesSheet);
+    var lastRow = responsesSheet.getLastRow();
+    
+    if (lastRow < 2) {
+      SpreadsheetApp.getUi().alert('Info', 'No data to process.', SpreadsheetApp.getUi().ButtonSet.OK);
+      return;
+    }
+    
+    // Get all response data
+    var allData = responsesSheet.getRange(2, 1, lastRow - 1, responsesSheet.getLastColumn()).getValues();
+    
+    // Get existing tracked teachers
+    var trackedNames = {};
+    if (trackingSheet) {
+      var trackingData = trackingSheet.getDataRange().getValues();
+      for (var i = 1; i < trackingData.length; i++) {
+        var name = trackingData[i][2]; // Column C: Name
+        if (name) {
+          trackedNames[String(name).trim()] = true;
+        }
+      }
+    }
+    
+    UtilityScriptLibrary.debugLog("Found " + Object.keys(trackedNames).length + " already tracked teachers");
+    
+    // Process each untracked row
+    var processed = 0;
+    var skipped = 0;
+    var errors = [];
+    
+    for (var i = 0; i < allData.length; i++) {
+      var rowData = allData[i];
+      var formData = {};
+      
+      // Build formData object from row
+      for (var j = 0; j < headers.length; j++) {
+        formData[headers[j]] = rowData[j];
+      }
+      
+      // Build name to check against tracking
+      var firstName = formData["First Name"] || '';
+      var lastName = formData["Last Name"] || '';
+      var fullName = (firstName + ' ' + lastName).trim();
+      
+      if (!fullName || trackedNames[fullName]) {
+        skipped++;
+        UtilityScriptLibrary.debugLog("Skipping already tracked: " + fullName);
+        continue;
+      }
+      
+      // Process this teacher
+      try {
+        UtilityScriptLibrary.debugLog("Processing untracked teacher: " + fullName);
+        
+        // Check if interested in teaching
+        var interest = formData["Are you interested in teaching lessons with the Quaker Arts Music Program?"] || '';
+        
+        if (interest !== "Yes" && interest !== "Maybe") {
+          UtilityScriptLibrary.debugLog("Skipping - not interested in teaching: " + fullName);
+          
+          // Track future prospect if applicable
+          var futureInterest = formData["Would you like us to keep your name on file for future opportunities?"] || '';
+          if (futureInterest === "Yes") {
+            trackFutureProspect(formData);
+          }
+          
+          skipped++;
+          continue;
+        }
+        
+        // Process the teacher
+        var contactsWorkbook = UtilityScriptLibrary.getWorkbook('contacts');
+        if (!contactsWorkbook) {
+          throw new Error("Could not access Contacts workbook");
+        }
+        
+        var teachersSheet = contactsWorkbook.getSheetByName("Teachers and Admin");
+        if (!teachersSheet) {
+          throw new Error("Teachers and Admin sheet not found");
+        }
+        
+        var teacherId = processTeacher(formData, teachersSheet);
+        
+        var instrumentSheet = contactsWorkbook.getSheetByName("Instrument List");
+        if (!instrumentSheet) {
+          throw new Error("Instrument List sheet not found");
+        }
+        
+        processTeacherInstruments(formData, instrumentSheet, teacherId);
+        addOrUpdateTeacherRosterLookup(formData, teacherId);
+        updateLocalTeacherTracking(formData, teacherId);
+        
+        processed++;
+        UtilityScriptLibrary.debugLog("âœ… Processed: " + fullName);
+        
+      } catch (error) {
+        errors.push(fullName + ": " + error.message);
+        UtilityScriptLibrary.debugLog("âŒ Error processing " + fullName + ": " + error.message);
+      }
+    }
+    
+    // Show summary
+    var message = "Processing complete!\n\n" +
+                  "Processed: " + processed + "\n" +
+                  "Skipped: " + skipped;
+    
+    if (errors.length > 0) {
+      message += "\n\nErrors (" + errors.length + "):\n" + errors.join("\n");
+    }
+    
+    var ui = SpreadsheetApp.getUi();
+    ui.alert('Batch Processing Complete', message, ui.ButtonSet.OK);
+    UtilityScriptLibrary.debugLog("=== BATCH PROCESSING COMPLETE ===");
+    
+  } catch (error) {
+    UtilityScriptLibrary.debugLog("âŒ Error in manual batch processing: " + error.message);
+    var ui = SpreadsheetApp.getUi();
+    ui.alert('Error', 'Failed to process teachers: ' + error.message, ui.ButtonSet.OK);
   }
 }
 
@@ -474,6 +638,33 @@ function addOrUpdateTeacherRosterLookup(formData, teacherId) {
   } catch (error) {
     UtilityScriptLibrary.debugLog("❌ Error in addOrUpdateTeacherRosterLookup: " + error.message);
   }
+}
+
+function appendAdminFlag(contactsSheet, contactRow, headerMap, message) {
+  var notesCol = headerMap[UtilityScriptLibrary.normalizeHeader('Notes')];
+  if (!notesCol) return;
+  var existing = String(contactsSheet.getRange(contactRow, notesCol).getValue() || '').trim();
+  var updated = existing ? existing + ' | ' + message : message;
+  contactsSheet.getRange(contactRow, notesCol).setValue(updated);
+}
+
+function createPartialReturningRecord(contactsSheet, firstName, lastName, email) {
+  var teacherId = UtilityScriptLibrary.generateNextId(contactsSheet, 'Teacher ID', 'T');
+  var key = UtilityScriptLibrary.generateKey(firstName, lastName);
+  var headers = contactsSheet.getRange(1, 1, 1, contactsSheet.getLastColumn()).getValues()[0];
+  var getCol = UtilityScriptLibrary.createColumnFinder(contactsSheet);
+  var newRow = new Array(headers.length).fill('');
+
+  newRow[getCol('Teacher ID') - 1] = teacherId;
+  newRow[getCol('First Name') - 1] = firstName;
+  newRow[getCol('Last Name') - 1] = lastName;
+  newRow[getCol('Key') - 1] = key;
+  newRow[getCol('Role') - 1] = 'Teacher';
+  newRow[getCol('Email') - 1] = email;
+  newRow[getCol('Status') - 1] = 'Potential';
+  newRow[getCol('Notes') - 1] = 'Incomplete record — submitted returning form but not found in Contacts. Requires new teacher form (Form B) before going Active.';
+
+  contactsSheet.appendRow(newRow);
 }
 
 function createTeacherRosterLookupSheet(workbook) {
@@ -984,5 +1175,3 @@ function updateTeacherFields(sheet, row, fieldMap, get, getCol) {
     UtilityScriptLibrary.debugLog("Updated Address with: " + address);
   }
 }
-
-
