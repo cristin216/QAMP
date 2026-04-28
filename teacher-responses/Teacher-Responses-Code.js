@@ -292,7 +292,7 @@ function processSingleInstrument(instrumentSheet, instrumentData, firstName, las
   var existingRow = findInstrumentRow(instrumentSheet, firstName, lastName, instrument);
 
   if (existingRow !== -1) {
-    UtilityScriptLibrary.debugLog('processS ingleInstrument', 'INFO', 'Updating existing instrument entry', instrument, '');
+    UtilityScriptLibrary.debugLog('processSingleInstrument', 'INFO', 'Updating existing instrument entry', instrument, '');
     instrumentSheet.getRange(existingRow, getCol('Status')).setValue('Potential');
     instrumentSheet.getRange(existingRow, getCol('Level')).setValue(level);
     if (getCol('Family')) {
