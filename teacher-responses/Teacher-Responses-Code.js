@@ -8,6 +8,10 @@ function onOpen() {
 }
 
 function handleReturningFormSubmit(e) {
+  if (e && e.range && e.range.getSheet().getName() !== UtilityScriptLibrary.SHEET_MAP.teacherReturningResponses.name) {
+    UtilityScriptLibrary.debugLog('handleReturningFormSubmit', 'INFO', 'Wrong sheet — skipping', e.range.getSheet().getName(), '');
+    return;
+  }
   var lock = LockService.getScriptLock();
   try {
     lock.waitLock(30000);
@@ -157,6 +161,11 @@ function handleReturningFormSubmit(e) {
 }
 
 function handleTeacherFormSubmit(e) {
+  if (e && e.range && e.range.getSheet().getName() !== UtilityScriptLibrary.SHEET_MAP.teacherResponses.name) {
+    UtilityScriptLibrary.debugLog('handleTeacherFormSubmit', 'INFO', 'Wrong sheet — skipping', e.range.getSheet().getName(), '');
+    return;
+  }
+
   var lock = LockService.getScriptLock();
   try {
     lock.waitLock(30000);
