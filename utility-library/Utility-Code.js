@@ -778,13 +778,6 @@ function createColumnFinder(sheet) {
   };
 }
 
-function createDisplayName(lastName) {
-    if (!lastName || String(lastName).trim() === '') {
-    return '';
-  }
-  return String(lastName).trim().replace(/[^a-zA-Z0-9]/g, '');
-}
-
 function createGroupSections(sheet, groupEntries) {
   try {
     if (!groupEntries || groupEntries.length === 0) {
