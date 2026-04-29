@@ -2842,7 +2842,6 @@ function processReassignment() {
       throw new Error("Could not find new teacher info in Teacher Roster Lookup");
     }
     
-    // FIXED: Use displayName instead of teacherName for roster file lookup
     var newRosterWorkbook = getOrCreateRosterFromTemplate(newTeacherInfo, rosterFolder, year, currentSemester);
     var newRosterSheet = findSemesterRoster(newRosterWorkbook, currentSemester);
     
@@ -2852,7 +2851,7 @@ function processReassignment() {
     
     UtilityScriptLibrary.debugLog("✅ Got/created new teacher roster: " + newRosterSheet.getName());
     
-    // Update Teacher Roster Lookup with URL - FIXED: use displayName instead of teacherName
+    // Update Teacher Roster Lookup with URL
     var newRosterFile = DriveApp.getFileById(newRosterWorkbook.getId());
     var newRosterUrl = newRosterFile.getUrl();
     
@@ -2867,6 +2866,16 @@ function processReassignment() {
     if (!oldRosterSheet) {
       throw new Error("Could not find old roster sheet: " + oldRosterSheetName);
     }
+
+    // Pre-fetch headers and data needed across the student loop
+    var oldHeaderMap = UtilityScriptLibrary.getHeaderMap(oldRosterSheet);
+    var newHeaderMap = UtilityScriptLibrary.getHeaderMap(newRosterSheet);
+
+    var contactsSheet = UtilityScriptLibrary.getSheet('students');
+    var contactsHeaderMap = contactsSheet ? UtilityScriptLibrary.getHeaderMap(contactsSheet) : null;
+    var teacherCol = contactsHeaderMap ? contactsHeaderMap[UtilityScriptLibrary.normalizeHeader('Teacher')] : null;
+    var studentIdCol = contactsHeaderMap ? contactsHeaderMap[UtilityScriptLibrary.normalizeHeader('Student ID')] : null;
+    var contactsData = contactsSheet ? contactsSheet.getDataRange().getValues() : null;
     
     // Process each selected student
     var successCount = 0;
@@ -2881,7 +2890,6 @@ function processReassignment() {
         UtilityScriptLibrary.debugLog("Processing student: " + student.firstName + " " + student.lastName + " (" + student.studentId + ")");
         
         // Mark student as "Transferred" in old roster and clear warning color
-        var oldHeaderMap = UtilityScriptLibrary.getHeaderMap(oldRosterSheet);
         var statusCol = oldHeaderMap['status'];
         oldRosterSheet.getRange(student.rowNumber, statusCol).setValue('Transferred');
         
@@ -2898,20 +2906,30 @@ function processReassignment() {
         UtilityScriptLibrary.debugLog("Marked as 'Transferred' in old teacher's roster and cleared warning color");
         
         // Check if student already exists in new roster
-        var newHeaderMap = UtilityScriptLibrary.getHeaderMap(newRosterSheet);
         var studentExists = checkIfStudentExists(newRosterSheet, student.studentId, newHeaderMap);
         
         if (studentExists) {
           UtilityScriptLibrary.debugLog("Student already exists in new roster - skipping roster addition");
           skipCount++;
         } else {
-          // Add to new roster
           addStudentToRosterFromData(newRosterSheet, student, newHeaderMap);
           UtilityScriptLibrary.debugLog("Added to new teacher's roster");
         }
         
         // Add to attendance sheets
         addStudentToAttendanceSheetsFromDate(newRosterWorkbook, student, effectiveDate);
+
+        // Update Teacher ID in Students (Contacts) sheet
+        if (contactsSheet && teacherCol && studentIdCol && contactsData) {
+          for (var r = 1; r < contactsData.length; r++) {
+            if (String(contactsData[r][studentIdCol - 1]).trim() === String(student.studentId).trim()) {
+              contactsSheet.getRange(r + 1, teacherCol).setValue(newTeacherInfo.teacherId);
+              UtilityScriptLibrary.debugLog('processReassignment', 'INFO', 'Updated Teacher ID in Contacts',
+                'Student: ' + student.studentId + ', Teacher ID: ' + newTeacherInfo.teacherId, '');
+              break;
+            }
+          }
+        }
         
         successCount++;
         UtilityScriptLibrary.debugLog("Successfully processed student: " + student.studentId);
@@ -2956,7 +2974,7 @@ function processReassignment() {
   }
 }
 
-function processRoster(formData, sheet, editedRow, headerMap, fieldMap, studentId, rosterFolder, year, semesterName) {
+function processRoster(formData, sheet, editedRow, headerMap, fieldMap, studentId, teacherId, rosterFolder, year, semesterName) {
   try {
     var displayName = formData['Teacher'];
     UtilityScriptLibrary.debugLog('processRoster', 'INFO', 'Starting', 'Teacher: ' + displayName + ', Semester: ' + semesterName, '');
@@ -2971,19 +2989,17 @@ function processRoster(formData, sheet, editedRow, headerMap, fieldMap, studentI
       return;
     }
 
+    // Use the teacherId passed in from processStudent — no redundant lookup needed
+    if (!teacherId || teacherId.trim() === '') {
+      throw new Error('Could not find teacher info for display name: ' + displayName);
+    }
+
     var teacherInfo = getTeacherInfoByDisplayName(displayName);
     if (!teacherInfo) {
       throw new Error('Could not find teacher info for display name: ' + displayName);
     }
 
     var registrationTimestamp = formData['Timestamp'] || formData['timestamp'] || formData['Registration Date'] || null;
-
-    var rosterSS = getOrCreateRosterFromTemplate(teacherInfo, rosterFolder, year, semesterName, registrationTimestamp);
-    if (!rosterSS) {
-      throw new Error('Could not create or access roster workbook for ' + displayName);
-    }
-
-    addStudentToSemesterRoster(rosterSS, formData, studentId, semesterName, registrationTimestamp);
 
     UtilityScriptLibrary.debugLog('processRoster', 'INFO', 'Completed', 'Teacher: ' + displayName + ', Student: ' + studentId, '');
 
@@ -3027,7 +3043,7 @@ function processSingleRow(sheet, row, headerMap) {
   UtilityScriptLibrary.debugLog("Using Parent ID from student record: '" + existingParentId + "'");
 
   parentId = processParent(formData, parentsSheet, studentId, existingParentId);
-    updateStudentWithParentId(contactsSheet, studentRow, parentId);
+  updateStudentWithParentId(contactsSheet, studentRow, parentId);
 
   // === ROSTER PROCESSING ===
   try {
@@ -3130,6 +3146,18 @@ function processStudent(formData, contactsSheet, enrollmentTerm) {
       throw new Error("Missing required columns in Students sheet: " + missingFields.join(", "));
     }
 
+    // Resolve Teacher ID from display name once — used for both Contacts write and return value
+    var teacherDisplayName = formData["Teacher"] || '';
+    var teacherId = '';
+    if (teacherDisplayName) {
+      var teacherInfo = getTeacherInfoByDisplayName(teacherDisplayName);
+      if (teacherInfo && teacherInfo.teacherId) {
+        teacherId = teacherInfo.teacherId;
+      } else {
+        UtilityScriptLibrary.debugLog("processStudent", "WARNING", "Could not resolve Teacher ID from display name", teacherDisplayName, "");
+      }
+    }
+
     var studentId = formData["Student ID"] || '';
     var parentId = '';
 
@@ -3160,9 +3188,9 @@ function processStudent(formData, contactsSheet, enrollmentTerm) {
         checkboxCell.setValue(true);
       }
 
-      // Update teacher assignment
+      // Update teacher assignment — store Teacher ID
       if (getCol("Teacher")) {
-        contactsSheet.getRange(studentRow, getCol("Teacher")).setValue(formData["Teacher"] || '');
+        contactsSheet.getRange(studentRow, getCol("Teacher")).setValue(teacherId);
       }
       
       // Update age with standardized value
@@ -3207,8 +3235,8 @@ function processStudent(formData, contactsSheet, enrollmentTerm) {
       newRow[getCol("Student Last Name") - 1] = formData["Student Last Name"] || '';
       newRow[getCol("Student First Name") - 1] = formData["Student First Name"] || '';
       newRow[getCol("Instrument") - 1] = formData["Instrument"] || '';
-      newRow[getCol("Teacher") - 1] = formData["Teacher"] || '';
-      newRow[getCol("Age") - 1] = standardizedAge; // Use standardized age value
+      newRow[getCol("Teacher") - 1] = teacherId;
+      newRow[getCol("Age") - 1] = standardizedAge;
       newRow[getCol("First Enrollment Term") - 1] = enrollmentTerm || '';
       newRow[getCol("Student Lookup") - 1] = studentKey;
 
@@ -3248,7 +3276,7 @@ function processStudent(formData, contactsSheet, enrollmentTerm) {
     }
 
     UtilityScriptLibrary.debugLog("✅ Completed processStudent - ID: " + studentId);
-    return { studentId: studentId, parentId: parentId, studentRow: studentRow };
+    return { studentId: studentId, parentId: parentId, studentRow: studentRow, teacherId: teacherId };
     
   } catch (error) {
     UtilityScriptLibrary.debugLog("❌ Error in processStudent: " + error.message);
