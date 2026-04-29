@@ -423,7 +423,7 @@ function addOrUpdateTeacherRosterLookup(formData, teacherId, get) {
 
     var lookupSheet = UtilityScriptLibrary.getSheet('teacherRosterLookup');
     var getCol = UtilityScriptLibrary.createColumnFinder(lookupSheet);
-    var existingRow = findTeacherInRosterLookup(lookupSheet, teacherId);
+    var existingRow = UtilityScriptLibrary.findTeacherInRosterLookup(lookupSheet, teacherId);
 
     if (existingRow === -1) {
       var headers = UtilityScriptLibrary.getColumnHeaders(lookupSheet);
@@ -506,32 +506,6 @@ function findInstrumentRow(sheet, firstName, lastName, instrument) {
   }
   
   return -1;
-}
-
-function findTeacherInRosterLookup(lookupSheet, teacherId) {
-  try {
-    var getCol = UtilityScriptLibrary.createColumnFinder(lookupSheet);
-    var teacherIdCol = getCol('Teacher ID');
-
-    if (!teacherIdCol) {
-      UtilityScriptLibrary.debugLog('findTeacherInRosterLookup', 'ERROR',
-        'Teacher ID column not found', '', '');
-      return -1;
-    }
-
-    var data = lookupSheet.getDataRange().getValues();
-    for (var i = 1; i < data.length; i++) {
-      if (String(data[i][teacherIdCol - 1]).trim() === String(teacherId).trim()) {
-        return i + 1;
-      }
-    }
-
-    return -1;
-
-  } catch (error) {
-    UtilityScriptLibrary.debugLog('findTeacherInRosterLookup', 'ERROR', 'Failed', '', error.message);
-    return -1;
-  }
 }
 
 function findTeacherRow(sheet, teacherKey) {
