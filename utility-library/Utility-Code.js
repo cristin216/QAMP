@@ -2479,6 +2479,46 @@ function getTeacherGroupAssignments(teacherName) {
   }
 }
 
+function getTeacherNameById(teacherId) {
+  try {
+    if (!teacherId || String(teacherId).trim() === '') {
+      debugLog('getTeacherNameById', 'WARNING', 'No Teacher ID provided', '', '');
+      return '';
+    }
+
+    var sheet = getSheet('teachersAndAdmin');
+    var headerMap = getHeaderMap(sheet);
+    var norm = normalizeHeader;
+
+    var teacherIdCol = headerMap[norm('Teacher ID')];
+    var firstNameCol = headerMap[norm('First Name')];
+    var lastNameCol = headerMap[norm('Last Name')];
+
+    if (!teacherIdCol || !firstNameCol || !lastNameCol) {
+      debugLog('getTeacherNameById', 'ERROR', 'Required columns not found in Teachers and Admin', '', '');
+      return '';
+    }
+
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][teacherIdCol - 1]).trim() === String(teacherId).trim()) {
+        var firstName = String(data[i][firstNameCol - 1] || '').trim();
+        var lastName = String(data[i][lastNameCol - 1] || '').trim();
+        var fullName = (firstName + ' ' + lastName).trim();
+        debugLog('getTeacherNameById', 'SUCCESS', 'Teacher name resolved', teacherId + ' -> ' + fullName, '');
+        return fullName;
+      }
+    }
+
+    debugLog('getTeacherNameById', 'WARNING', 'Teacher ID not found in Teachers and Admin', teacherId, '');
+    return '';
+
+  } catch (error) {
+    debugLog('getTeacherNameById', 'ERROR', 'Failed', teacherId, error.message);
+    return '';
+  }
+}
+
 function getTemplate(templateKey) {
   var templateName = TEMPLATE_MAP[templateKey];
   if (!templateName) {

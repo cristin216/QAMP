@@ -2139,33 +2139,40 @@ function buildInvoiceTotalFormula(headerMap, rowNum) {
 function buildInvoiceVariableMap(studentData, billingData, isRefund) {
   var studentFullName = studentData.firstName + ' ' + studentData.lastName;
   var billingFullName = billingData.parentFirstName + ' ' + billingData.parentLastName;
-  
+
   var billingHonorific = '';
   if (billingData.termOfAddress) {
     billingHonorific = billingData.termOfAddress;
   } else {
     billingHonorific = 'Dear ' + billingData.parentFirstName;
   }
-  
+
   var invoiceDate = billingData.invoiceDate;
   if (typeof invoiceDate === 'string') {
     invoiceDate = new Date(invoiceDate);
   }
   var formattedInvoiceDate = UtilityScriptLibrary.formatDateFlexible(invoiceDate, 'MMMM d, yyyy');
-  
+
   var dueDate = billingData.dueDate;
   if (typeof dueDate === 'string') {
     dueDate = new Date(dueDate);
   }
   var formattedDueDate = UtilityScriptLibrary.formatDateFlexible(dueDate, 'MMMM d, yyyy');
-  
+
   var balance = billingData.currentBalance;
   var refundAmount = isRefund ? Math.abs(balance) : 0;
   var amountDue = isRefund ? 0 : Math.max(0, balance);
-  
+
   var dynamicLineItems = buildDynamicLineItems(billingData);
   var dynamicAmounts = buildDynamicAmounts(billingData);
-  
+
+  var teacherName = UtilityScriptLibrary.getTeacherNameById(studentData.teacher);
+  if (!teacherName) {
+    UtilityScriptLibrary.debugLog('buildInvoiceVariableMap', 'WARNING',
+      'Could not resolve teacher name, falling back to ID', studentData.teacher, '');
+    teacherName = studentData.teacher || '';
+  }
+
   return {
     'InvoiceNumber': billingData.invoiceNumber || '',
     'InvoiceDate': formattedInvoiceDate || '',
@@ -2174,7 +2181,7 @@ function buildInvoiceVariableMap(studentData, billingData, isRefund) {
     'BillingAddress': billingData.parentAddress || '',
     'StudentFullName': studentFullName,
     'Instrument': studentData.instrument || '',
-    'Teacher': studentData.teacher || '',
+    'Teacher': teacherName,
     'DYNAMIC_LINE_ITEMS': dynamicLineItems,
     'DYNAMIC_AMOUNTS': dynamicAmounts,
     'BillTotal': UtilityScriptLibrary.formatCurrency(billingData.currentInvoiceTotal || 0),
@@ -2244,7 +2251,8 @@ function buildTemplateVariables(studentData, billingData, templateType) {
   variables.FirstName = studentData.firstName || '';
   variables.LastName = studentData.lastName || '';
   variables.Instrument = studentData.instrument || '';
-  variables.Teacher = studentData.teacher || '';
+  var resolvedTeacherName = UtilityScriptLibrary.getTeacherNameById(studentData.teacher);
+  variables.Teacher = resolvedTeacherName || studentData.teacher || '';
   variables.LsnLength = studentData.lessonLength || '';
   variables.LsnQuantity = studentData.lessonQuantity || '';
   
