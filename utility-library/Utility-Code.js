@@ -1488,6 +1488,31 @@ function findStudentRow(studentSheet, studentKey) {
   return -1;
 }
 
+function findTeacherInRosterLookup(lookupSheet, teacherId) {
+  try {
+    var getCol = createColumnFinder(lookupSheet);
+    var teacherIdCol = getCol('Teacher ID');
+
+    if (!teacherIdCol) {
+      debugLog('findTeacherInRosterLookup', 'ERROR', 'Teacher ID column not found', '', '');
+      return -1;
+    }
+
+    var data = lookupSheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][teacherIdCol - 1]).trim() === String(teacherId).trim()) {
+        return i + 1;
+      }
+    }
+
+    return -1;
+
+  } catch (error) {
+    debugLog('findTeacherInRosterLookup', 'ERROR', 'Failed', teacherId, error.message);
+    return -1;
+  }
+}
+
 function formatAddress(street, city, zip) {
   var parts = [];
   if (street) parts.push(street);
