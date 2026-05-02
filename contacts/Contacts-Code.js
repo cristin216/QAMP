@@ -1,4 +1,13 @@
-// === MAIN FUNCTIONS ===
+/*
+================================================================================
+CONTACTS CODE
+================================================================================
+Version: 3
+Total Functions: 1
+Documentation: See Contacts-Functions.md
+================================================================================
+*/
+
 function onEditContacts(e) {
   try {
     var sheet = e.range.getSheet();
