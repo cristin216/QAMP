@@ -4458,15 +4458,11 @@ function extractPreviousBillingData(options) {
       return null;
     }
     
-    // Get current semester from Semester Metadata (most recent semester)
-    var semesterSheet = ss.getSheetByName('Semester Metadata');
-    if (!semesterSheet) {
-      UtilityScriptLibrary.debugLog("extractPreviousBillingData", "ERROR", "Semester Metadata sheet not found", "", "");
+    var currentSemester = UtilityScriptLibrary.getCurrentSemesterName(new Date());
+    if (!currentSemester) {
+      UtilityScriptLibrary.debugLog("extractPreviousBillingData", "ERROR", "Could not determine current semester", "", "");
       return null;
     }
-    
-    var semesterData = semesterSheet.getDataRange().getValues();
-    var currentSemester = semesterData[semesterData.length - 1][0]; // Most recent semester
     
     // Use dynamic column lookup for Billing Metadata sheet
     var metadataHeaderMap = UtilityScriptLibrary.getHeaderMap(metadataSheet);
@@ -4510,7 +4506,6 @@ function extractPreviousBillingData(options) {
     var data = billingSheet.getDataRange().getValues();
     var headerMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
     
-    // Use normalized header lookups instead of hardcoded strings
     var balanceCol = headerMap[UtilityScriptLibrary.normalizeHeader("Current Balance")];
     var idCol = headerMap[UtilityScriptLibrary.normalizeHeader("Student ID")];
     var hoursRemainingCol = headerMap[UtilityScriptLibrary.normalizeHeader("Hours Remaining")];
@@ -4523,7 +4518,7 @@ function extractPreviousBillingData(options) {
     
     var rowsToCarry = {};
     var carriedCount = 0;
-    var totalRows = data.length - 1; // Exclude header
+    var totalRows = data.length - 1;
     
     for (var i = 1; i < data.length; i++) {
       var row = data[i];
