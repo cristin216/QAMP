@@ -1,8 +1,8 @@
 ================================================================================
 BILLING FUNCTION DIRECTORY
 ================================================================================
-    Total Functions: 165
-    Most Recent version: 163
+    Total Functions: 196
+    Most Recent version: 164
 
     This directory provides a quick reference for all functions in Billing script.
     Parameters marked with ? are optional.
@@ -16,42 +16,60 @@ BILLING FUNCTION DIRECTORY
   ================================================================================
   ALPHABETICAL INDEX:
   ================================================================================
-    addOveragesToBillingSheet
+    addCumulativeFormulas
+    addInvoiceTotalFormula
+    addMissingStudentsToAttendanceSheet
+    appendReregistrationNewStudents
     appendToBillingMetadata
     appendToSemesterMetadata
     applyAdminVisualFormatting
+    applyCumulativeHistory
+    applyLateFeeToRow
     applyLessonEquivalentCredits
     applyLetterTypeValidation
+    applyMultiStudentDiscount
+    applyPastDataToRow
+    applyReregistrationOverwrites
     applyWarningsToTeacherWorkbook
     buildBillingContext
     buildBillingRowFromForm
     buildBillingRowFromPrevious
+    buildCarryoverStudents
     buildDocumentFileName
     buildDocumentSentence
     buildDynamicAmounts
     buildDynamicLineItems
     buildDynamicProgramColumns
-    buildDynamicProgramColumnsWithCredits
+    buildFormStudents
     buildInvoiceTotalFormula
     buildInvoiceVariableMap
     buildMissingDocumentSentence
     buildProgramDescription
     buildTemplateVariables
+    calculateLateFee
     calculateLessonEquivalents
     calculateTotalCreditsApplied
     cancelDocumentGeneration
+    checkIfDocumentStillNeeded
     checkIfMediaReleaseNeeded
     checkRowFormatting
     clearDocIdFromBillingSheet
+    collectBillingData
+    collectBillingDataDetailed
+    collectPaymentsData
+    collectPaymentsDataDetailed
+    continueAttendanceSheetCreation
     continuePacketGeneration
+    convertFolderDocsToPdfUI
     copyStaticFieldsToBillingRow
     createBillingSheet
+    createDetailedPaymentReport
     createNewAttendanceSheets
+    createPaymentVerificationReport
     createPaymentsTab
     createRosterFolder
     createSingleRegistrationPacketWithSelection
     debugBillingSheetColumns
-    detectAndBillOverages
     determineIfNewStudent
     determinePacketVersions
     doGet
@@ -62,13 +80,17 @@ BILLING FUNCTION DIRECTORY
     extractBillingDataFromRow
     extractDeliveryPreference
     extractDocumentNames
+    extractNumericLessonLength
     extractPreviousBillingData
     extractProgramTotals
     extractRosterDataForAttendance
     extractStudentDataFromBillingRow
+    findBillingRowByStudentId
+    findMostRecentRosterSheet
     formatRow
     generateCalendarForSemester
     generateDocumentForStudent
+    generateInvoiceForStudent
     generateInvoicesForBillingCycle
     generateProgramFormulas
     generateReconciliationSummary
@@ -78,39 +100,45 @@ BILLING FUNCTION DIRECTORY
     generateRegistrationPacketsForBillingCycle
     getActivePrograms
     getBillingSheet
+    getCumulativeHistory
     getCurrentBillingCycleDates
     getCurrentBillingSheet
     getCurrentRateChartName
     getCurrentSemesterFromBillingMetadata
     getCurrentSemesterInfo
-    getCurrentSemesterName
     getCurrentSemesterRateForLength
     getDocIdColumnName
     getDocIdFromBillingSheet
     getDocumentSelectionHtml
     getExpandedPrograms
+    getFilterDate
+    getFormSheet
     getFormsDataFromContacts
     getInvoiceNumber
     getLessonLengthFromRow
     getNextMonthName
     getPreviousSemester
     getPreviousSemesterBalance
-    getRateChartForSemester
     getRateColumnFromMetadata
-    getRateForSemester
-    getSemesterForDate
+    getRateMap
     getStudentBalancesFromBilling
     getStudentDocumentsFolder
     getStudentRegisteredLessonLength
     getStudentsNeedingPackets
     grantDocumentPermissions
+    handleMonthYearCancel
+    handleMonthYearSelection
     identifyWarningStudents
     isHeaderRow
+    loadProgramConfig
+    loadReregistrationData
     locateStudentRecord
     locateStudentRecordEnhanced
     logMysteryStudents
+    markReregistrationProcessed
     markStudentsInactive
     onOpen
+    parseMonthYear
     populateAllCumulativeColumns
     populateBillingSheet
     populateBillingSheetContinuingSemester
@@ -133,6 +161,7 @@ BILLING FUNCTION DIRECTORY
     processTeacherReconciliation
     promptForBillingCycleName
     promptForCustomToday
+    promptForMonthAndYear
     promptForSemesterDates
     promptForSemesterName
     protectBillingSheet
@@ -141,8 +170,6 @@ BILLING FUNCTION DIRECTORY
     renameLatestFormSheet
     runBillingCycleAutomation
     runCombinedReconciliation
-    runFormsReconciliation
-    runFormsReconciliationUI
     runFullReconciliation
     runFullReconciliationUI
     runPaymentReconciliation
@@ -152,6 +179,8 @@ BILLING FUNCTION DIRECTORY
     runWeeklyLessonReconciliationUI
     selectDocumentTemplate
     sendReregistrationLinks
+    setDeliveryPreference
+    setProgramQuantitiesForCarryover
     setupNewSemester
     setupRosterTemplateProtection
     shouldGenerateInvoice
@@ -171,27 +200,28 @@ BILLING FUNCTION DIRECTORY
     testPrompt
     testTemplateLiteral
     updateBillingForTeacherStudents
+    updateCumulativeTracking
     updateDocIdInBillingSheet
     updateInvoiceUrlInBillingSheet
     updateSheetStudentWarnings
     updateTeacherRosterBalances
     verifyAndGetParentData
+    verifyCumulativeFormulas
+    verifyPaymentsDetailed
+    verifyPaymentsDetailedForStudents
     verifyProgramsForSemester
     verifyRatesEnhanced
-  ================================================================================
+    writeAndFormatRows  ================================================================================
   FUNCTION CATEGORIES:
   ================================================================================
 
-   ================================================================================
-  FUNCTION CATEGORIES:
-  ================================================================================
-
-    UI_MENU (13 functions):
+    UI_MENU (14 functions):
       getNextMonthName
+      handleMonthYearCancel
+      handleMonthYearSelection
       onOpen
+      promptForMonthAndYear
       runBillingCycleAutomation
-      runFormsReconciliation
-      runFormsReconciliationUI
       runFullReconciliation
       runFullReconciliationUI
       runPaymentReconciliation
@@ -200,6 +230,7 @@ BILLING FUNCTION DIRECTORY
       runWeeklyLessonReconciliationUI
       setupNewSemester
       setupRosterTemplateProtection
+      verifyPaymentsDetailed
 
     SETUP_SEMESTER (8 functions):
       appendToSemesterMetadata
@@ -211,22 +242,28 @@ BILLING FUNCTION DIRECTORY
       renameLatestFormSheet
       verifyProgramsForSemester
 
-    BILLING_CYCLE (29 functions):
-      addOveragesToBillingSheet
+    BILLING_CYCLE (41 functions):
+      addCumulativeFormulas
+      addInvoiceTotalFormula
       appendToBillingMetadata
+      applyCumulativeHistory
+      applyLateFeeToRow
       applyLessonEquivalentCredits
       applyLetterTypeValidation
+      applyMultiStudentDiscount
+      applyPastDataToRow
       buildBillingContext
       buildBillingRowFromForm
       buildBillingRowFromPrevious
+      buildCarryoverStudents
       buildDynamicAmounts
       buildDynamicLineItems
       buildDynamicProgramColumns
-      buildDynamicProgramColumnsWithCredits
+      buildFormStudents
       buildInvoiceTotalFormula
+      calculateLateFee
       copyStaticFieldsToBillingRow
       createBillingSheet
-      detectAndBillOverages
       formatRow
       generateProgramFormulas
       populateAllCumulativeColumns
@@ -241,8 +278,13 @@ BILLING FUNCTION DIRECTORY
       populatePastBalanceAndCredit
       processSemesterEndCredits
       protectPreviousBillingCycle
+      setDeliveryPreference
+      setProgramQuantitiesForCarryover
+      updateCumulativeTracking
+      writeAndFormatRows
 
-    GENERATE_DOCUMENTS (35 functions):
+    GENERATE_DOCUMENTS (38 functions):
+      addMissingStudentsToAttendanceSheet
       buildDocumentFileName
       buildDocumentSentence
       buildInvoiceVariableMap
@@ -250,9 +292,12 @@ BILLING FUNCTION DIRECTORY
       buildProgramDescription
       buildTemplateVariables
       cancelDocumentGeneration
+      checkIfDocumentStillNeeded
       checkIfMediaReleaseNeeded
       clearDocIdFromBillingSheet
+      continueAttendanceSheetCreation
       continuePacketGeneration
+      convertFolderDocsToPdfUI
       createSingleRegistrationPacketWithSelection
       determineIfNewStudent
       determinePacketVersions
@@ -260,6 +305,7 @@ BILLING FUNCTION DIRECTORY
       extractDocumentNames
       extractRosterDataForAttendance
       generateDocumentForStudent
+      generateInvoiceForStudent
       generateInvoicesForBillingCycle
       generateRefundInvoicesForBillingCycle
       generateRegistrationPacketForStudentWithSelection
@@ -284,7 +330,6 @@ BILLING FUNCTION DIRECTORY
       applyWarningsToTeacherWorkbook
       expandSheetAttendanceRows
       findBillingRowByStudentId
-      findStudentInContacts
       generateReconciliationSummary
       generateReconciliationSummaryUpdated
       getBillingSheet
@@ -308,54 +353,70 @@ BILLING FUNCTION DIRECTORY
       updateSheetStudentWarnings
       updateTeacherRosterBalances
 
-    RE_REGISTRATION (4 functions):
+    RE_REGISTRATION (8 functions):
+      appendReregistrationNewStudents
+      applyReregistrationOverwrites
       doGet
+      loadReregistrationData
+      markReregistrationProcessed
       sendReregistrationLinks
       submitReregistration
       verifyAndGetParentData
 
-    HELPER_FUNCTIONS (39 functions):
+    HELPER_FUNCTIONS (47 functions):
+      applyLessonEquivalentCredits (note: also referenced from BILLING_CYCLE)
       calculateLessonEquivalents
       calculateTotalCreditsApplied
+      collectBillingData
+      collectBillingDataDetailed
+      collectPaymentsData
+      collectPaymentsDataDetailed
+      createDetailedPaymentReport
       createNewAttendanceSheets
+      createPaymentVerificationReport
       expandSheetAttendanceRows
       expandTeacherAttendanceRows
       expandTeacherAttendanceSheets
       extractBillingDataFromRow
       extractDeliveryPreference
+      extractNumericLessonLength
       extractPreviousBillingData
       extractProgramTotals
       extractStudentDataFromBillingRow
+      findMostRecentRosterSheet
       getActivePrograms
       getCurrentBillingCycleDates
       getCurrentBillingSheet
       getCurrentRateChartName
       getCurrentSemesterFromBillingMetadata
       getCurrentSemesterInfo
-      getCurrentSemesterName
       getCurrentSemesterRateForLength
+      getCumulativeHistory
       getExpandedPrograms
+      getFilterDate
       getFormsDataFromContacts
+      getFormSheet
       getLessonLengthFromRow
       getPreviousSemester
       getPreviousSemesterBalance
-      getRateChartForSemester
       getRateColumnFromMetadata
-      getRateForSemester
-      getSemesterForDate
+      getRateMap
       getStudentDocumentsFolder
       getStudentRegisteredLessonLength
       getStudentsNeedingPackets
       isHeaderRow
+      loadProgramConfig
+      parseMonthYear
       promptForBillingCycleName
       promptForCustomToday
       promptForSemesterDates
       promptForSemesterName
       protectBillingSheet
       storeSemesterEndBalances
+      verifyPaymentsDetailedForStudents
       verifyRatesEnhanced
 
-    TESTING (10 functions):
+    TESTING (11 functions):
       checkRowFormatting
       debugBillingSheetColumns
       grantDocumentPermissions
@@ -366,15 +427,35 @@ BILLING FUNCTION DIRECTORY
       testFullAgreementGeneration
       testPrompt
       testTemplateLiteral
+      verifyCumulativeFormulas
+      
   ================================================================================
   FUNCTION REFERENCE (Alphabetical)
   ================================================================================
 
-    addOveragesToBillingSheet(billingSheet, overageData) -> void
-        Adds overage charges to billing sheet for students who exceeded lesson registrations.
+    addCumulativeFormulas(newRow, context, rowIndex, quantityCols) -> void
+        Writes cumulative tracking formulas into the appropriate columns of a new billing row.
         Category: BILLING_CYCLE
         Local functions used: None
+        Utility functions used: normalizeHeader(), columnToLetter()
+
+    addInvoiceTotalFormula(newRow, context, rowIndex, currencyCols) -> void
+        Writes the Current Invoice Total formula into the new billing row.
+        Category: BILLING_CYCLE
+        Local functions used: buildInvoiceTotalFormula()
+        Utility functions used: normalizeHeader(), addToCurrencyCols()
+
+    addMissingStudentsToAttendanceSheet(sheet, activeStudents) -> void
+        Adds any active students missing from an attendance sheet.
+        Category: GENERATE_DOCUMENTS
+        Local functions used: None
         Utility functions used: getHeaderMap(), debugLog()
+
+    appendReregistrationNewStudents(billingSheet, reregMap, overwroteIds, context) -> void
+        Appends to the billing sheet any re-registered students not already present.
+        Category: RE_REGISTRATION
+        Local functions used: buildBillingRowFromForm()
+        Utility functions used: getHeaderMap(), normalizeHeader(), debugLog()
 
     appendToBillingMetadata(billingCycleName, billingDate, semesterName) -> void
         Appends new billing cycle information to Billing Metadata sheet.
@@ -394,6 +475,18 @@ BILLING FUNCTION DIRECTORY
         Local functions used: None
         Utility functions used: debugLog()
 
+    applyCumulativeHistory(newRow, studentId, context, currencyCols) -> void
+        Applies historical cumulative hours and billed data from Cumulative Tracking sheet to billing row.
+        Category: BILLING_CYCLE
+        Local functions used: getCumulativeHistory()
+        Utility functions used: normalizeHeader(), debugLog()
+
+    applyLateFeeToRow(newRow, context, currencyCols) -> void
+        Calculates and writes late fee into the appropriate column of a new billing row.
+        Category: BILLING_CYCLE
+        Local functions used: calculateLateFee()
+        Utility functions used: normalizeHeader()
+
     applyLessonEquivalentCredits(billingContext, studentData, row, billingSheet) -> void
         Applies lesson equivalent credits for students switching from packages to private lessons.
         Category: BILLING_CYCLE
@@ -405,6 +498,24 @@ BILLING FUNCTION DIRECTORY
         Category: BILLING_CYCLE
         Local functions used: None
         Utility functions used: getHeaderMap()
+
+    applyMultiStudentDiscount(billingSheet) -> void
+        Applies multi-student family discount to all eligible rows in the billing sheet.
+        Category: BILLING_CYCLE
+        Local functions used: None
+        Utility functions used: normalizeHeader(), getHeaderMap(), debugLog()
+
+    applyPastDataToRow(newRow, prevRow, context, currencyCols) -> void
+        Copies past-cycle balance and invoice data from the previous billing row into the new row.
+        Category: BILLING_CYCLE
+        Local functions used: None
+        Utility functions used: normalizeHeader()
+
+    applyReregistrationOverwrites(billingSheet, reregMap, formStudentIds) -> void
+        Overwrites lesson quantity, hours, and length for existing students who re-registered.
+        Category: RE_REGISTRATION
+        Local functions used: None
+        Utility functions used: getHeaderMap(), normalizeHeader(), debugLog()
 
     applyWarningsToTeacherWorkbook(teacherWorkbook, warningStudents) -> void
         Highlights warning students in teacher's attendance sheets with red rows.
@@ -433,6 +544,13 @@ BILLING FUNCTION DIRECTORY
         Category: BILLING_CYCLE
         Local functions used: buildDynamicProgramColumns(), populateDeliveryPreferenceFromPrevious()
         Utility functions used: getHeaderMap(), debugLog()
+
+    buildCarryoverStudents(previousData, existingStudentIds, context, allStudents, startingRowIndex) -> Number
+        Builds billing rows for all carryover students from the previous billing cycle.
+        Returns the next available row index after all carryover rows are added.
+        Category: BILLING_CYCLE
+        Local functions used: buildBillingRowFromPrevious()
+        Utility functions used: debugLog()
 
     buildDocumentFileName(studentData, docType, newOrReturning, deliveryMode) -> String
         Generates standardized document filename for generated PDFs.
@@ -469,12 +587,12 @@ BILLING FUNCTION DIRECTORY
         Local functions used: None
         Utility functions used: debugLog()
 
-    buildDynamicProgramColumnsWithCredits(context, studentData, previousPrograms, existingCredits?) -> Array
-        Builds program columns with credit carryover for continuing semester students.
-        Returns array of program values including credits.
+    buildFormStudents(formSheet, filterDate, previousData, context, allStudents, startingRowIndex) -> Number
+        Builds billing rows from new form submissions not present in carryover data.
+        Returns the next available row index after all form student rows are added.
         Category: BILLING_CYCLE
-        Local functions used: None
-        Utility functions used: debugLog()
+        Local functions used: buildBillingRowFromForm()
+        Utility functions used: getHeaderMap(), normalizeHeader(), debugLog()
 
     buildInvoiceTotalFormula(row, headerMap) -> String
         Generates Excel formula to calculate invoice total from program columns.
@@ -512,6 +630,13 @@ BILLING FUNCTION DIRECTORY
                               buildProgramDescription()
         Utility functions used: debugLog()
 
+    calculateLateFee(pastBalance, paymentReceived, pastInvoiceNumber, rateMap) -> Number
+        Calculates late fee amount based on past balance, payments received, and grace period from rateMap.
+        Returns late fee amount (0 if not applicable).
+        Category: BILLING_CYCLE
+        Local functions used: None
+        Utility functions used: None
+
     calculateLessonEquivalents(previousLessons, currentLessonLength) -> Number
         Calculates lesson equivalents when converting between lesson lengths.
         Returns number of equivalent lessons.
@@ -530,6 +655,13 @@ BILLING FUNCTION DIRECTORY
         Cancels document generation process in progress.
         Category: GENERATE_DOCUMENTS
         Local functions used: None
+        Utility functions used: None
+
+    checkIfDocumentStillNeeded(studentId, docType, billingSheet, headerMap) -> Boolean
+        Checks whether a given document type still needs to be generated for a student.
+        Returns true if document is still needed.
+        Category: GENERATE_DOCUMENTS
+        Local functions used: shouldIncludeAgreement(), shouldIncludeMediaRelease()
         Utility functions used: None
 
     checkIfMediaReleaseNeeded(studentData) -> Boolean
@@ -551,11 +683,51 @@ BILLING FUNCTION DIRECTORY
         Local functions used: getDocIdColumnName(), getCurrentBillingSheet()
         Utility functions used: getHeaderMap(), debugLog()
 
+    collectBillingData(billingWB) -> Object
+        Collects billed amounts per student across all billing cycle sheets.
+        Returns object mapping studentId to total billed and monthly breakdown.
+        Category: HELPER_FUNCTIONS
+        Local functions used: None
+        Utility functions used: getHeaderMap(), normalizeHeader(), debugLog()
+
+    collectBillingDataDetailed(billingWB, studentIds) -> Object
+        Collects detailed per-month billing data for a specific list of student IDs.
+        Returns object mapping studentId → month → amount.
+        Category: HELPER_FUNCTIONS
+        Local functions used: None
+        Utility functions used: getHeaderMap(), normalizeHeader()
+
+    collectPaymentsData(paymentsWB) -> Object
+        Collects payment amounts per student across all payment sheets.
+        Returns object mapping studentId to total paid and monthly breakdown.
+        Category: HELPER_FUNCTIONS
+        Local functions used: None
+        Utility functions used: getHeaderMap(), normalizeHeader(), debugLog()
+
+    collectPaymentsDataDetailed(paymentsWB, studentIds) -> Object
+        Collects detailed per-month payment data for a specific list of student IDs.
+        Returns object mapping studentId → month → amount.
+        Category: HELPER_FUNCTIONS
+        Local functions used: None
+        Utility functions used: getHeaderMap(), normalizeHeader()
+
+    continueAttendanceSheetCreation(targetMonthName, targetYear) -> void
+        Continues attendance sheet creation after month/year selection from dialog.
+        Category: GENERATE_DOCUMENTS
+        Local functions used: extractRosterDataForAttendance(), processTeacherForNewAttendance()
+        Utility functions used: getMonthNames(), debugLog()
+
     continuePacketGeneration() -> void
         Continues registration packet generation after document selection.
         Category: GENERATE_DOCUMENTS
         Local functions used: processDocumentSelection()
         Utility functions used: None
+
+    convertFolderDocsToPdfUI() -> void
+        Converts all Google Docs in the active billing cycle's folder to PDFs, skipping duplicates.
+        Category: GENERATE_DOCUMENTS
+        Local functions used: None
+        Utility functions used: EnvironmentManager.get(), getConfig()
 
     copyStaticFieldsToBillingRow(row, headerMap, prevRow, prevHeaderMap) -> void
         Copies unchanging fields from previous billing row to new row.
@@ -570,10 +742,22 @@ BILLING FUNCTION DIRECTORY
         Local functions used: None
         Utility functions used: debugLog()
 
+    createDetailedPaymentReport(billingWB, paymentsData, billingData, studentIds) -> void
+        Creates a detail sheet in the billing workbook showing month-by-month billed vs. paid for specific students.
+        Category: HELPER_FUNCTIONS
+        Local functions used: None
+        Utility functions used: None
+
     createNewAttendanceSheets() -> void
         Creates new month attendance sheets for all active teachers.
         Category: HELPER_FUNCTIONS
         Local functions used: extractRosterDataForAttendance(), processTeacherForNewAttendance()
+        Utility functions used: debugLog()
+
+    createPaymentVerificationReport(billingWB, paymentsData, billingData) -> void
+        Creates a Payment Verification summary sheet comparing all billed vs. paid amounts for 2024-2025.
+        Category: HELPER_FUNCTIONS
+        Local functions used: None
         Utility functions used: debugLog()
 
     createPaymentsTab() -> Sheet
@@ -601,13 +785,6 @@ BILLING FUNCTION DIRECTORY
         Category: TESTING
         Local functions used: getCurrentBillingSheet()
         Utility functions used: getHeaderMap()
-
-    detectAndBillOverages(billingSheet, billingCycleName) -> Array
-        Detects and bills students with lesson overages from previous cycle.
-        Returns array of overage records.
-        Category: BILLING_CYCLE
-        Local functions used: None
-        Utility functions used: getHeaderMap(), debugLog()
 
     determineIfNewStudent(studentId, semesterName) -> Boolean
         Determines if student is new to the current semester.
@@ -674,6 +851,13 @@ BILLING FUNCTION DIRECTORY
         Local functions used: None
         Utility functions used: None
 
+    extractNumericLessonLength(lengthValue) -> Number
+        Extracts a numeric lesson length from a string such as "30 minutes" or "30".
+        Returns numeric lesson length, defaulting to 30 if unparseable.
+        Category: HELPER_FUNCTIONS
+        Local functions used: None
+        Utility functions used: None
+
     extractPreviousBillingData(options?) -> Object
         Extracts student billing data from previous billing cycle sheet.
         Returns object with previous billing data and mappings.
@@ -701,6 +885,13 @@ BILLING FUNCTION DIRECTORY
         Category: HELPER_FUNCTIONS
         Local functions used: None
         Utility functions used: debugLog()
+
+    findBillingRowByStudentId(billingData, studentId, studentIdColIndex) -> Array or null
+        Finds a billing data row by student ID given raw sheet data and a column index.
+        Returns the matching row array, or null if not found.
+        Category: HELPER_FUNCTIONS
+        Local functions used: None
+        Utility functions used: None
 
     findMostRecentRosterSheet(workbook) -> Sheet or null
         Finds the most recent roster sheet in a teacher workbook based on Semester Metadata ordering.
@@ -730,6 +921,14 @@ BILLING FUNCTION DIRECTORY
         Category: GENERATE_DOCUMENTS
         Local functions used: buildTemplateVariables(), selectDocumentTemplate(), 
                               buildDocumentFileName()
+        Utility functions used: debugLog()
+
+    generateInvoiceForStudent(studentData, row, headerMap, invoiceOptions, billingSheet, billingSheetName) -> String
+        Generates a single invoice document for a student and returns the document ID.
+        Returns Google Docs document ID.
+        Category: GENERATE_DOCUMENTS
+        Local functions used: extractBillingDataFromRow(), extractDeliveryPreference(),
+                              buildTemplateVariables(), generateDocumentForStudent()
         Utility functions used: debugLog()
 
     generateInvoicesForBillingCycle(billingCycleName?) -> void
@@ -789,6 +988,13 @@ BILLING FUNCTION DIRECTORY
         Local functions used: None
         Utility functions used: debugLog()
 
+    getCumulativeHistory(studentId) -> Object or null
+        Retrieves cumulative lesson history for a student from the Cumulative Tracking sheet.
+        Returns object with cumulative hours taught and billed, or null if not found.
+        Category: HELPER_FUNCTIONS
+        Local functions used: None
+        Utility functions used: debugLog()
+
     getCurrentBillingCycleDates(customToday, semesterName) -> Object
         Calculates billing cycle start and end dates based on current date.
         Returns object with startDate and endDate.
@@ -822,13 +1028,6 @@ BILLING FUNCTION DIRECTORY
         Returns object with semester name, dates, and configuration.
         Category: HELPER_FUNCTIONS
         Local functions used: getCurrentSemesterName()
-        Utility functions used: debugLog()
-
-    getCurrentSemesterName() -> String
-        Gets current semester name from Semester Metadata sheet.
-        Returns semester name string.
-        Category: HELPER_FUNCTIONS
-        Local functions used: None
         Utility functions used: debugLog()
 
     getCurrentSemesterRateForLength(lessonLength) -> Number
@@ -865,6 +1064,19 @@ BILLING FUNCTION DIRECTORY
         Category: HELPER_FUNCTIONS
         Local functions used: None
         Utility functions used: debugLog()
+
+    getFilterDate(context, previousStartDate?) -> Date or null
+        Returns the date to use as a filter cutoff for form submissions, from previousStartDate or Billing Metadata.
+        Category: HELPER_FUNCTIONS
+        Local functions used: None
+        Utility functions used: None
+
+    getFormSheet(context) -> Sheet
+        Gets the semester's form responses sheet from the Form Responses workbook.
+        Returns the sheet, or throws if not found.
+        Category: HELPER_FUNCTIONS
+        Local functions used: None
+        Utility functions used: getWorkbook()
 
     getFormsDataFromContacts() -> Object
         Retrieves form response data from Contacts sheet.
@@ -908,13 +1120,6 @@ BILLING FUNCTION DIRECTORY
         Local functions used: None
         Utility functions used: debugLog()
 
-    getRateChartForSemester(semesterName) -> String
-        Gets rate chart name for specified semester.
-        Returns rate chart name.
-        Category: HELPER_FUNCTIONS
-        Local functions used: None
-        Utility functions used: debugLog()
-
     getRateColumnFromMetadata(rateChartName) -> Number
         Gets column index for rate chart in Rates sheet.
         Returns column index.
@@ -922,19 +1127,12 @@ BILLING FUNCTION DIRECTORY
         Local functions used: None
         Utility functions used: debugLog()
 
-    getRateForSemester(lessonLength, semesterInfo) -> Number
-        Gets rate for lesson length in specified semester.
-        Returns rate amount.
-        Category: HELPER_FUNCTIONS
-        Local functions used: getRateColumnFromMetadata()
-        Utility functions used: None
-
-    getSemesterForDate(date) -> String
-        Determines semester name for given date.
-        Returns semester name.
+    getRateMap(context) -> Object
+        Returns a cached rate map from context, or builds and caches it from the Rates sheet.
+        Returns object mapping rate keys to values.
         Category: HELPER_FUNCTIONS
         Local functions used: None
-        Utility functions used: debugLog()
+        Utility functions used: getMostRecentRateColumn(), buildRateMapFromSheet()
 
     getStudentBalancesFromBilling(billingSheet?) -> Object
         Gets all student balances from billing sheet.
@@ -970,6 +1168,18 @@ BILLING FUNCTION DIRECTORY
         Local functions used: None
         Utility functions used: None
 
+    handleMonthYearCancel() -> void
+        Logs that the user cancelled the month/year selection dialog.
+        Category: UI_MENU
+        Local functions used: None
+        Utility functions used: debugLog()
+
+    handleMonthYearSelection(month, year) -> void
+        Handles the month/year selection from the attendance sheet creation dialog and continues the process.
+        Category: UI_MENU
+        Local functions used: continueAttendanceSheetCreation()
+        Utility functions used: debugLog()
+
     identifyWarningStudents(teacherBalances) -> Array
         Identifies students with attendance/billing discrepancies needing warnings.
         Returns array of warning student data.
@@ -983,6 +1193,20 @@ BILLING FUNCTION DIRECTORY
         Category: HELPER_FUNCTIONS
         Local functions used: None
         Utility functions used: None
+
+    loadProgramConfig(ss) -> Object
+        Loads and returns program configuration from the Programs List sheet.
+        Returns object with programMap and related column indices.
+        Category: HELPER_FUNCTIONS
+        Local functions used: None
+        Utility functions used: None
+
+    loadReregistrationData() -> Object or null
+        Loads pending re-registration submissions from the Reregistration sheet.
+        Returns object mapping studentId to re-registration data, or null if sheet not found.
+        Category: RE_REGISTRATION
+        Local functions used: None
+        Utility functions used: getSheet(), getHeaderMap(), normalizeHeader(), debugLog()
 
     locateStudentRecord(teacherId, studentId) -> Object
         Locates student record in teacher roster or attendance sheets.
@@ -1004,6 +1228,12 @@ BILLING FUNCTION DIRECTORY
         Local functions used: None
         Utility functions used: debugLog()
 
+    markReregistrationProcessed(reregSheet, processedIds) -> void
+        Marks re-registration sheet rows as processed for the given student IDs.
+        Category: RE_REGISTRATION
+        Local functions used: None
+        Utility functions used: normalizeHeader(), debugLog()
+
     markStudentsInactive(semesterName) -> void
         Marks students as inactive when semester ends.
         Category: SETUP_SEMESTER
@@ -1013,6 +1243,13 @@ BILLING FUNCTION DIRECTORY
     onOpen() -> void
         Creates custom menu in spreadsheet UI when workbook opens.
         Category: UI_MENU
+        Local functions used: None
+        Utility functions used: None
+
+    parseMonthYear(monthStr) -> Object
+        Parses a "Month YYYY" string into separate month and year values.
+        Returns object with month (String) and year (Number).
+        Category: HELPER_FUNCTIONS
         Local functions used: None
         Utility functions used: None
 
@@ -1155,6 +1392,12 @@ BILLING FUNCTION DIRECTORY
         Local functions used: None
         Utility functions used: None
 
+    promptForMonthAndYear() -> void
+        Shows an HTML dialog for the user to select a month and year for attendance sheet creation.
+        Category: UI_MENU
+        Local functions used: None
+        Utility functions used: getMonthNames()
+
     promptForSemesterDates() -> Object
         Prompts user to enter semester start and end dates.
         Returns object with dates.
@@ -1206,19 +1449,6 @@ BILLING FUNCTION DIRECTORY
         Local functions used: runPaymentReconciliation(), runWeeklyLessonReconciliation(), 
                               runFormsReconciliation()
         Utility functions used: debugLog()
-
-    runFormsReconciliation(billingCycleName?) -> Object
-        Reconciles form submissions with billing data.
-        Returns reconciliation results object.
-        Category: UI_MENU
-        Local functions used: getFormsDataFromContacts(), processFormsData()
-        Utility functions used: debugLog()
-
-    runFormsReconciliationUI() -> void
-        UI wrapper for forms reconciliation with user prompts.
-        Category: UI_MENU
-        Local functions used: runFormsReconciliation()
-        Utility functions used: None
 
     runFullReconciliation(billingCycleName?) -> void
         Runs complete reconciliation process (payments, lessons, forms).
@@ -1278,6 +1508,18 @@ BILLING FUNCTION DIRECTORY
         Category: RE_REGISTRATION
         Local functions used: getCurrentBillingSheet()
         Utility functions used: debugLog(), getHeaderMap(), getSheet(), normalizeHeader()
+
+    setDeliveryPreference(newRow, sourceRow, context, sourceIsForm) -> void
+        Sets the Delivery Preference field in a new billing row from either a form row or previous billing row.
+        Category: BILLING_CYCLE
+        Local functions used: None
+        Utility functions used: normalizeHeader(), getHeaderMap()
+
+    setProgramQuantitiesForCarryover(newRow, context, quantityCols, currencyCols) -> void
+        Sets program quantities and prices for carryover students based on the current rate map.
+        Category: BILLING_CYCLE
+        Local functions used: getRateMap()
+        Utility functions used: normalizeHeader()
 
     setupNewSemester() -> void
         Main function to set up new semester with all required configuration.
@@ -1407,6 +1649,12 @@ BILLING FUNCTION DIRECTORY
         Local functions used: None
         Utility functions used: debugLog()
 
+    updateCumulativeTracking(billingSheetName) -> void
+        Updates the Cumulative Tracking sheet with totals from the specified billing cycle sheet.
+        Category: BILLING_CYCLE
+        Local functions used: None
+        Utility functions used: getHeaderMap(), normalizeHeader(), debugLog()
+
     updateDocIdInBillingSheet(studentId, docType, docId) -> void
         Updates document ID in billing sheet after document generation.
         Category: GENERATE_DOCUMENTS
@@ -1431,13 +1679,6 @@ BILLING FUNCTION DIRECTORY
         Local functions used: None
         Utility functions used: debugLog()
 
-    verifyProgramsForSemester(semesterName) -> Boolean
-        Verifies all required programs are set up for semester.
-        Returns true if verification passed.
-        Category: SETUP_SEMESTER
-        Local functions used: None
-        Utility functions used: debugLog()
-
     verifyAndGetParentData(parentId, lastFourPhone) -> Object
         Verifies parent identity by matching last 4 digits of phone on file.
         Returns parent contact info and associated student records on success.
@@ -1447,12 +1688,45 @@ BILLING FUNCTION DIRECTORY
         Utility functions used: debugLog(), findParentRow(), getHeaderMap(), getSheet(),
                                 normalizeHeader()
 
+    verifyCumulativeFormulas() -> Object
+        Checks all billing cycle sheets for missing or incorrect cumulative formulas and returns a summary.
+        Returns result object from executeWithErrorHandling.
+        Category: TESTING
+        Local functions used: None
+        Utility functions used: executeWithErrorHandling(), debugLog()
+
+    verifyPaymentsDetailed() -> void
+        UI entry point: prompts for student IDs and runs detailed payment verification for those students.
+        Category: UI_MENU
+        Local functions used: verifyPaymentsDetailedForStudents()
+        Utility functions used: None
+
+    verifyPaymentsDetailedForStudents(studentIds) -> void
+        Runs detailed payment vs. billed comparison for specific students and generates a report sheet.
+        Category: HELPER_FUNCTIONS
+        Local functions used: collectBillingDataDetailed(), collectPaymentsDataDetailed(),
+                              createDetailedPaymentReport()
+        Utility functions used: EnvironmentManager.get(), getConfig(), debugLog()
+
+    verifyProgramsForSemester(semesterName) -> Boolean
+        Verifies all required programs are set up for semester.
+        Returns true if verification passed.
+        Category: SETUP_SEMESTER
+        Local functions used: None
+        Utility functions used: debugLog()
+        
     verifyRatesEnhanced() -> Boolean
         Verifies all rates are properly configured for billing.
         Returns true if verification passed.
         Category: HELPER_FUNCTIONS
         Local functions used: None
         Utility functions used: debugLog()
+
+    writeAndFormatRows(billingSheet, allStudents) -> void
+        Writes all student rows to the billing sheet in a single batch operation and applies formatting.
+        Category: BILLING_CYCLE
+        Local functions used: formatRow()
+        Utility functions used: None
 ================================================================================
 END OF FUNCTION DIRECTORY
 ================================================================================    
