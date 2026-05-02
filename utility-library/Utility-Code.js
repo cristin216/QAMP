@@ -2020,31 +2020,70 @@ function getCurrentSemesterMonth(semesterName) {
   }
 }
 
-function getCurrentSemesterName() {
+function getCurrentSemesterName(asOfDate) {
   try {
     var semesterSheet = getSheet('semesterMetadata');
     if (!semesterSheet) {
       debugLog('getCurrentSemesterName', 'WARNING', 'Semester Metadata sheet not found', '', '');
       return null;
     }
-    
+
     var data = semesterSheet.getDataRange().getValues();
     if (data.length < 2) {
       debugLog('getCurrentSemesterName', 'WARNING', 'No semester data found in metadata', '', '');
       return null;
     }
-    
-    // Get the most recent semester (last row, column A)
-    var currentSemester = data[data.length - 1][0];
-    
-    if (!currentSemester || String(currentSemester).trim() === '') {
-      debugLog('getCurrentSemesterName', 'WARNING', 'Empty semester name in metadata', '', '');
-      return null;
+
+    var headers = data[0];
+    var nameCol = -1, startCol = -1;
+    for (var i = 0; i < headers.length; i++) {
+      var header = normalizeHeader(headers[i]);
+      if (header.indexOf('start') !== -1) {
+        startCol = i;
+      } else if (header.indexOf('semester') !== -1 || header.indexOf('name') !== -1) {
+        nameCol = i;
+      }
     }
-    
-    debugLog('getCurrentSemesterName', 'INFO', 'Found current semester', String(currentSemester).trim(), '');
-    return String(currentSemester).trim();
-    
+
+    var resolvedNameCol = nameCol !== -1 ? nameCol : 0;
+
+    // No date provided or no startCol — fall back to last row
+    if (!asOfDate || startCol === -1) {
+      var currentSemester = data[data.length - 1][resolvedNameCol];
+      if (!currentSemester || String(currentSemester).trim() === '') {
+        debugLog('getCurrentSemesterName', 'WARNING', 'Empty semester name in metadata', '', '');
+        return null;
+      }
+      debugLog('getCurrentSemesterName', 'INFO', 'Found semester (last row fallback)', String(currentSemester).trim(), '');
+      return String(currentSemester).trim();
+    }
+
+    var compareDate = new Date(asOfDate);
+    compareDate.setHours(0, 0, 0, 0);
+    var result = null;
+
+    for (var i = 1; i < data.length; i++) {
+      var row = data[i];
+      var semesterName = row[resolvedNameCol];
+      if (!semesterName || String(semesterName).trim() === '') continue;
+
+      var startDate = new Date(row[startCol]);
+      startDate.setHours(0, 0, 0, 0);
+
+      if (startDate <= compareDate) {
+        result = String(semesterName).trim();
+      }
+    }
+
+    if (!result) {
+      result = String(data[1][resolvedNameCol]).trim();
+      debugLog('getCurrentSemesterName', 'WARNING', 'No started semester found, using first', result, '');
+    } else {
+      debugLog('getCurrentSemesterName', 'INFO', 'Found active semester by date', result, '');
+    }
+
+    return result;
+
   } catch (error) {
     debugLog('getCurrentSemesterName', 'ERROR', 'Failed to get current semester', '', error.message);
     return null;

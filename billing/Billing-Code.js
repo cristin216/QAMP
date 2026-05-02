@@ -584,7 +584,11 @@ function setupRosterTemplateProtection(sheet) {
         protection.setWarningOnly(true);
         
         // Set up date validation for First Lesson Date column (B)
-        var dateRange = sheet.getRange(2, 2, sheet.getMaxRows() - 1, 1);
+        var firstLessonDateCol = UtilityScriptLibrary.getHeaderMap(sheet)[UtilityScriptLibrary.normalizeHeader('First Lesson Date')];
+        var dateRange = firstLessonDateCol ? sheet.getRange(2, firstLessonDateCol, sheet.getMaxRows() - 1, 1) : null;
+        if (!dateRange) {
+          UtilityScriptLibrary.debugLog('setupRosterTemplateProtection', 'WARNING', 'First Lesson Date column not found, skipping date validation', '', '');
+        } else {
         var dateRule = SpreadsheetApp.newDataValidation()
           .requireDate()
           .setAllowInvalid(false)
@@ -592,12 +596,18 @@ function setupRosterTemplateProtection(sheet) {
         dateRange.setDataValidation(dateRule);
         
         // Set up dropdown validation for Status column (T)
-        var statusRange = sheet.getRange(2, 20, sheet.getMaxRows() - 1, 1);
+        }
+        var statusCol = UtilityScriptLibrary.getHeaderMap(sheet)[UtilityScriptLibrary.normalizeHeader('Status')];
+        var statusRange = statusCol ? sheet.getRange(2, statusCol, sheet.getMaxRows() - 1, 1) : null;
+        if (!statusRange) {
+          UtilityScriptLibrary.debugLog('setupRosterTemplateProtection', 'WARNING', 'Status column not found, skipping status validation', '', '');
+        } else {
         var statusRule = SpreadsheetApp.newDataValidation()
           .requireValueInList(['active', 'dropped'], true)
           .setAllowInvalid(false)
           .build();
         statusRange.setDataValidation(statusRule);
+        }
         
         UtilityScriptLibrary.debugLog("✅ Roster protection, date validation, and status dropdown applied");
         
@@ -2431,6 +2441,22 @@ function cancelDocumentGeneration() {
   } catch (error) {
     UtilityScriptLibrary.debugLog("cancelDocumentGeneration", "ERROR", "Error cancelling generation", "", error.message);
     throw error;
+  }
+}
+
+function checkIfDocumentStillNeeded(studentId, docType, billingSheet, headerMap) {
+  switch (docType) {
+    case 'agreement':
+      return shouldIncludeAgreement(studentId, billingSheet, headerMap);
+    case 'media release':
+      return shouldIncludeMediaRelease(studentId, billingSheet, headerMap);
+    case 'invoice':
+    case 'welcome letter':
+      return true;
+    default:
+      UtilityScriptLibrary.debugLog('checkIfDocumentStillNeeded', 'WARNING',
+        'Unknown docType, defaulting to true', docType, '');
+      return true;
   }
 }
 
@@ -5068,7 +5094,7 @@ function generateInvoicesForBillingCycle(billingSheetName, options) {
         forceRegenerate: forceRegenerate
       };
       
-      var result = generateInvoiceForStudent(studentData, row, headerMap, invoiceOptions);
+      var result = generateInvoiceForStudent(studentData, row, headerMap, invoiceOptions, billingSheet, billingSheetName);
       
       if (result.success) {
         if (result.skipped || result.alreadyExists) {
@@ -5107,6 +5133,47 @@ function generateInvoicesForBillingCycle(billingSheetName, options) {
     UtilityScriptLibrary.debugLog("generateInvoicesForBillingCycle", "ERROR", "Batch generation failed", 
                   "", error.message + " | " + error.stack);
     throw error;
+  }
+}
+
+function generateInvoiceForStudent(studentData, row, headerMap, invoiceOptions, billingSheet, billingSheetName) {
+  try {
+    var billingData = extractBillingDataFromRow(row, headerMap);
+    var currentSemester = getCurrentSemesterFromBillingMetadata(billingSheetName);
+    var deliveryMethod = extractDeliveryPreference(row, headerMap);
+    var isRefund = billingData.currentBalance < 0;
+
+    if (!invoiceOptions.includeNegativeBalances && isRefund) {
+      return { success: true, skipped: true, balance: billingData.currentBalance };
+    }
+
+    var result = generateDocumentForStudent(
+      studentData,
+      billingData,
+      isRefund ? 'refund invoice' : 'invoice',
+      deliveryMethod,
+      currentSemester,
+      billingSheetName,
+      billingSheet,
+      headerMap
+    );
+
+    if (result.success) {
+      return {
+        success: true,
+        alreadyExists: result.alreadyExists || false,
+        isRefund: isRefund,
+        url: result.url || '',
+        balance: billingData.currentBalance
+      };
+    } else {
+      return { success: false, error: result.error };
+    }
+
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('generateInvoiceForStudent', 'ERROR', 'Failed',
+      studentData.firstName + ' ' + studentData.lastName, error.message);
+    return { success: false, error: error.message };
   }
 }
 
@@ -5369,67 +5436,71 @@ function getActivePrograms() {
 
 function getBillingSheet(paymentDate, activeSheetName, shouldLog) {
   var monthNames = UtilityScriptLibrary.getMonthNames();
-  
+
   if (shouldLog) {
-    UtilityScriptLibrary.debugLog("getBillingSheet", "INFO", "Looking for billing sheet", 
-                 "paymentDate: " + paymentDate + ", activeSheetName: " + activeSheetName, 
-                 "shouldLog: " + (shouldLog ? "YES" : "NO"), "");
+    UtilityScriptLibrary.debugLog('getBillingSheet', 'INFO', 'Looking for billing sheet',
+      'paymentDate: ' + paymentDate + ', activeSheetName: ' + activeSheetName,
+      'shouldLog: ' + (shouldLog ? 'YES' : 'NO'));
   }
-  
+
   var billingSS = UtilityScriptLibrary.getWorkbook('billing');
-  var spreadsheetList = billingSS.getSheetByName("Billing Metadata");
+  var spreadsheetList = billingSS.getSheetByName('Billing Metadata');
   if (!spreadsheetList) {
-    UtilityScriptLibrary.debugLog("getBillingSheet", "ERROR", "'Billing Metadata' sheet not found in billing spreadsheet", "", "");
+    UtilityScriptLibrary.debugLog('getBillingSheet', 'ERROR', "'Billing Metadata' sheet not found", '', '');
     return null;
   }
 
   var data = spreadsheetList.getDataRange().getValues();
-  
+  var headerMap = UtilityScriptLibrary.getHeaderMap(spreadsheetList);
+  var norm = UtilityScriptLibrary.normalizeHeader;
+
+  var billingMonthCol = headerMap[norm('Billing Month')];
+  var paymentStartCol = headerMap[norm('Payment Starting Date')];
+  var paymentEndCol = headerMap[norm('Payment Ending Date')];
+  var semesterNameCol = headerMap[norm('Semester Name')];
+
+  if (!billingMonthCol || !paymentStartCol || !paymentEndCol || !semesterNameCol) {
+    UtilityScriptLibrary.debugLog('getBillingSheet', 'ERROR', 'Required columns not found in Billing Metadata', '', '');
+    return null;
+  }
+
   for (var i = 1; i < data.length; i++) {
     var row = data[i];
-    var billingMonth = row[0];
-    
-    // Check if it's a Date object (Google Sheets sometimes returns dates that fail instanceof)
+    var billingMonth = row[billingMonthCol - 1];
+
     if (Object.prototype.toString.call(billingMonth) === '[object Date]' || typeof billingMonth.getMonth === 'function') {
-      billingMonth = monthNames[billingMonth.getMonth()] + " " + billingMonth.getFullYear();
-      UtilityScriptLibrary.debugLog("getBillingSheet", "DEBUG", "Converted Date to string", "Result: " + billingMonth, "");
+      billingMonth = monthNames[billingMonth.getMonth()] + ' ' + billingMonth.getFullYear();
+      UtilityScriptLibrary.debugLog('getBillingSheet', 'DEBUG', 'Converted Date to string', 'Result: ' + billingMonth, '');
     }
-    
-    var paymentStartDate = new Date(row[2]);
-    var paymentEndDate = new Date(row[3]);
-    var semesterName = row[6];
-    
-    // Debug: Show what we're comparing
-    UtilityScriptLibrary.debugLog("getBillingSheet", "DEBUG", "Checking row", 
-      "paymentDate: " + paymentDate + " in range [" + paymentStartDate + " to " + paymentEndDate + "]? " + 
-      (paymentDate >= paymentStartDate && paymentDate <= paymentEndDate) + 
-      ", semesterName: '" + semesterName + "' === '" + activeSheetName + "'? " + (semesterName === activeSheetName), "");
-    
-    if (paymentDate >= paymentStartDate && paymentDate <= paymentEndDate && 
+
+    var paymentStartDate = new Date(row[paymentStartCol - 1]);
+    var paymentEndDate = new Date(row[paymentEndCol - 1]);
+    var semesterName = row[semesterNameCol - 1];
+
+    UtilityScriptLibrary.debugLog('getBillingSheet', 'DEBUG', 'Checking row',
+      'paymentDate: ' + paymentDate + ' in range [' + paymentStartDate + ' to ' + paymentEndDate + ']? ' +
+      (paymentDate >= paymentStartDate && paymentDate <= paymentEndDate) +
+      ', semesterName: \'' + semesterName + '\' === \'' + activeSheetName + '\'? ' + (semesterName === activeSheetName), '');
+
+    if (paymentDate >= paymentStartDate && paymentDate <= paymentEndDate &&
         semesterName === activeSheetName) {
-      
-      UtilityScriptLibrary.debugLog("getBillingSheet", "DEBUG", "Date match found, looking for sheet", 
-                   "Sheet name to find: " + billingMonth, "");
-      
+
+      UtilityScriptLibrary.debugLog('getBillingSheet', 'DEBUG', 'Date match found, looking for sheet',
+        'Sheet name to find: ' + billingMonth, '');
+
       var billingSheet = billingSS.getSheetByName(billingMonth);
-      
-      if (!billingSheet) {
-        UtilityScriptLibrary.debugLog("getBillingSheet", "WARNING", "Billing sheet not found", 
-                     "Sheet name: " + billingMonth, "");
-        continue;
+
+      if (billingSheet) {
+        UtilityScriptLibrary.debugLog('getBillingSheet', 'SUCCESS', 'Found billing sheet', billingMonth, '');
+        return billingSheet;
+      } else {
+        UtilityScriptLibrary.debugLog('getBillingSheet', 'WARNING', 'Sheet not found in workbook', billingMonth, '');
       }
-      
-      return {
-        sheet: billingSheet,
-        startDate: paymentStartDate,
-        endDate: paymentEndDate,
-        billingMonth: billingMonth
-      };
     }
   }
-  
-  UtilityScriptLibrary.debugLog("getBillingSheet", "WARNING", "No billing metadata match", 
-               "Date: " + paymentDate + ", Payment sheet: " + activeSheetName, "");
+
+  UtilityScriptLibrary.debugLog('getBillingSheet', 'WARNING', 'No matching billing sheet found',
+    'paymentDate: ' + paymentDate + ', semester: ' + activeSheetName, '');
   return null;
 }
 
@@ -6154,32 +6225,49 @@ function getPreviousSemesterBalance(studentId) {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var balanceSheet = ss.getSheetByName('Semester Lesson Balances');
-    
+
     if (!balanceSheet) {
       return null;
     }
-    
+
     var data = balanceSheet.getDataRange().getValues();
-    
-    // Find most recent active balance for this student
-    for (var i = data.length - 1; i >= 1; i--) { // Start from bottom, skip header
+    var headerMap = UtilityScriptLibrary.getHeaderMap(balanceSheet);
+    var norm = UtilityScriptLibrary.normalizeHeader;
+
+    var studentIdCol = headerMap[norm('Student ID')];
+    var semesterNameCol = headerMap[norm('Semester Name')];
+    var lessonLengthCol = headerMap[norm('Lesson Length')];
+    var registeredLessonsCol = headerMap[norm('Registered Lessons')];
+    var taughtLessonsCol = headerMap[norm('Taught Lessons')];
+    var lessonBalanceCol = headerMap[norm('Lesson Balance')];
+    var statusCol = headerMap[norm('Status')];
+
+    if (!studentIdCol || !lessonBalanceCol || !statusCol) {
+      UtilityScriptLibrary.debugLog('getPreviousSemesterBalance', 'ERROR',
+        'Required columns not found in Semester Lesson Balances', '', '');
+      return null;
+    }
+
+    for (var i = data.length - 1; i >= 1; i--) {
       var row = data[i];
-      if (row[0] === studentId && row[6] === 'active' && row[5] > 0) { // Student ID, Status, Positive Balance
+      if (row[studentIdCol - 1] === studentId &&
+          row[statusCol - 1] === 'active' &&
+          row[lessonBalanceCol - 1] > 0) {
         return {
-          studentId: row[0],
-          semesterName: row[1],
-          lessonLength: row[2],
-          registeredLessons: row[3],
-          taughtLessons: row[4],
-          lessonBalance: row[5]
+          studentId: row[studentIdCol - 1],
+          semesterName: semesterNameCol ? row[semesterNameCol - 1] : '',
+          lessonLength: lessonLengthCol ? row[lessonLengthCol - 1] : '',
+          registeredLessons: registeredLessonsCol ? row[registeredLessonsCol - 1] : '',
+          taughtLessons: taughtLessonsCol ? row[taughtLessonsCol - 1] : '',
+          lessonBalance: row[lessonBalanceCol - 1]
         };
       }
     }
-    
+
     return null;
-    
+
   } catch (error) {
-    UtilityScriptLibrary.debugLog('❌ Error getting previous semester balance for student ' + studentId + ': ' + error.message);
+    UtilityScriptLibrary.debugLog('getPreviousSemesterBalance', 'ERROR', 'Failed', '', error.message);
     return null;
   }
 }
