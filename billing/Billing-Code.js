@@ -56,7 +56,7 @@ function runBillingCycleAutomation() {
     var semesterData = semesterSheet.getDataRange().getValues();
     if (semesterData.length < 2) throw new Error('No semesters found in Semester Metadata.');
 
-    var semesterName = semesterData[semesterData.length - 1][0];
+    var semesterName = UtilityScriptLibrary.getCurrentSemesterName(customToday);
 
     verifyProgramsForSemester(semesterName, ss);
 
@@ -276,7 +276,7 @@ function runPaymentReconciliation() {
         var paymentsSS = UtilityScriptLibrary.getWorkbook('payments');
         UtilityScriptLibrary.debugLog('runPaymentReconciliation', 'DEBUG', 'Got payments workbook', '', '');
         
-        var currentSemester = UtilityScriptLibrary.getCurrentSemesterName();
+        var currentSemester = UtilityScriptLibrary.getCurrentSemesterName(new Date());
         UtilityScriptLibrary.debugLog('runPaymentReconciliation', 'DEBUG', 'Current semester', currentSemester, '');
         
         var paymentSheet = paymentsSS.getSheetByName(currentSemester);
@@ -8891,7 +8891,7 @@ function runCombinedReconciliation() {
     
     // Get payment workbook and current semester sheet
     var paymentsSS = UtilityScriptLibrary.getWorkbook('payments');
-    var currentSemester = UtilityScriptLibrary.getCurrentSemesterName();
+    var currentSemester = UtilityScriptLibrary.getCurrentSemesterName(new Date());
     var paymentSheet = paymentsSS.getSheetByName(currentSemester);
     
     if (!paymentSheet) {
@@ -9095,7 +9095,7 @@ function runWeeklyLessonReconciliation(customDate) {
     var billingCycleDates = getCurrentBillingCycleDates();
     
     // Get current semester name for roster sheet lookup
-    var currentSemester = UtilityScriptLibrary.getCurrentSemesterName();
+    var currentSemester = UtilityScriptLibrary.getCurrentSemesterName(new Date());
     if (!currentSemester || currentSemester === 'Unknown Semester') {
       throw new Error('Could not determine current semester name');
     }
