@@ -1,3 +1,13 @@
+/*
+================================================================================
+RESPONSES CODE
+================================================================================
+Version: 112
+Total Functions: 76
+Documentation: See Responses-Functions.md
+================================================================================
+*/
+
 function authorizeScript() {
   // This function just needs to be run once to authorize the script
   // It accesses the UI which triggers the authorization prompt
