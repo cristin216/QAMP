@@ -79,8 +79,11 @@ var SHEET_MAP = {
   fieldMap: {
     name: 'FieldMap'
   },
-  reregistration: {
-    name: 'Reregistration'
+  studentReturningResponses: {
+     name: 'Reregistration' 
+  },
+  returningStudentFieldMap:  { 
+    name: 'Reregistration FieldMap' 
   },
   teacherRosterLookup: {
     name: 'Teacher Roster Lookup'
