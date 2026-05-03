@@ -125,19 +125,19 @@ function runBillingCycleAutomation() {
         "From sheet: " + carryOverData.previousSheetName, "");
     }
 
-    // Load re-registration data
     var reregResult = loadReregistrationData();
     UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "INFO", "Re-registration data loaded",
       "Entries: " + Object.keys(reregResult.map).length, "");
 
     ss.setActiveSheet(newBillingSheet);
     var context = buildBillingContext(customToday, semesterName, billingCycleName, programConfig);
-    context.prevHeaderMap  = carryOverData.previousSheetName
+    context.prevHeaderMap    = carryOverData.previousSheetName
       ? UtilityScriptLibrary.getHeaderMap(ss.getSheetByName(carryOverData.previousSheetName))
       : {};
-    context.carryOverForms = carryOverForms;
-    context.reregMap       = reregResult.map;
-    context.reregSheet     = reregResult.sheet;
+    context.previousSheetName = carryOverData.previousSheetName || null;
+    context.carryOverForms   = carryOverForms;
+    context.reregMap         = reregResult.map;
+    context.reregSheet       = reregResult.sheet;
 
     UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "DEBUG", "Context built",
       "Previous sheet: " + (carryOverData.previousSheetName || "None"), "");
@@ -149,12 +149,8 @@ function runBillingCycleAutomation() {
       populateBillingSheetContinuingSemester(context, newBillingSheet, existingStudentIds, carryOverData.rowsToCarry, null);
     }
 
-    // Multi-student discount pass (runs after all rows are written)
     applyMultiStudentDiscount(newBillingSheet);
-
-    // Mark re-registration rows as processed
     markReregistrationProcessed(context.reregSheet, context.processedReregIds || {});
-
     appendToBillingMetadata(billingCycleName, customToday, semesterName);
 
     UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "INFO", "Billing cycle completed successfully",
@@ -717,31 +713,6 @@ function submitReregistration(data) {
 // HELPER FUNCTIONS
 // ============================================================================
 
-function addCumulativeFormulas(newRow, context, rowIndex, quantityCols) {
-  var h = context.headerMap;
-  var norm = UtilityScriptLibrary.normalizeHeader;
-  var colToLetter = UtilityScriptLibrary.columnToLetter;
-  
-  // Cumulative Billed formula
-  var cumBilledCol = h[norm("Current Cumulative Hours Billed")];
-  var lessonHoursCol = h[norm("Lesson Hours")];
-  
-  if (cumBilledCol && lessonHoursCol) {
-    newRow[cumBilledCol - 1] = "=" + colToLetter(lessonHoursCol) + rowIndex;
-    quantityCols.push(cumBilledCol);
-  }
-
-  // Hours Remaining formula
-  var hoursRemainingCol = h[norm("Hours Remaining")];
-  var currentCumTaughtCol = h[norm("Current Cumulative Hours Taught")];
-  
-  if (hoursRemainingCol && currentCumTaughtCol && cumBilledCol) {
-    var formula = "=" + colToLetter(cumBilledCol) + rowIndex + " - " + colToLetter(currentCumTaughtCol) + rowIndex;
-    newRow[hoursRemainingCol - 1] = formula;
-    quantityCols.push(hoursRemainingCol);
-  }
-}
-
 function addInvoiceTotalFormula(newRow, context, rowIndex, currencyCols) {
   var invoiceTotalCol = context.headerMap[UtilityScriptLibrary.normalizeHeader("Current Invoice Total")];
   if (invoiceTotalCol) {
@@ -1030,102 +1001,70 @@ function appendToSemesterMetadata(semesterName, startDate, endDate) {
   }).data;
 }
 
-function applyAdminVisualFormatting(billingSheet) {
-  try {
-    UtilityScriptLibrary.debugLog('🎨 Applying visual formatting to student names...');
-    
-    var headerMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
-    
-    // Get column indices - UPDATED to use new column names
-    var lastNameCol = headerMap[UtilityScriptLibrary.normalizeHeader('Student Last Name')];
-    var firstNameCol = headerMap[UtilityScriptLibrary.normalizeHeader('Student First Name')];
-    var currentBalanceCol = headerMap[UtilityScriptLibrary.normalizeHeader('Current Balance')];
-    var hoursRemainingCol = headerMap[UtilityScriptLibrary.normalizeHeader('Hours Remaining')];
-    var lessonLengthCol = headerMap[UtilityScriptLibrary.normalizeHeader('Lesson Length')]; // ADDED: Need lesson length
-    var agreementCol = headerMap[UtilityScriptLibrary.normalizeHeader('Agreement Form')];
-    var mediaCol = headerMap[UtilityScriptLibrary.normalizeHeader('Media Release')];
-    
-    if (!lastNameCol || !firstNameCol || !currentBalanceCol || !hoursRemainingCol || 
-        !lessonLengthCol || !agreementCol || !mediaCol) {
-      throw new Error('Required columns not found for visual formatting');
-    }
-    
-    // STEP 1: RESET ALL NAME CELLS TO DEFAULT FORMATTING
-    var nameRange = billingSheet.getRange(2, lastNameCol, billingSheet.getLastRow() - 1, 2);
-    nameRange.clearFormat();
-    
-    // Apply default formatting to all name cells
-    nameRange.setBackground('#ffffff')      // White background (default)
-             .setFontColor('#000000')       // Black text (default)
-             .setFontWeight('normal');      // Normal weight (default)
-    
-    UtilityScriptLibrary.debugLog('✅ Reset all name cells to default formatting');
-    
-    // Define color values
-    var colors = {
-      greenBackground: '#e8f5e8',  // Light green for credits
-      redBackground: '#ffebee',    // Light red for debts
-      orangeText: '#ff9800',       // Orange for low lessons
-      redText: '#f44336',          // Red for no lessons
-      redBorder: '#f44336',        // Red border for missing agreement
-      blueBorder: '#2196f3',       // Blue border for missing media
-      purpleBorder: '#9c27b0'      // Purple border for missing both
-    };
-    
-    // Get data for processing
-    var dataRange = billingSheet.getRange(2, 1, billingSheet.getLastRow() - 1, billingSheet.getLastColumn());
-    var data = dataRange.getValues();
-    
-    // STEP 2: APPLY CONDITIONAL FORMATTING TO STUDENTS WHO NEED IT
-    for (var i = 0; i < data.length; i++) {
-      var row = data[i];
-      var currentBalance = parseFloat(row[currentBalanceCol - 1]) || 0;
-      var hoursRemaining = parseFloat(row[hoursRemainingCol - 1]) || 0;
-      var lessonLength = parseFloat(row[lessonLengthCol - 1]) || 30; // Default to 30 minutes
-      var hasAgreement = row[agreementCol - 1] === '✅';
-      var hasMedia = row[mediaCol - 1] === '✅';
-      
-      // FIXED: Convert hours back to lessons for warning logic
-      var lessonsRemaining = lessonLength > 0 ? hoursRemaining / (lessonLength / 60) : 0;
-      
-      var nameRange = billingSheet.getRange(i + 2, lastNameCol, 1, 2);
-      
-      // Background color based on balance
-      var backgroundColor = currentBalance >= 0 ? colors.greenBackground : colors.redBackground;
-      nameRange.setBackground(backgroundColor);
-      
-      // Text color based on lessons remaining
-      var textColor = '#000000'; // Default black
-      if (lessonsRemaining <= 0) {
-        textColor = colors.redText;
-      } else if (lessonsRemaining <= 3) {
-        textColor = colors.orangeText;
-      }
-      nameRange.setFontColor(textColor);
-      
-      // Border color based on form status
-      var borderColor = null;
-      var borderStyle = SpreadsheetApp.BorderStyle.SOLID_MEDIUM;
-      
-      if (!hasAgreement && !hasMedia) {
-        borderColor = colors.purpleBorder; // Purple for both missing
-      } else if (!hasAgreement) {
-        borderColor = colors.redBorder;    // Red for missing agreement
-      } else if (!hasMedia) {
-        borderColor = colors.blueBorder;   // Blue for missing media
-      }
-      
-      if (borderColor) {
-        nameRange.setBorder(true, true, true, true, true, true, borderColor, borderStyle);
-      }
-    }
-    
-    UtilityScriptLibrary.debugLog('✅ Applied conditional formatting to ' + data.length + ' students');
-    
-  } catch (error) {
-    UtilityScriptLibrary.debugLog('❌ Error in applyAdminVisualFormatting: ' + error.message);
-    throw error;
+function applyBillingConditionalFormatting(billingSheet) {
+  var norm      = UtilityScriptLibrary.normalizeHeader;
+  var headerMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
+
+  var hoursRemainingCol = headerMap[norm("Hours Remaining")];
+  var currentBalanceCol = headerMap[norm("Current Balance")];
+  var lastNameCol       = headerMap[norm("Student Last Name")];
+
+  if (!hoursRemainingCol || !currentBalanceCol || !lastNameCol) {
+    UtilityScriptLibrary.debugLog('applyBillingConditionalFormatting', 'WARNING',
+      'Required columns not found', '', '');
+    return;
   }
+
+  var lastRow = billingSheet.getLastRow();
+  if (lastRow < 2) return;
+
+  var numRows       = lastRow - 1;
+  var hoursRange    = billingSheet.getRange(2, hoursRemainingCol, numRows, 1);
+  var balanceRange  = billingSheet.getRange(2, currentBalanceCol, numRows, 1);
+  var lastNameRange = billingSheet.getRange(2, lastNameCol, numRows, 1);
+
+  var hoursCol   = UtilityScriptLibrary.columnToLetter(hoursRemainingCol);
+  var balanceCol = UtilityScriptLibrary.columnToLetter(currentBalanceCol);
+  var warning    = UtilityScriptLibrary.STYLES.WARNING;
+
+  // Remove existing conditional format rules for all three columns
+  var existingRules = billingSheet.getConditionalFormatRules();
+  var colsToReplace = [hoursRemainingCol, currentBalanceCol, lastNameCol];
+  var keptRules = existingRules.filter(function(rule) {
+    return rule.getRanges().every(function(r) {
+      return colsToReplace.indexOf(r.getColumn()) === -1;
+    });
+  });
+
+  // Hours Remaining < 2
+  var hoursRule = SpreadsheetApp.newConditionalFormatRule()
+    .whenNumberLessThan(2)
+    .setBackground(warning.background)
+    .setFontColor(warning.text)
+    .setRanges([hoursRange])
+    .build();
+
+  // Current Balance < 0
+  var balanceRule = SpreadsheetApp.newConditionalFormatRule()
+    .whenNumberLessThan(0)
+    .setBackground(warning.background)
+    .setFontColor(warning.text)
+    .setRanges([balanceRange])
+    .build();
+
+  // Last Name: OR(hours remaining < 2, current balance < 0)
+  var lastNameRule = SpreadsheetApp.newConditionalFormatRule()
+    .whenFormulaSatisfied('=OR(' + hoursCol + '2<2,' + balanceCol + '2<0)')
+    .setBackground(warning.background)
+    .setFontColor(warning.text)
+    .setRanges([lastNameRange])
+    .build();
+
+  keptRules.push(hoursRule, balanceRule, lastNameRule);
+  billingSheet.setConditionalFormatRules(keptRules);
+
+  UtilityScriptLibrary.debugLog('applyBillingConditionalFormatting', 'SUCCESS',
+    'Conditional formatting applied', '', '');
 }
 
 function applyCumulativeHistory(newRow, studentId, context, currencyCols) {
@@ -1156,29 +1095,21 @@ function applyCumulativeHistory(newRow, studentId, context, currencyCols) {
                 ", Billed: " + cumulativeHistory.cumulativeHoursBilled, "");
 }
 
-function applyLateFeeToRow(newRow, context, currencyCols) {
-  var h = context.headerMap;
+function applyLateFeeToRow(newRow, context, currencyCols, pastBalanceValue) {
+  var h    = context.headerMap;
   var norm = UtilityScriptLibrary.normalizeHeader;
-  
+
   var lateFeeCol = h[norm("Late Fee")];
-  var pastBalanceCol = h[norm("Past Balance")];
-  var paymentReceivedCol = h[norm("Payment Received")];
-  var pastInvoiceNumberCol = h[norm("Past Invoice Number")];
-  
-  if (!lateFeeCol || !pastBalanceCol || !paymentReceivedCol || !pastInvoiceNumberCol) {
-    return;
-  }
-  
-  var pastBalance = UtilityScriptLibrary.safeParseFloat(newRow[pastBalanceCol - 1]);
-  var paymentReceived = UtilityScriptLibrary.safeParseFloat(newRow[paymentReceivedCol - 1]);
-  var pastInvoiceNumber = newRow[pastInvoiceNumberCol - 1] || '';
-  
-  var rateMap = getRateMap(context);
-  var lateFeeAmount = calculateLateFee(pastBalance, paymentReceived, pastInvoiceNumber, rateMap);
-  
-  if (lateFeeAmount > 0) {
-    newRow[lateFeeCol - 1] = lateFeeAmount;
-    UtilityScriptLibrary.addToCurrencyCols(currencyCols, lateFeeCol, "Late Fee");
+  if (!lateFeeCol) return;
+
+  if ((pastBalanceValue || 0) > 10) {
+    var rateMap       = getRateMap(context);
+    var lateFeeAmount = parseFloat(rateMap["Late Fee"]) || 0;
+
+    if (lateFeeAmount > 0) {
+      newRow[lateFeeCol - 1] = lateFeeAmount;
+      UtilityScriptLibrary.addToCurrencyCols(currencyCols, lateFeeCol, "Late Fee");
+    }
   }
 }
 
@@ -1369,72 +1300,6 @@ function applyMultiStudentDiscount(billingSheet) {
   }
 }
 
-function applyPastDataToRow(newRow, prevRow, context, currencyCols) {
-  var h = context.headerMap;
-  var prevH = context.prevHeaderMap;
-  var norm = UtilityScriptLibrary.normalizeHeader;
-
-  // Define all past data mappings
-  var mappings = [
-    { newCol: "Past Invoice Number",            prevCol: "Invoice Number",                    type: "string" },
-    { newCol: "Past Cumulative Hours Taught",   prevCol: "Current Cumulative Hours Taught",   type: "number" },
-    { newCol: "Past Cumulative Hours Billed",   prevCol: "Current Cumulative Hours Billed",   type: "number" },
-    { newCol: "Past Hours Remaining",           prevCol: "Hours Remaining",                   type: "number" }
-  ];
-
-  // Copy all mapped fields
-  for (var i = 0; i < mappings.length; i++) {
-    var mapping = mappings[i];
-    var newCol = h[norm(mapping.newCol)];
-    var prevCol = prevH[norm(mapping.prevCol)];
-
-    if (newCol && prevCol && prevRow.length >= prevCol) {
-      if (mapping.type === "number") {
-        newRow[newCol - 1] = UtilityScriptLibrary.safeParseFloat(prevRow[prevCol - 1]);
-      } else {
-        newRow[newCol - 1] = prevRow[prevCol - 1] || '';
-      }
-
-      // Track hours columns for formatting
-      if (mapping.newCol.indexOf("Hours") !== -1) {
-        if (!context.hoursColumnsToFormat) context.hoursColumnsToFormat = [];
-        context.hoursColumnsToFormat.push(newCol);
-      }
-    }
-  }
-
-  // Handle Past Balance / Credit (special case - can be positive or negative)
-  var pastBalanceCol = h[norm("Past Balance")];
-  var currentBalanceCol = prevH[norm("Current Balance")];
-
-  if (currentBalanceCol && prevRow.length >= currentBalanceCol) {
-    var previousBalance = UtilityScriptLibrary.safeParseFloat(prevRow[currentBalanceCol - 1]);
-
-    if (previousBalance !== 0 && pastBalanceCol) {
-      newRow[pastBalanceCol - 1] = previousBalance;
-      UtilityScriptLibrary.addToCurrencyCols(currencyCols, pastBalanceCol, "Past Balance");
-    }
-  }
-
-  // Calculate Lesson Credit if applicable
-  var lessonCreditCol = h[norm("Lesson Credit")];
-  var lessonQuantityCol = h[norm("Lesson Quantity")];
-  var lessonLengthCol = h[norm("Lesson Length")];
-  var pastHoursRemainingCol = h[norm("Past Hours Remaining")];
-
-  if (lessonCreditCol && lessonQuantityCol && lessonLengthCol && pastHoursRemainingCol) {
-    var pastHoursRemaining = UtilityScriptLibrary.safeParseFloat(newRow[pastHoursRemainingCol - 1]);
-    var lessonQuantity = UtilityScriptLibrary.safeParseFloat(newRow[lessonQuantityCol - 1]);
-    var lessonLength = UtilityScriptLibrary.safeParseFloat(newRow[lessonLengthCol - 1]);
-
-    if (pastHoursRemaining > 0 && lessonQuantity > 0 && lessonLength > 0) {
-      newRow[lessonCreditCol - 1] = pastHoursRemaining / (lessonLength / 60);
-    } else {
-      newRow[lessonCreditCol - 1] = 0;
-    }
-  }
-}
-
 function applyReregistrationOverwrites(billingSheet, reregMap, formStudentIds) {
   try {
     var norm = UtilityScriptLibrary.normalizeHeader;
@@ -1600,36 +1465,25 @@ function buildBillingContext(customToday, semesterName, billingCycleName, progra
 }
 
 function buildBillingRowFromForm(formRow, prevRow, context, rowIndex) {
-  var get = context.getColIndex;
+  var get  = context.getColIndex;
+  var norm = UtilityScriptLibrary.normalizeHeader;
   var studentId = formRow[get("Student ID")];
-  var newRow = new Array(Object.keys(context.headerMap).length).fill("");
+  var newRow    = new Array(Object.keys(context.headerMap).length).fill("");
   var quantityCols = [];
   var currencyCols = [];
 
-  UtilityScriptLibrary.debugLog('buildBillingRowFromForm', 'DEBUG', 'Building complete billing row',
-                                'Student ID: ' + studentId + ', Has prev: ' + !!prevRow, '');
-
-  // Copy static fields from form
   copyStaticFieldsToBillingRow(newRow, formRow, context, get);
-
-  // Delivery preference from form
   setDeliveryPreference(newRow, formRow, context, true);
-
-  // Invoice metadata
   populateInvoiceMetadata(newRow, studentId, context, rowIndex);
-
-  // Letter Type
   populateLetterType(newRow, context, "form", null);
 
-  // Enrolled programs
   var enrolledPrograms = getExpandedPrograms(formRow, context);
 
-  // Get package quantities using Utility helper
   var qty30Package = get("Qty30") !== -1 ? formRow[get("Qty30")] : "";
   var qty45Package = get("Qty45") !== -1 ? formRow[get("Qty45")] : "";
   var qty60Package = get("Qty60") !== -1 ? formRow[get("Qty60")] : "";
 
-  var quantities  = UtilityScriptLibrary.parseAllPackageQuantities(qty30Package, qty45Package, qty60Package);
+  var quantities   = UtilityScriptLibrary.parseAllPackageQuantities(qty30Package, qty45Package, qty60Package);
   var lessonLength = UtilityScriptLibrary.getLessonLengthFromPackages(qty30Package, qty45Package, qty60Package);
 
   var result = buildDynamicProgramColumns(
@@ -1639,38 +1493,35 @@ function buildBillingRowFromForm(formRow, prevRow, context, rowIndex) {
   quantityCols = result.quantityCols;
   currencyCols = result.currencyCols;
 
-  // Set lesson length
-  var lengthCol = context.headerMap[UtilityScriptLibrary.normalizeHeader("Lesson Length")];
-  if (lengthCol) {
-    newRow[lengthCol - 1] = lessonLength;
-  }
+  var lengthCol = context.headerMap[norm("Lesson Length")];
+  if (lengthCol) newRow[lengthCol - 1] = lessonLength;
 
-  // Timestamp
-  var timestampCol = context.headerMap[UtilityScriptLibrary.normalizeHeader("Timestamp")];
+  var timestampCol     = context.headerMap[norm("Timestamp")];
   var formTimestampCol = get("Timestamp");
   if (timestampCol && formTimestampCol !== -1) {
     newRow[timestampCol - 1] = formRow[formTimestampCol];
   }
 
-  // Payment Received = 0
-  var paymentCol = context.headerMap[UtilityScriptLibrary.normalizeHeader("Payment Received")];
-  if (paymentCol) {
-    newRow[paymentCol - 1] = 0;
+  var paymentCol = context.headerMap[norm("Payment Received")];
+  if (paymentCol) newRow[paymentCol - 1] = 0;
+
+  // Extract past balance for late fee before writing VLOOKUP formulas
+  var pastBalanceValue = 0;
+  if (prevRow && context.prevHeaderMap) {
+    var prevBalanceCol = context.prevHeaderMap[norm("Current Balance")];
+    pastBalanceValue = prevBalanceCol ? (UtilityScriptLibrary.safeParseFloat(prevRow[prevBalanceCol - 1]) || 0) : 0;
   }
 
-  // Apply past data if student existed in previous cycle
-  if (prevRow) {
-    applyPastDataToRow(newRow, prevRow, context, currencyCols);
-    applyLateFeeToRow(newRow, context, currencyCols);
-  } else {
+  setPastColumnFormulas(newRow, context, rowIndex, currencyCols);
+  applyLateFeeToRow(newRow, context, currencyCols, pastBalanceValue);
+
+  if (!prevRow) {
     var studentIdForHistory = get("Student ID") !== -1 ? formRow[get("Student ID")] : null;
     if (studentIdForHistory) {
       applyCumulativeHistory(newRow, studentIdForHistory, context, currencyCols);
     }
   }
 
-  // Formulas
-  addCumulativeFormulas(newRow, context, rowIndex, quantityCols);
   addInvoiceTotalFormula(newRow, context, rowIndex, currencyCols);
   populateCurrentBalanceFormula(newRow, context, rowIndex);
 
@@ -1685,52 +1536,37 @@ function buildBillingRowFromPrevious(prevRow, context, rowIndex) {
     throw new Error("Context or headerMap is missing");
   }
 
-  var newRow = new Array(Object.keys(context.headerMap).length).fill("");
+  var newRow       = new Array(Object.keys(context.headerMap).length).fill("");
   var quantityCols = [];
   var currencyCols = [];
-  var norm = UtilityScriptLibrary.normalizeHeader;
+  var norm         = UtilityScriptLibrary.normalizeHeader;
 
-  // Get Student ID
   var studentId = UtilityScriptLibrary.getStudentIdFromRow(prevRow, context.prevHeaderMap);
-  if (!studentId) {
-    throw new Error("Student ID not found in previous billing row");
-  }
+  if (!studentId) throw new Error("Student ID not found in previous billing row");
 
-  // Copy static fields
   copyStaticFieldsToBillingRow(newRow, prevRow, context);
-
-  // Delivery preference from previous
   setDeliveryPreference(newRow, prevRow, context, false);
-
-  // Invoice metadata
   populateInvoiceMetadata(newRow, studentId, context, rowIndex);
 
-  // Copy lesson length from previous
   UtilityScriptLibrary.copyPreviousColumnToNew(newRow, prevRow, context.headerMap, context.prevHeaderMap,
                           { newCol: "Lesson Length", prevCol: "Lesson Length" });
 
-  // Set all program quantities to 0 with current rates
   setProgramQuantitiesForCarryover(newRow, context, quantityCols, currencyCols);
-
-  // Generate program formulas
   generateProgramFormulas(newRow, context, rowIndex, quantityCols, currencyCols);
 
-  // Apply past data
-  applyPastDataToRow(newRow, prevRow, context, currencyCols);
-  applyLateFeeToRow(newRow, context, currencyCols);
+  // Extract past balance for late fee before writing VLOOKUP formulas
+  var prevBalanceCol   = context.prevHeaderMap[norm("Current Balance")];
+  var pastBalanceValue = prevBalanceCol ? (UtilityScriptLibrary.safeParseFloat(prevRow[prevBalanceCol - 1]) || 0) : 0;
 
-  // Formulas
+  setPastColumnFormulas(newRow, context, rowIndex, currencyCols);
+  applyLateFeeToRow(newRow, context, currencyCols, pastBalanceValue);
+
   addInvoiceTotalFormula(newRow, context, rowIndex, currencyCols);
   populateCurrentBalanceFormula(newRow, context, rowIndex);
 
-  // Letter Type
   populateLetterType(newRow, context, "previous", prevRow);
 
-  return {
-    newRow: newRow,
-    quantityCols: quantityCols,
-    currencyCols: currencyCols
-  };
+  return { newRow: newRow, quantityCols: quantityCols, currencyCols: currencyCols };
 }
 
 function buildCarryoverStudents(previousData, existingStudentIds, context, allStudents, startingRowIndex) {
@@ -2239,6 +2075,12 @@ function buildMissingDocumentSentence(billingData) {
   }
 }
 
+function buildPastVlookupFormula(prevSheetName, prevColIndex, rowNum) {
+  // Range starts at col C (index 3), so VLOOKUP index = prevColIndex - 2
+  var lookupIndex = prevColIndex - 2;
+  return "=IFNA(VLOOKUP($C" + rowNum + ",'" + prevSheetName + "'!$C:$AZ," + lookupIndex + ",FALSE),\"\")";
+}
+
 function buildProgramDescription(programTotals, lessonLength) {
   var descriptions = [];
   
@@ -2342,38 +2184,6 @@ function buildTemplateVariables(studentData, billingData, templateType) {
   }
   
   return variables;
-}
-
-function calculateLateFee(pastBalance, paymentReceived, pastInvoiceNumber, rateMap) {
-  var lessonRate = parseFloat(rateMap["Lesson"]) || 0;
-  var gracePeriod = parseInt(rateMap["Grace Period"]) || 10;
-  
-  if (pastBalance <= lessonRate || paymentReceived > 0 || !pastInvoiceNumber) {
-    return 0;
-  }
-  
-  var dateMatch = pastInvoiceNumber.match(/-(\d{8})$/);
-  if (!dateMatch) return 0;
-  
-  var invoiceDateStr = dateMatch[1];
-  var invoiceDate = new Date(
-    parseInt(invoiceDateStr.substr(0,4)),
-    parseInt(invoiceDateStr.substr(4,2)) - 1,
-    parseInt(invoiceDateStr.substr(6,2))
-  );
-  
-  var dueDate = new Date(invoiceDate);
-  dueDate.setDate(dueDate.getDate() + 14);
-  
-  var lateFeeDate = new Date(dueDate);
-  lateFeeDate.setDate(lateFeeDate.getDate() + gracePeriod);
-  
-  var today = new Date();
-  if (today > lateFeeDate) {
-    return parseFloat(rateMap["Late Fee"]) || 0;
-  }
-  
-  return 0;
 }
 
 function calculateLessonEquivalents(studentId, actualLength) {
@@ -7155,7 +6965,6 @@ function populateBillingSheet(context, carryOverData) {
     var allStudents = formResult.students || [];
     writeAndFormatRows(billingSheet, allStudents);
 
-    // Re-registration pass
     var processedReregIds = {};
     if (context.reregMap && Object.keys(context.reregMap).length > 0) {
       var overwroteIds = applyReregistrationOverwrites(billingSheet, context.reregMap, existingIds);
@@ -7167,6 +6976,7 @@ function populateBillingSheet(context, carryOverData) {
     context.processedReregIds = processedReregIds;
 
     populateAllCumulativeColumns();
+    applyBillingConditionalFormatting(billingSheet);
 
   } catch (error) {
     UtilityScriptLibrary.debugLog("populateBillingSheet", "ERROR", "Failed", "", error.message);
@@ -7192,7 +7002,6 @@ function populateBillingSheetContinuingSemester(context, billingSheet, existingS
 
     writeAndFormatRows(billingSheet, allStudents);
 
-    // Re-registration pass
     var formStudentIdsMap = {};
     for (var fi = 0; fi < formResult.formStudentIds.length; fi++) {
       formStudentIdsMap[formResult.formStudentIds[fi]] = true;
@@ -7209,6 +7018,7 @@ function populateBillingSheetContinuingSemester(context, billingSheet, existingS
     context.processedReregIds = processedReregIds;
 
     populateAllCumulativeColumns();
+    applyBillingConditionalFormatting(billingSheet);
 
   } catch (error) {
     UtilityScriptLibrary.debugLog("populateBillingSheetContinuingSemester", "ERROR", "Failed", "", error.message);
@@ -7418,125 +7228,6 @@ function populateLetterType(newRow, context, sourceType, prevRow) {
     UtilityScriptLibrary.debugLog("populateLetterType", "ERROR", "Failed to populate letter type", 
                   "", error.message);
     // Don't throw - just log the error and continue
-  }
-}
-
-function populatePastBalanceAndCredit(newRow, pastRow, context, currencyCols) {
-  var h = context.headerMap;
-  var prevH = context.prevHeaderMap;
-  var norm = UtilityScriptLibrary.normalizeHeader;
-  
-  // === MONETARY BALANCE HANDLING ===
-  var pastBalanceCol = h[norm("Past Balance")];
-  var creditCol = h[norm("Credit")];
-  var currentBalanceCol = prevH[norm("Current Balance")];
-
-  if (currentBalanceCol && Array.isArray(pastRow) && pastRow.length >= currentBalanceCol) {
-    var rawValue = pastRow[currentBalanceCol - 1];
-    var previousBalance = typeof rawValue === "string"
-      ? parseFloat(rawValue.replace(/[^0-9.\-]/g, ""))
-      : parseFloat(rawValue);
-
-    if (previousBalance !== 0 && pastBalanceCol) {
-      newRow[pastBalanceCol - 1] = previousBalance; // Keep the sign (+/-)
-      UtilityScriptLibrary.addToCurrencyCols(currencyCols, pastBalanceCol, "Past Balance");
-    }
-  }
-  
-  // === PAST INVOICE NUMBER ===
-  var pastInvoiceNumberCol = h[norm("Past Invoice Number")];
-  var prevInvoiceNumberCol = prevH[norm("Invoice Number")];
-  if (pastInvoiceNumberCol && prevInvoiceNumberCol) {
-    newRow[pastInvoiceNumberCol - 1] = pastRow[prevInvoiceNumberCol - 1] || '';
-  }
-  
-  // === PAST CUMULATIVE HOURS (CRITICAL FOR CONTINUING CYCLES) ===
-  var pastCumTaughtCol = h[norm("Past Cumulative Hours Taught")];
-  var pastCumBilledCol = h[norm("Past Cumulative Hours Billed")];
-  var prevCumTaughtCol = prevH[norm("Current Cumulative Hours Taught")];
-  var prevCumBilledCol = prevH[norm("Current Cumulative Hours Billed")];
-  
-  if (pastCumTaughtCol && prevCumTaughtCol) {
-    var prevCumTaught = pastRow[prevCumTaughtCol - 1];
-    newRow[pastCumTaughtCol - 1] = (typeof prevCumTaught === 'number' || typeof prevCumTaught === 'string') 
-      ? parseFloat(prevCumTaught) || 0 
-      : 0;
-    
-    UtilityScriptLibrary.debugLog('populatePastBalanceAndCredit', 'DEBUG', 
-                                  'Set Past Cumulative Hours Taught',
-                                  'Value: ' + newRow[pastCumTaughtCol - 1], '');
-  }
-  
-  if (pastCumBilledCol && prevCumBilledCol) {
-    var prevCumBilled = pastRow[prevCumBilledCol - 1];
-    newRow[pastCumBilledCol - 1] = (typeof prevCumBilled === 'number' || typeof prevCumBilled === 'string') 
-      ? parseFloat(prevCumBilled) || 0 
-      : 0;
-    
-    UtilityScriptLibrary.debugLog('populatePastBalanceAndCredit', 'DEBUG', 
-                                  'Set Past Cumulative Hours Billed',
-                                  'Value: ' + newRow[pastCumBilledCol - 1], '');
-  }
-  
-  // === HOURS REMAINING HANDLING ===
-  var pastHoursRemainingCol = h[norm("Past Hours Remaining")];
-  var lessonCreditCol = h[norm("Lesson Credit")];
-  var lessonQuantityCol = h[norm("Lesson Quantity")];
-  var lessonLengthCol = h[norm("Lesson Length")];
-  var prevHoursRemainingCol = prevH[norm("Hours Remaining")];
-  
-  if (!pastHoursRemainingCol) {
-    UtilityScriptLibrary.debugLog('populatePastBalanceAndCredit', 'WARNING', 
-                                  'Past Hours Remaining column not found', '', '');
-    return;
-  }
-  
-  // Get previous Hours Remaining
-  var pastHoursRemaining = 0;
-  if (prevHoursRemainingCol && Array.isArray(pastRow) && pastRow.length >= prevHoursRemainingCol) {
-    var rawHours = pastRow[prevHoursRemainingCol - 1];
-    pastHoursRemaining = typeof rawHours === "string"
-      ? parseFloat(rawHours.replace(/[^0-9.\-]/g, ""))
-      : parseFloat(rawHours);
-    
-    if (isNaN(pastHoursRemaining)) {
-      pastHoursRemaining = 0;
-    }
-  }
-  
-  // Set Past Hours Remaining
-  newRow[pastHoursRemainingCol - 1] = pastHoursRemaining;
-  
-  UtilityScriptLibrary.debugLog('populatePastBalanceAndCredit', 'DEBUG', 
-                                'Set Past Hours Remaining',
-                                'Value: ' + pastHoursRemaining, '');
-  
-  // Calculate and set Lesson Credit ONLY if there's a quantity to bill
-  if (lessonCreditCol && lessonQuantityCol && lessonLengthCol && pastHoursRemaining > 0) {
-    var lessonQuantity = parseFloat(newRow[lessonQuantityCol - 1]) || 0;
-    var lessonLength = parseFloat(newRow[lessonLengthCol - 1]) || 0;
-    
-    if (lessonQuantity > 0 && lessonLength > 0) {
-      var lessonCredit = pastHoursRemaining / (lessonLength / 60);
-      newRow[lessonCreditCol - 1] = lessonCredit;
-      
-      UtilityScriptLibrary.debugLog('populatePastBalanceAndCredit', 'INFO', 
-                                    'Calculated Lesson Credit',
-                                    'Past Hours: ' + pastHoursRemaining + 
-                                    ', Length: ' + lessonLength + 
-                                    ', Quantity: ' + lessonQuantity +
-                                    ', Credit: ' + lessonCredit, '');
-    } else {
-      // No quantity to bill - don't apply credit
-      newRow[lessonCreditCol - 1] = 0;
-      
-      UtilityScriptLibrary.debugLog('populatePastBalanceAndCredit', 'DEBUG', 
-                                    'No credit applied - no quantity',
-                                    'Quantity: ' + lessonQuantity, '');
-    }
-  } else if (lessonCreditCol) {
-    // No credit to apply
-    newRow[lessonCreditCol - 1] = 0;
   }
 }
 
@@ -9172,7 +8863,7 @@ function runWeeklyLessonReconciliation(customDate) {
     }
     
     // Apply visual formatting to billing sheet (once at the end)
-    applyAdminVisualFormatting(billingSheet);
+    applyBillingConditionalFormatting(billingSheet);
     
     // Add lesson rows where needed (once at the end)
     expandTeacherAttendanceSheets();
@@ -9275,6 +8966,42 @@ function setDeliveryPreference(newRow, sourceRow, context, sourceIsForm) {
     var prevH = context.prevHeaderMap;
     var prevDeliveryCol = prevH[UtilityScriptLibrary.normalizeHeader("Delivery Preference")];
     newRow[deliveryPrefCol - 1] = (prevDeliveryCol) ? sourceRow[prevDeliveryCol - 1] : "";
+  }
+}
+
+function setPastColumnFormulas(newRow, context, rowNum, currencyCols) {
+  var h           = context.headerMap;
+  var prevH       = context.prevHeaderMap || {};
+  var norm        = UtilityScriptLibrary.normalizeHeader;
+  var prevSheetName = context.previousSheetName;
+
+  var mappings = [
+    { pastCol: "Past Balance",                    prevCol: "Current Balance",                currency: true,  hours: false },
+    { pastCol: "Past Invoice Number",             prevCol: "Invoice Number",                 currency: false, hours: false },
+    { pastCol: "Past Hours Remaining",            prevCol: "Hours Remaining",                currency: false, hours: true  },
+    { pastCol: "Past Cumulative Hours Taught",    prevCol: "Current Cumulative Hours Taught", currency: false, hours: true  },
+    { pastCol: "Past Cumulative Hours Billed",    prevCol: "Current Cumulative Hours Billed", currency: false, hours: true  }
+  ];
+
+  for (var i = 0; i < mappings.length; i++) {
+    var m = mappings[i];
+    var pastColIndex = h[norm(m.pastCol)];
+    if (!pastColIndex) continue;
+
+    if (!prevSheetName || !prevH[norm(m.prevCol)]) {
+      newRow[pastColIndex - 1] = "";
+      continue;
+    }
+
+    newRow[pastColIndex - 1] = buildPastVlookupFormula(prevSheetName, prevH[norm(m.prevCol)], rowNum);
+
+    if (m.currency) {
+      UtilityScriptLibrary.addToCurrencyCols(currencyCols, pastColIndex, m.pastCol);
+    }
+    if (m.hours) {
+      if (!context.hoursColumnsToFormat) context.hoursColumnsToFormat = [];
+      context.hoursColumnsToFormat.push(pastColIndex);
+    }
   }
 }
 
