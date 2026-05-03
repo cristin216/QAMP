@@ -2787,7 +2787,7 @@ function continueAttendanceSheetCreation(targetMonthName, targetYear) {
     // Step 1: Create a date in the target month for semester lookup
     var monthNames = UtilityScriptLibrary.getMonthNames();
     var monthIndex = monthNames.indexOf(targetMonthName);
-    var targetDate = new Date(targetYear, monthIndex, 15); // Use middle of month
+    var targetDate = new Date(targetYear, monthIndex, 15);
     
     // Step 2: Get semester for target date
     var semesterName = UtilityScriptLibrary.getSemesterForDate(targetDate);
@@ -2827,11 +2827,11 @@ function continueAttendanceSheetCreation(targetMonthName, targetYear) {
 
     var teacherData = teacherLookupSheet.getDataRange().getValues();
     var getCol = UtilityScriptLibrary.createColumnFinder(teacherLookupSheet);
-    var nameCol = getCol('Display Name') - 1;
+    var teacherIdCol = getCol('Teacher ID') - 1;
     var urlCol = getCol('Roster URL') - 1;
     var statusCol = getCol('Status') - 1;
 
-    if (nameCol === -1 || urlCol === -1 || statusCol === -1) {
+    if (teacherIdCol === -1 || urlCol === -1 || statusCol === -1) {
       throw new Error('Required columns not found in Enhanced Teacher Roster Lookup');
     }
     
@@ -2846,16 +2846,16 @@ function continueAttendanceSheetCreation(targetMonthName, targetYear) {
     
     for (var i = 1; i < teacherData.length; i++) {
       var row = teacherData[i];
-      var teacherName = row[nameCol];
+      var teacherId = String(row[teacherIdCol] || '').trim();
       var rosterUrl = row[urlCol];
       var status = row[statusCol];
       
-      if (status !== 'active' || !teacherName || !rosterUrl) {
+      if (status !== 'active' || !teacherId || !rosterUrl) {
         continue;
       }
       
       try {
-        var result = processTeacherForNewAttendance(teacherName, rosterUrl, targetMonthName);
+        var result = processTeacherForNewAttendance(teacherId, rosterUrl, targetMonthName);
         stats.processed++;
         
         if (result.created) {
@@ -2868,12 +2868,12 @@ function continueAttendanceSheetCreation(targetMonthName, targetYear) {
         
       } catch (error) {
         stats.errors.push({
-          teacher: teacherName,
+          teacher: teacherId,
           error: error.message
         });
         UtilityScriptLibrary.debugLog("continueAttendanceSheetCreation", "ERROR", 
                                       "Error processing teacher", 
-                                      teacherName, error.message);
+                                      teacherId, error.message);
       }
     }
     
@@ -5487,7 +5487,11 @@ function getBillingSheet(paymentDate, activeSheetName, shouldLog) {
 
       if (billingSheet) {
         UtilityScriptLibrary.debugLog('getBillingSheet', 'SUCCESS', 'Found billing sheet', billingMonth, '');
-        return billingSheet;
+        return {
+          sheet: billingSheet,
+          startDate: paymentStartDate,
+          endDate: paymentEndDate
+        };
       } else {
         UtilityScriptLibrary.debugLog('getBillingSheet', 'WARNING', 'Sheet not found in workbook', billingMonth, '');
       }
@@ -9105,11 +9109,11 @@ function runWeeklyLessonReconciliation(customDate) {
     
     var teacherData = teacherLookupSheet.getDataRange().getValues();
     var teacherHeaders = teacherData[0];
-    var displayNameCol = teacherHeaders.indexOf('Display Name');
+    var teacherIdCol = teacherHeaders.indexOf('Teacher ID');
     var rosterUrlCol = teacherHeaders.indexOf('Roster URL');
     var statusCol = teacherHeaders.indexOf('Status');
     
-    if (displayNameCol === -1 || rosterUrlCol === -1 || statusCol === -1) {
+    if (teacherIdCol === -1 || rosterUrlCol === -1 || statusCol === -1) {
       throw new Error('Required teacher columns not found in lookup sheet');
     }
     
@@ -9126,21 +9130,21 @@ function runWeeklyLessonReconciliation(customDate) {
     // SINGLE PASS: Process each teacher one at a time
     for (var i = 1; i < teacherData.length; i++) {
       var teacherRow = teacherData[i];
-      var teacherName = teacherRow[displayNameCol];
+      var teacherId = String(teacherRow[teacherIdCol] || '').trim();
       var rosterUrl = teacherRow[rosterUrlCol];
       var status = teacherRow[statusCol];
       
-      if (status !== 'active' || !teacherName || !rosterUrl) {
+      if (status !== 'active' || !teacherId || !rosterUrl) {
         stats.teachersSkipped++;
         continue;
       }
       
       try {
         UtilityScriptLibrary.debugLog("runWeeklyLessonReconciliation", "INFO", 
-                                      "Processing teacher", teacherName, "");
+                                      "Processing teacher", teacherId, "");
         
         var teacherStats = processTeacherReconciliation(
-          teacherName,
+          teacherId,
           rosterUrl,
           billingSheet,
           targetDate,
@@ -9154,15 +9158,15 @@ function runWeeklyLessonReconciliation(customDate) {
         
         UtilityScriptLibrary.debugLog("runWeeklyLessonReconciliation", "SUCCESS", 
                                       "Completed teacher", 
-                                      teacherName + " - Lessons: " + teacherStats.lessonsCollected + 
+                                      teacherId + " - Lessons: " + teacherStats.lessonsCollected + 
                                       ", Students: " + teacherStats.studentsUpdated, "");
         
       } catch (teacherError) {
         stats.teachersErrored++;
-        stats.errors.push(teacherName + ": " + teacherError.message);
+        stats.errors.push(teacherId + ": " + teacherError.message);
         UtilityScriptLibrary.debugLog("runWeeklyLessonReconciliation", "ERROR", 
                                       "Failed to process teacher", 
-                                      teacherName, teacherError.message);
+                                      teacherId, teacherError.message);
         // Continue with next teacher
       }
     }
