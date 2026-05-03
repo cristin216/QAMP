@@ -100,6 +100,181 @@ function handleFormEdit(e) {
   }
 }
 
+function handleReturningStudentSubmit(e) {
+  if (!e || !e.range || e.range.getSheet().getName() !== UtilityScriptLibrary.SHEET_MAP.studentReturningResponses.name) {
+    return;
+  }
+
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('handleReturningStudentSubmit', 'ERROR', 'Could not obtain lock', '', error.message);
+    return;
+  }
+
+  try {
+    UtilityScriptLibrary.debugLog('handleReturningStudentSubmit', 'INFO', 'Starting', '', '');
+
+    // === GET CURRENT SEMESTER SHEET ===
+    var semesterName = UtilityScriptLibrary.getCurrentSemesterName();
+    if (!semesterName) throw new Error('No current semester found in Calendar');
+
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var semesterSheet = ss.getSheetByName(semesterName);
+    if (!semesterSheet) throw new Error('Semester sheet not found: ' + semesterName);
+
+    // === EXTRACT RETURNING FORM DATA ===
+    var returningSheet = UtilityScriptLibrary.getSheet('studentReturningResponses');
+    if (!returningSheet) throw new Error('Returning Student Responses sheet not found');
+
+    var returningFieldMapSheet = UtilityScriptLibrary.getSheet('returningStudentFieldMap');
+    if (!returningFieldMapSheet) throw new Error('Returning Student FieldMap not found');
+
+    var returningFieldMap = UtilityScriptLibrary.getFieldMappingFromSheet(returningFieldMapSheet);
+    var returningHeaderMap = UtilityScriptLibrary.getHeaderMap(returningSheet);
+    var submittedRow = e.range.getRow();
+    var rowValues = returningSheet.getRange(submittedRow, 1, 1, returningSheet.getLastColumn()).getValues()[0];
+
+    var formData = {};
+    for (var normHeader in returningHeaderMap) {
+      var colIndex = returningHeaderMap[normHeader] - 1;
+      var internalName = returningFieldMap[normHeader];
+      if (internalName) {
+        formData[internalName] = rowValues[colIndex];
+      }
+    }
+
+    UtilityScriptLibrary.debugLog('handleReturningStudentSubmit', 'INFO', 'Extracted form data',
+      formData['Student First Name'] + ' ' + formData['Student Last Name'] + ' / ' + formData['Instrument'], '');
+
+    // === COMBINE CITY + ZIP ===
+    var city = String(formData['City'] || '').trim();
+    var zip  = String(formData['Zip']  || '').trim();
+    if (city || zip) {
+      formData['CityZip'] = city + ', NY ' + zip;
+    }
+    delete formData['City'];
+    delete formData['Zip'];
+
+    // === LOOK UP STUDENT IN CONTACTS ===
+    var studentsSheet = UtilityScriptLibrary.getSheet('students');
+    var studentKey = UtilityScriptLibrary.generateKey(
+      formData['Student Last Name'] || '',
+      formData['Student First Name'] || '',
+      formData['Instrument'] || ''
+    );
+    var studentRow = UtilityScriptLibrary.findStudentRow(studentsSheet, studentKey);
+    var studentMatched = studentRow !== -1;
+    var teacherId = '';
+
+    if (studentMatched) {
+      var getStudentCol = UtilityScriptLibrary.createColumnFinder(studentsSheet);
+      var studentData = studentsSheet.getRange(studentRow, 1, 1, studentsSheet.getLastColumn()).getValues()[0];
+      teacherId = String(studentData[getStudentCol('Teacher') - 1] || '').trim();
+
+      // === BACKFILL CONTACT DATA IF NO UPDATE NEEDED ===
+      var needsUpdate = String(formData['Needs Update'] || '').trim().toLowerCase();
+
+      if (!needsUpdate.startsWith('y')) {
+        var existingParentId = String(studentData[getStudentCol('Parent ID') - 1] || '').trim();
+
+        if (existingParentId) {
+          var parentsSheet = UtilityScriptLibrary.getSheet('parents');
+          var getParentCol = UtilityScriptLibrary.createColumnFinder(parentsSheet);
+          var parentData = parentsSheet.getDataRange().getValues();
+          var parentIdColNum = getParentCol('Parent ID');
+
+          for (var i = 1; i < parentData.length; i++) {
+            if (String(parentData[i][parentIdColNum - 1]).trim() === existingParentId) {
+              var pRow = parentData[i];
+              var pGet = function(field) { return String(pRow[getParentCol(field) - 1] || ''); };
+
+              // Override form email with on-file email so parent key always matches
+              formData['Email']             = pGet('Email');
+              formData['Salutation']        = pGet('Salutation');
+              formData['Parent First Name'] = pGet('Parent First Name');
+              formData['Parent Last Name']  = pGet('Parent Last Name');
+              formData['Phone']             = pGet('Phone');
+              // Set Address Formatted directly; leave CityZip empty so processParent
+              // skips re-parsing and uses this value as-is
+              formData['Address Formatted'] = pGet('Address Formatted');
+              formData['CityZip']           = '';
+              formData['Billing Preference']  = pGet('Billing Preference');
+              formData['Additional Contacts'] = pGet('Additional Contacts');
+
+              UtilityScriptLibrary.debugLog('handleReturningStudentSubmit', 'INFO',
+                'Backfilled contact data from parent record', existingParentId, '');
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    formData['Teacher'] = teacherId;
+
+    // === BUILD AND WRITE ROW TO SEMESTER SHEET ===
+    var semesterHeaderMap = UtilityScriptLibrary.getHeaderMap(semesterSheet);
+    var mainFieldMapSheet = UtilityScriptLibrary.getSheet('fieldMap');
+    if (!mainFieldMapSheet) throw new Error('Main FieldMap not found');
+    var mainFieldMap = UtilityScriptLibrary.getFieldMappingFromSheet(mainFieldMapSheet);
+
+    // Reverse mainFieldMap: internal name -> semester sheet column number
+    var internalToCol = {};
+    for (var h in semesterHeaderMap) {
+      var colNum = semesterHeaderMap[h];
+      var internal = mainFieldMap[h];
+      if (internal) {
+        internalToCol[internal] = colNum;
+      }
+    }
+
+    var numCols = semesterSheet.getLastColumn();
+    var newRow = [];
+    for (var j = 0; j < numCols; j++) newRow[j] = '';
+
+    for (var field in formData) {
+      var col = internalToCol[field];
+      if (col) newRow[col - 1] = formData[field];
+    }
+
+    // Always stamp timestamp
+    if (internalToCol['Timestamp']) newRow[internalToCol['Timestamp'] - 1] = new Date();
+
+    semesterSheet.appendRow(newRow);
+    var newRowNum = semesterSheet.getLastRow();
+
+    // === UNMATCHED: COLOR AND EXIT FOR ADMIN ===
+    if (!studentMatched) {
+      semesterSheet.getRange(newRowNum, 1, 1, numCols)
+        .setBackground(UtilityScriptLibrary.STYLES.WARNING.background)
+        .setFontColor(UtilityScriptLibrary.STYLES.WARNING.text);
+
+      if (internalToCol['Comments']) {
+        semesterSheet.getRange(newRowNum, internalToCol['Comments'])
+          .setValue('UNMATCHED RETURNING STUDENT — not found in Contacts. Assign teacher to process.');
+      }
+
+      UtilityScriptLibrary.debugLog('handleReturningStudentSubmit', 'WARNING',
+        'Student not found in Contacts — row flagged for admin',
+        formData['Student First Name'] + ' ' + formData['Student Last Name'] + ' / ' + formData['Instrument'], '');
+      return;
+    }
+
+    // === PROCESS THE ROW ===
+    processSingleRow(semesterSheet, newRowNum, semesterHeaderMap);
+
+    UtilityScriptLibrary.debugLog('handleReturningStudentSubmit', 'SUCCESS',
+      'Completed', formData['Student First Name'] + ' ' + formData['Student Last Name'], '');
+
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('handleReturningStudentSubmit', 'ERROR', 'Failed', '', error.message);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function onEdit(e) {
   var sheet = e.range.getSheet();
   var sheetName = sheet.getName();
@@ -3146,7 +3321,7 @@ function processSingleRow(sheet, row, headerMap) {
         folderIdColIndex = i;
       }
     }
-    
+
     if (yearColIndex === -1 || folderIdColIndex === -1) {
       UtilityScriptLibrary.debugLog("⚠️ Required columns not found in Year Metadata sheet.");
       return;
@@ -3163,12 +3338,12 @@ function processSingleRow(sheet, row, headerMap) {
       UtilityScriptLibrary.debugLog("⚠️ No roster folder found for year: " + year);
       return;
     }
-  
+
     var rosterFolderId = yearRow[folderIdColIndex];
     var rosterFolder = DriveApp.getFolderById(rosterFolderId);
     UtilityScriptLibrary.debugLog("✅ Found roster folder for year " + year);
 
-    processRoster(formData, sheet, row, headerMap, fieldMap, studentId, rosterFolder, year, semesterName);
+    processRoster(formData, sheet, row, headerMap, fieldMap, studentId, studentResult.teacherId, rosterFolder, year, semesterName);
 
   } catch (rosterError) {
     UtilityScriptLibrary.debugLog("⚠️ Error in roster processing: " + rosterError.message);
