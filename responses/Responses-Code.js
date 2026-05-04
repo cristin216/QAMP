@@ -1094,51 +1094,6 @@ function calculateExperienceStartRange(experience) {
   }
 }
 
-function calculateGraduationYear(grade) {
-  try {
-    UtilityScriptLibrary.debugLog("calculateGraduationYear - START - Input grade: " + JSON.stringify(grade) + " (type: " + typeof grade + ")");
-    
-    if (!grade) {
-      UtilityScriptLibrary.debugLog("calculateGraduationYear - EARLY EXIT - Grade is falsy");
-      return '';
-    }
-    
-    var currentYear = new Date().getFullYear();
-    var gradeStr = String(grade).toLowerCase().trim();
-    
-    UtilityScriptLibrary.debugLog("calculateGraduationYear - Processing gradeStr: '" + gradeStr + "'");
-    
-    // Replace includes() with indexOf() for compatibility
-    if (gradeStr.indexOf('adult') !== -1 || gradeStr.indexOf('college') !== -1) {
-      UtilityScriptLibrary.debugLog("calculateGraduationYear - Found adult/college keyword");
-      return 'Adult';
-    }
-    
-    // Handle various grade formats
-    if (gradeStr.indexOf('k') !== -1 || gradeStr === 'kindergarten') {
-      UtilityScriptLibrary.debugLog("calculateGraduationYear - Found kindergarten");
-      return currentYear + 13;
-    }
-    
-    // Extract number from grade (handles "1st", "2nd", "1", "2", etc.)
-    var gradeNum = parseInt(gradeStr.replace(/[^\d]/g, ''));
-    UtilityScriptLibrary.debugLog("calculateGraduationYear - Extracted grade number: " + gradeNum);
-    
-    if (isNaN(gradeNum) || gradeNum < 1 || gradeNum > 12) {
-      UtilityScriptLibrary.debugLog("calculateGraduationYear - Invalid grade number, returning empty string");
-      return '';
-    }
-    
-    var result = currentYear + (13 - gradeNum);
-    UtilityScriptLibrary.debugLog("calculateGraduationYear - SUCCESS - Calculated graduation year: " + result);
-    return result;
-    
-  } catch (error) {
-    UtilityScriptLibrary.debugLog("calculateGraduationYear - ERROR: " + error.message);
-    return '';
-  }
-}
-
 function checkIfStudentExists(rosterSheet, studentId, headerMap) {
   try {
     var rosterData = rosterSheet.getDataRange().getValues();
@@ -3436,7 +3391,7 @@ function processStudent(formData, contactsSheet, enrollmentTerm) {
       }
       
       if (getCol("Graduation Year")) {
-        var graduationYear = calculateGraduationYear(formData["Grade"]);
+        var graduationYear = UtilityScriptLibrary.calculateGraduationYear(formData["Grade"]);
         contactsSheet.getRange(studentRow, getCol("Graduation Year")).setValue(graduationYear);
       }
 
@@ -3476,7 +3431,7 @@ function processStudent(formData, contactsSheet, enrollmentTerm) {
       newRow[getCol("Student Lookup") - 1] = studentKey;
 
       if (getCol("Graduation Year")) {
-        var graduationYear = calculateGraduationYear(formData["Grade"]);
+        var graduationYear = UtilityScriptLibrary.calculateGraduationYear(formData["Grade"]);
         newRow[getCol("Graduation Year") - 1] = graduationYear;
       }
 
