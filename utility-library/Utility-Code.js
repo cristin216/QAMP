@@ -72,18 +72,15 @@ var SHEET_MAP = {
   billingTemplate: {
     name: 'Billing Template'
   },
+  reregistration: {
+    name: 'Reregistration'
+  },
   // Form Responses Workbook
   calendar: {
     name: 'Calendar'
   },
   fieldMap: {
     name: 'FieldMap'
-  },
-  studentReturningResponses: {
-     name: 'Reregistration' 
-  },
-  returningStudentFieldMap:  { 
-    name: 'Reregistration FieldMap' 
   },
   teacherRosterLookup: {
     name: 'Teacher Roster Lookup'
@@ -495,6 +492,42 @@ function bulkUpdateStudentStatus(studentsSheet, statusColumn, newValue, options)
       updatedCount: 0,
       changedRows: []
     };
+  }
+}
+
+function calculateGraduationYear(grade) {
+  try {
+    debugLog('calculateGraduationYear', 'INFO', 'Starting', 'Grade: ' + JSON.stringify(grade), '');
+
+    if (!grade) {
+      return '';
+    }
+
+    var currentYear = new Date().getFullYear();
+    var gradeStr = String(grade).toLowerCase().trim();
+
+    if (gradeStr.indexOf('adult') !== -1 || gradeStr.indexOf('college') !== -1) {
+      return 'Adult';
+    }
+
+    if (gradeStr.indexOf('k') !== -1 || gradeStr === 'kindergarten') {
+      return currentYear + 13;
+    }
+
+    var gradeNum = parseInt(gradeStr.replace(/[^\d]/g, ''));
+
+    if (isNaN(gradeNum) || gradeNum < 1 || gradeNum > 12) {
+      debugLog('calculateGraduationYear', 'WARNING', 'Invalid grade', 'Grade: ' + grade, '');
+      return '';
+    }
+
+    var result = currentYear + (13 - gradeNum);
+    debugLog('calculateGraduationYear', 'SUCCESS', 'Calculated', 'Year: ' + result, '');
+    return result;
+
+  } catch (error) {
+    debugLog('calculateGraduationYear', 'ERROR', 'Failed', '', error.message);
+    return '';
   }
 }
 
@@ -2641,9 +2674,9 @@ function inferWorkbookKey(sheetKey) {
     programList: 'billing',
     packages: 'billing',
     billingTemplate: 'billing',
+    reregistration: 'billing',
     calendar: 'formResponses',
     fieldMap: 'formResponses',
-    reregistration: 'formResponses',
     teacherRosterLookup: 'formResponses',
     ledgerTemplate: 'payments'
   };
