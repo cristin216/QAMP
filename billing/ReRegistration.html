@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QAMP Re-Registration</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: Arial, sans-serif;
+      font-size: 15px;
+      color: #333;
+      background: #f9f9f9;
+      padding: 16px;
+    }
+
+    .page-wrapper {
+      max-width: 680px;
+      margin: 0 auto;
+    }
+
+    /* HEADER */
+    .header {
+      background: #37a247;
+      color: #ffffff;
+      padding: 18px 20px;
+      border-radius: 6px 6px 0 0;
+      text-align: center;
+    }
+    .header h1 {
+      font-size: 22px;
+      font-weight: bold;
+      letter-spacing: 0.5px;
+    }
+    .header p {
+      font-size: 13px;
+      margin-top: 4px;
+      opacity: 0.9;
+    }
+
+    /* SUBHEADER */
+    .subheader {
+      background: #e0f0fa;
+      color: #2a4d7c;
+      padding: 12px 20px;
+      font-weight: bold;
+      font-size: 15px;
+      border-left: 4px solid #2a4d7c;
+      margin: 16px 0 10px 0;
+      border-radius: 2px;
+    }
+
+    /* CARD */
+    .card {
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+
+    /* FORM ELEMENTS */
+    label {
+      display: block;
+      font-weight: bold;
+      margin-bottom: 4px;
+      margin-top: 12px;
+      font-size: 14px;
+    }
+    label:first-child { margin-top: 0; }
+
+    input[type="text"],
+    input[type="email"],
+    input[type="tel"],
+    input[type="password"],
+    select,
+    textarea {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #bbb;
+      border-radius: 4px;
+      font-size: 14px;
+      font-family: Arial, sans-serif;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: #37a247;
+    }
+    textarea { resize: vertical; min-height: 80px; }
+
+    .field-row {
+      display: flex;
+      gap: 12px;
+    }
+    .field-row > div { flex: 1; }
+    .field-narrow { flex: 0 0 120px !important; }
+
+    /* READ-ONLY INFO */
+    .info-label {
+      font-size: 12px;
+      color: #666;
+      font-weight: normal;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-bottom: 2px;
+      margin-top: 10px;
+    }
+    .info-value {
+      font-size: 15px;
+      color: #222;
+      padding: 2px 0;
+    }
+
+    /* STUDENT CARD */
+    .student-card {
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      margin-bottom: 16px;
+      overflow: hidden;
+    }
+    .student-card-header {
+      background: #e0f0fa;
+      color: #2a4d7c;
+      padding: 10px 16px;
+      font-weight: bold;
+      font-size: 15px;
+    }
+    .student-card-body {
+      padding: 16px;
+      background: #fff;
+    }
+    .student-card-body:nth-child(even) {
+      background: #f3f3f3;
+    }
+
+    /* PACKAGE SELECTION */
+    .package-options { margin-top: 8px; }
+    .package-option {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 8px 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      margin-bottom: 6px;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .package-option:hover { border-color: #37a247; background: #f4fbf5; }
+    .package-option.selected { border-color: #37a247; background: #eaf7ec; }
+    .package-option.not-enrolling { border-color: #c0392b; }
+    .package-option.not-enrolling.selected { background: #fdf0ef; border-color: #c0392b; }
+    .package-option input[type="radio"] { margin-top: 2px; flex-shrink: 0; }
+    .package-label { font-weight: bold; font-size: 14px; }
+    .package-price { font-size: 13px; color: #555; margin-top: 2px; }
+
+    /* BILLING PREF */
+    .radio-group { display: flex; gap: 20px; margin-top: 6px; flex-wrap: wrap; }
+    .radio-option { display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 14px; }
+
+    /* BUTTONS */
+    .btn {
+      display: inline-block;
+      padding: 11px 28px;
+      border-radius: 4px;
+      font-size: 15px;
+      font-weight: bold;
+      cursor: pointer;
+      border: none;
+      transition: opacity 0.15s;
+    }
+    .btn:hover { opacity: 0.88; }
+    .btn-primary { background: #37a247; color: #fff; }
+    .btn-full { width: 100%; text-align: center; }
+
+    /* MESSAGES */
+    .error-box {
+      background: #f4cccc;
+      color: #7a1f1f;
+      border: 1px solid #e0a0a0;
+      border-radius: 4px;
+      padding: 12px 16px;
+      margin-bottom: 14px;
+      font-size: 14px;
+    }
+    .warning-note {
+      background: #f4cccc;
+      color: #7a1f1f;
+      padding: 10px 14px;
+      border-radius: 4px;
+      font-size: 13px;
+      margin-top: 10px;
+    }
+    .info-note {
+      background: #e0f0fa;
+      color: #2a4d7c;
+      padding: 10px 14px;
+      border-radius: 4px;
+      font-size: 13px;
+      margin-bottom: 14px;
+    }
+
+    /* SPINNER */
+    .spinner {
+      display: inline-block;
+      width: 18px; height: 18px;
+      border: 3px solid #ccc;
+      border-top-color: #37a247;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* THANK YOU */
+    .thankyou-box {
+      text-align: center;
+      padding: 40px 20px;
+    }
+    .thankyou-box h2 { color: #37a247; font-size: 24px; margin-bottom: 12px; }
+    .thankyou-box p { color: #555; font-size: 15px; line-height: 1.6; }
+
+    /* SECTION DIVIDER */
+    .section-divider {
+      border: none;
+      border-top: 1px solid #e0e0e0;
+      margin: 16px 0;
+    }
+
+    /* FOOTER */
+    .footer {
+      text-align: center;
+      font-size: 12px;
+      color: #999;
+      margin-top: 24px;
+      padding-bottom: 16px;
+    }
+
+    @media (max-width: 480px) {
+      .field-row { flex-direction: column; gap: 0; }
+      .field-narrow { flex: 1 !important; }
+    }
+  </style>
+</head>
+<body>
+<div class="page-wrapper">
+
+  <div class="header">
+    <h1>Quaker Arts Music Program</h1>
+    <p>Lesson Re-Registration</p>
+  </div>
+
+  <!-- PHASE 1: VERIFY -->
+  <div id="phase-verify">
+    <div class="card" style="margin-top:16px;">
+      <p style="margin-bottom:14px; line-height:1.6; font-size:14px;">
+        Welcome! To get started, please enter the last 4 digits of the phone number
+        we have on file for your account.
+      </p>
+      <div id="verify-error" class="error-box" style="display:none;"></div>
+      <label for="lastFour">Last 4 digits of phone number</label>
+      <input type="tel" id="lastFour" maxlength="4" pattern="\d{4}"
+             placeholder="_ _ _ _"
+             style="width:120px; font-size:20px; letter-spacing:6px; text-align:center;"
+             oninput="this.value=this.value.replace(/\D/g,'')">
+      <div style="margin-top:16px;">
+        <button class="btn btn-primary" onclick="verifyParent()">Continue</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PHASE 2: REGISTRATION FORM -->
+  <div id="phase-form" style="display:none;">
+
+    <!-- CONTACT INFO -->
+    <div class="subheader">Your Contact Information</div>
+    <div class="card">
+      <p class="info-note">Please review and update your information below. Changes will be saved when you submit.</p>
+
+      <div class="field-row">
+        <div>
+          <label for="firstName">First Name</label>
+          <input type="text" id="firstName" readonly
+                 style="background:#f3f3f3; color:#555;">
+        </div>
+        <div>
+          <label for="lastName">Last Name</label>
+          <input type="text" id="lastName" readonly
+                 style="background:#f3f3f3; color:#555;">
+        </div>
+      </div>
+
+      <label for="email">Email</label>
+      <input type="email" id="email">
+
+      <label for="email2">Second Email (optional)</label>
+      <input type="email" id="email2">
+
+      <label for="phone">Phone Number</label>
+      <input type="tel" id="phone">
+
+      <label>Mailing Address</label>
+      <input type="text" id="addrStreet" placeholder="Street address" style="margin-bottom:6px;">
+      <div class="field-row">
+        <div>
+          <input type="text" id="addrCity" placeholder="City">
+        </div>
+        <div class="field-narrow">
+          <input type="text" id="addrZip" placeholder="Zip" maxlength="5"
+                 oninput="this.value=this.value.replace(/\D/g,'')">
+        </div>
+      </div>
+
+      <label>Bill delivery preference</label>
+      <div class="radio-group">
+        <label class="radio-option">
+          <input type="radio" name="billingPref" value="Mail"> Mail
+        </label>
+        <label class="radio-option">
+          <input type="radio" name="billingPref" value="Email"> Email
+        </label>
+        <label class="radio-option">
+          <input type="radio" name="billingPref" value="Both"> Both
+        </label>
+      </div>
+
+      <label for="additionalContacts">Additional contacts (optional)</label>
+      <textarea id="additionalContacts" placeholder="Anyone we should cc on correspondence, another adult who may bring students to lessons, etc."></textarea>
+    </div>
+
+    <!-- STUDENTS -->
+    <div class="subheader">Lesson Registration</div>
+    <div class="info-note">
+      For each student, select the lesson package you'd like for the upcoming semester,
+      or indicate they will not be enrolling.
+    </div>
+    <div id="students-container"></div>
+
+    <!-- SUBMIT -->
+    <div class="card">
+      <div id="submit-error" class="error-box" style="display:none;"></div>
+      <button class="btn btn-primary btn-full" onclick="submitForm()">Submit Re-Registration</button>
+    </div>
+
+  </div>
+
+  <!-- THANK YOU -->
+  <div id="phase-thankyou" style="display:none;">
+    <div class="card" style="margin-top:16px;">
+      <div class="thankyou-box">
+        <h2>Thank you!</h2>
+        <p>Your re-registration has been received. We'll be in touch with your invoice for the upcoming semester.</p>
+        <p style="margin-top:12px;">If you have any questions, please contact us at
+          <a href="mailto:admin@quakermusic.org" style="color:#37a247;">admin@quakermusic.org</a>.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ERROR PAGE -->
+  <div id="phase-error" style="display:none;">
+    <div class="card" style="margin-top:16px;">
+      <div class="error-box" id="page-error-msg"></div>
+      <p style="font-size:14px; line-height:1.6; color:#555;">
+        Please contact us at
+        <a href="mailto:admin@quakermusic.org" style="color:#37a247;">admin@quakermusic.org</a>
+        and we'll get you sorted out.
+      </p>
+    </div>
+  </div>
+
+  <div class="footer">Quaker Arts Music Program &bull; PO Box 372, Orchard Park, NY 14127</div>
+</div>
+
+<script>
+  var parentId = '<?= parentId ?>';
+  var parentData = null;
+  var packagesData = null;
+
+  // ── INIT ──────────────────────────────────────────────────────────────────
+
+  (function init() {
+    if (!parentId) {
+      showPageError('This registration link is invalid or incomplete.');
+      return;
+    }
+    // Allow Enter key on phase 1
+    document.getElementById('lastFour').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') verifyParent();
+    });
+  })();
+
+  // ── PHASE 1: VERIFY ───────────────────────────────────────────────────────
+
+  function verifyParent() {
+    var lastFour = document.getElementById('lastFour').value.trim();
+    if (lastFour.length !== 4) {
+      showVerifyError('Please enter exactly 4 digits.');
+      return;
+    }
+
+    hideVerifyError();
+    setVerifyLoading(true);
+
+    google.script.run
+      .withSuccessHandler(function(result) {
+        setVerifyLoading(false);
+        if (!result.success) {
+          showVerifyError(result.message || 'Verification failed. Please try again.');
+          return;
+        }
+        parentData = result.parent;
+        packagesData = result.packages;
+        buildForm(result.parent, result.students, result.packages);
+        document.getElementById('phase-verify').style.display = 'none';
+        document.getElementById('phase-form').style.display = 'block';
+        window.scrollTo(0, 0);
+      })
+      .withFailureHandler(function(err) {
+        setVerifyLoading(false);
+        showVerifyError('Error: ' + (err.message || JSON.stringify(err)));
+      })
+      .verifyAndGetParentData(parentId, lastFour);
+  }
+
+  function setVerifyLoading(loading) {
+    var btn = document.querySelector('#phase-verify .btn');
+    btn.disabled = loading;
+    btn.innerHTML = loading
+      ? '<span class="spinner"></span>Verifying...'
+      : 'Continue';
+  }
+
+  function showVerifyError(msg) {
+    var el = document.getElementById('verify-error');
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+  function hideVerifyError() {
+    document.getElementById('verify-error').style.display = 'none';
+  }
+
+  // ── BUILD FORM ────────────────────────────────────────────────────────────
+
+  function buildForm(parent, students, packages) {
+    // Contact fields
+    document.getElementById('firstName').value   = parent.firstName || '';
+    document.getElementById('lastName').value    = parent.lastName  || '';
+    document.getElementById('email').value       = parent.email     || '';
+    document.getElementById('email2').value      = parent.email2    || '';
+    document.getElementById('phone').value       = parent.phone     || '';
+    document.getElementById('additionalContacts').value = parent.additionalContacts || '';
+
+    // Parse address
+    var addr = parent.address || '';
+    var addrLines = addr.split('\n');
+    document.getElementById('addrStreet').value = addrLines[0] || '';
+    if (addrLines[1]) {
+      // Format: "City, NY 12345"
+      var cityLine = addrLines[1];
+      var zipMatch = cityLine.match(/(\d{5})/);
+      var zip = zipMatch ? zipMatch[1] : '';
+      var city = cityLine.replace(/,?\s*NY\s*\d{0,5}$/, '').trim();
+      document.getElementById('addrCity').value = city;
+      document.getElementById('addrZip').value  = zip;
+    }
+
+    // Billing preference
+    var pref = (parent.billingPreference || '').trim();
+    var radios = document.querySelectorAll('input[name="billingPref"]');
+    for (var i = 0; i < radios.length; i++) {
+      if (radios[i].value === pref) { radios[i].checked = true; break; }
+    }
+
+    // Students
+    var container = document.getElementById('students-container');
+    container.innerHTML = '';
+    for (var s = 0; s < students.length; s++) {
+      container.appendChild(buildStudentCard(students[s], packages, s));
+    }
+  }
+
+  function buildStudentCard(student, packages, index) {
+    var card = document.createElement('div');
+    card.className = 'student-card';
+    card.id = 'student-card-' + index;
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'student-card-header';
+    header.textContent = student.firstName + ' ' + student.lastName;
+    card.appendChild(header);
+
+    // Body
+    var body = document.createElement('div');
+    body.className = 'student-card-body';
+
+    // Read-only info row + lesson length dropdown
+    body.innerHTML +=
+      '<div class="field-row" style="margin-bottom:12px;">' +
+        '<div><div class="info-label">Instrument</div><div class="info-value">' + esc(student.instrument) + '</div></div>' +
+        '<div><div class="info-label">Teacher</div><div class="info-value">' + esc(student.teacher) + '</div></div>' +
+        '<div><label style="margin-top:0;">Lesson Length</label>' +
+          '<select id="lessonLength-' + index + '">' +
+            '<option value="30"' + (student.lessonLength === 30 ? ' selected' : '') + '>30 minutes</option>' +
+            '<option value="45"' + (student.lessonLength === 45 ? ' selected' : '') + '>45 minutes</option>' +
+            '<option value="60"' + (student.lessonLength === 60 ? ' selected' : '') + '>60 minutes</option>' +
+          '</select>' +
+        '</div>' +
+      '</div>';
+
+    // Divider
+    body.innerHTML += '<hr class="section-divider">';
+
+    // Editable student info
+    body.innerHTML +=
+      '<div class="field-row">' +
+        '<div><label>Grade</label>' +
+          '<input type="text" id="grade-' + index + '" value="' + esc(student.grade) + '" placeholder="e.g. 5, Adult"></div>' +
+        '<div><label>School District</label>' +
+          '<input type="text" id="school-' + index + '" value="' + esc(student.school) + '"></div>' +
+        '<div><label>School Music Teacher</label>' +
+          '<input type="text" id="schoolTeacher-' + index + '" value="' + esc(student.schoolTeacher) + '"></div>' +
+      '</div>';
+
+    body.innerHTML += '<hr class="section-divider"><label style="margin-bottom:8px;">Lesson Package</label>';
+
+    // Package options
+    var pkgDiv = document.createElement('div');
+    pkgDiv.className = 'package-options';
+    pkgDiv.id = 'packages-' + index;
+
+    var pkgList = packages.packages;
+
+    for (var p = 0; p < pkgList.length; p++) {
+      var pkg = pkgList[p];
+      var price = pkg.prices[student.lessonLength] || pkg.prices[30];
+      var opt = document.createElement('label');
+      opt.className = 'package-option';
+      opt.innerHTML =
+        '<input type="radio" name="package-' + index + '" value="' + esc(pkg.name) + '" data-count="' + pkg.lessonCount + '">' +
+        '<div><div class="package-label">' + esc(pkg.name) + ' — ' + pkg.lessonCount + ' lessons</div>' +
+        '<div class="package-price" id="pkg-price-' + index + '-' + p + '">$' + price.toFixed(2) + '</div></div>';
+      opt.querySelector('input').addEventListener('change', function(idx) {
+        return function() { highlightPackages(idx); };
+      }(index));
+      pkgDiv.appendChild(opt);
+    }
+
+    // Not enrolling option
+    var notOpt = document.createElement('label');
+    notOpt.className = 'package-option not-enrolling';
+    notOpt.innerHTML =
+      '<input type="radio" name="package-' + index + '" value="Not Enrolled" data-count="0">' +
+      '<div><div class="package-label">Not enrolling this semester</div></div>';
+    notOpt.querySelector('input').addEventListener('change', function(idx) {
+      return function() { highlightPackages(idx); };
+    }(index));
+    pkgDiv.appendChild(notOpt);
+
+    body.appendChild(pkgDiv);
+
+    // Validation warning placeholder
+    var warn = document.createElement('div');
+    warn.className = 'warning-note';
+    warn.id = 'pkg-warn-' + index;
+    warn.style.display = 'none';
+    warn.textContent = 'Please select a package or indicate not enrolling.';
+    body.appendChild(warn);
+
+      card.appendChild(body);
+
+      // Store student data on card for retrieval
+      card.dataset.studentId    = student.studentId;
+      card.dataset.studentIndex = index;
+
+      // Wire up lesson length change → update prices
+      (function(idx, pkgs) {
+        var select = card.querySelector('#lessonLength-' + idx);
+        select.addEventListener('change', function() {
+          updatePackagePrices(idx, pkgs);
+        });
+      })(index, packages);
+
+      return card;
+    
+  }
+
+function updatePackagePrices(index, packages) {
+    var select = document.getElementById('lessonLength-' + index);
+    var length = parseInt(select.value);
+    var pkgList = packages.packages;
+    for (var p = 0; p < pkgList.length; p++) {
+      var price = pkgList[p].prices[length] || pkgList[p].prices[30];
+      var el = document.getElementById('pkg-price-' + index + '-' + p);
+      if (el) el.textContent = '$' + price.toFixed(2);
+    }
+  }
+
+  function highlightPackages(index) {
+    var options = document.querySelectorAll('#packages-' + index + ' .package-option');
+    for (var i = 0; i < options.length; i++) {
+      var radio = options[i].querySelector('input[type="radio"]');
+      if (radio.checked) {
+        options[i].classList.add('selected');
+      } else {
+        options[i].classList.remove('selected');
+      }
+    }
+    document.getElementById('pkg-warn-' + index).style.display = 'none';
+  }
+
+
+  // ── SUBMIT ────────────────────────────────────────────────────────────────
+
+  function submitForm() {
+    hideSubmitError();
+
+    var cards = document.querySelectorAll('.student-card');
+    var students = [];
+    var valid = true;
+
+    for (var i = 0; i < cards.length; i++) {
+      var card = cards[i];
+      var idx = parseInt(card.dataset.studentIndex);
+      var studentId = card.dataset.studentId;
+      var lessonLength = parseInt(document.getElementById('lessonLength-' + idx).value);
+
+      var selected = document.querySelector('input[name="package-' + idx + '"]:checked');
+      if (!selected) {
+        document.getElementById('pkg-warn-' + idx).style.display = 'block';
+        valid = false;
+        continue;
+      }
+
+      var packageName  = selected.value;
+      var lessonCount  = parseInt(selected.dataset.count) || 0;
+      var enrollment   = packageName === 'Not Enrolled' ? 'Not Enrolled' : '';
+
+      students.push({
+        studentId:     studentId,
+        lessonLength:  lessonLength,
+        packageName:   enrollment === 'Not Enrolled' ? '' : packageName,
+        lessonCount:   enrollment === 'Not Enrolled' ? 0  : lessonCount,
+        enrollment:    enrollment,
+        grade:         document.getElementById('grade-' + idx).value.trim(),
+        school:        document.getElementById('school-' + idx).value.trim(),
+        schoolTeacher: document.getElementById('schoolTeacher-' + idx).value.trim()
+      });
+    }
+
+    if (!valid) {
+      showSubmitError('Please make a selection for every student before submitting.');
+      return;
+    }
+
+    // Build contact changes — only send fields that differ from original
+    var contactChanges = {};
+    var orig = parentData;
+
+    var emailVal  = document.getElementById('email').value.trim();
+    var email2Val = document.getElementById('email2').value.trim();
+    var phoneVal  = document.getElementById('phone').value.trim();
+    var streetVal = document.getElementById('addrStreet').value.trim();
+    var cityVal   = document.getElementById('addrCity').value.trim();
+    var zipVal    = document.getElementById('addrZip').value.trim();
+    var addlVal   = document.getElementById('additionalContacts').value.trim();
+
+    var selectedPref = document.querySelector('input[name="billingPref"]:checked');
+    var prefVal = selectedPref ? selectedPref.value : '';
+
+    if (emailVal  !== (orig.email  || '')) contactChanges['Email']               = emailVal;
+    if (email2Val !== (orig.email2 || '')) contactChanges['Email 2']             = email2Val;
+    if (phoneVal  !== (orig.phone  || '')) contactChanges['Phone']               = phoneVal;
+    if (prefVal   !== (orig.billingPreference || '')) contactChanges['Billing Preference'] = prefVal;
+    if (addlVal   !== (orig.additionalContacts || '')) contactChanges['Additional Contacts'] = addlVal;
+
+    // Address: parse original to compare
+    var origAddr   = orig.address || '';
+    var origLines  = origAddr.split('\n');
+    var origStreet = origLines[0] || '';
+    var origLine2  = origLines[1] || '';
+    var origZipMatch = origLine2.match(/(\d{5})/);
+    var origZip    = origZipMatch ? origZipMatch[1] : '';
+    var origCity   = origLine2.replace(/,?\s*NY\s*\d{0,5}$/, '').trim();
+
+    if (streetVal !== origStreet || cityVal !== origCity || zipVal !== origZip) {
+      contactChanges.street = streetVal;
+      contactChanges.city   = cityVal;
+      contactChanges.zip    = zipVal;
+    }
+
+    var data = {
+      parentId:       parentData.parentId,
+      students:       students,
+      contactChanges: Object.keys(contactChanges).length > 0 ? contactChanges : null
+    };
+
+    setSubmitLoading(true);
+
+    google.script.run
+      .withSuccessHandler(function(result) {
+        setSubmitLoading(false);
+        if (!result.success) {
+          showSubmitError(result.message || 'Submission failed. Please try again or contact us.');
+          return;
+        }
+        document.getElementById('phase-form').style.display = 'none';
+        document.getElementById('phase-thankyou').style.display = 'block';
+        window.scrollTo(0, 0);
+      })
+      .withFailureHandler(function(err) {
+        setSubmitLoading(false);
+        showSubmitError('An error occurred. Please try again or contact us at admin@quakermusic.org.');
+      })
+      .submitReregistration(data);
+  }
+
+  function setSubmitLoading(loading) {
+    var btn = document.querySelector('#phase-form .btn-primary');
+    btn.disabled = loading;
+    btn.innerHTML = loading
+      ? '<span class="spinner"></span>Submitting...'
+      : 'Submit Re-Registration';
+  }
+
+  function showSubmitError(msg) {
+    var el = document.getElementById('submit-error');
+    el.textContent = msg;
+    el.style.display = 'block';
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  function hideSubmitError() {
+    document.getElementById('submit-error').style.display = 'none';
+  }
+
+  // ── UTILITIES ─────────────────────────────────────────────────────────────
+
+  function showPageError(msg) {
+    document.getElementById('phase-verify').style.display = 'none';
+    document.getElementById('page-error-msg').textContent = msg;
+    document.getElementById('phase-error').style.display = 'block';
+  }
+
+  function esc(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+</script>
+</body>
+</html>

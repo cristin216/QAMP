@@ -612,103 +612,6 @@ function setupRosterTemplateProtection(sheet) {
       }
 }
 
-function submitReregistration(data) {
-      try {
-        UtilityScriptLibrary.debugLog('submitReregistration', 'INFO', 'Starting', 'Parent ID: ' + data.parentId, '');
-        var norm = UtilityScriptLibrary.normalizeHeader;
-
-        var billingSheet = getCurrentBillingSheet();
-        if (!billingSheet) {
-          return { success: false, message: 'Could not find current billing sheet.' };
-        }
-
-        var billingHeaderMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
-        var billingData = billingSheet.getDataRange().getValues();
-        var billingStudentIdCol = billingHeaderMap[norm('Student ID')];
-        var billingLessonQtyCol = billingHeaderMap[norm('Lesson Quantity')];
-
-        if (!billingStudentIdCol || !billingLessonQtyCol) {
-          return { success: false, message: 'Required billing columns not found.' };
-        }
-
-        var updatedStudents = [];
-        var errors = [];
-
-        for (var i = 0; i < data.students.length; i++) {
-          var student = data.students[i];
-          if (!student.reregister) continue;
-
-          var found = false;
-          for (var j = 1; j < billingData.length; j++) {
-            if (String(billingData[j][billingStudentIdCol - 1]).trim() === student.studentId) {
-              billingSheet.getRange(j + 1, billingLessonQtyCol).setValue(parseInt(student.lessonCount) || 0);
-              updatedStudents.push(student.firstName + ' ' + student.lastName);
-              found = true;
-              break;
-            }
-          }
-
-          if (!found) {
-            errors.push(student.firstName + ' ' + student.lastName + ' not found in current billing cycle.');
-            UtilityScriptLibrary.debugLog('submitReregistration', 'WARNING', 'Student not in billing sheet', student.studentId, '');
-          }
-        }
-
-        // Update parent contact info if changes were submitted
-        if (data.contactChanges) {
-          var parentsSheet = UtilityScriptLibrary.getSheet('parents');
-          var parentHeaderMap = UtilityScriptLibrary.getHeaderMap(parentsSheet);
-          var parentRow = UtilityScriptLibrary.findParentRow(parentsSheet, data.parentId, '');
-
-          if (parentRow !== -1) {
-            var changes = data.contactChanges;
-            var editableFields = ['Email', 'Email 2', 'Phone', 'Address Formatted', 'Billing Preference', 'Additional Contacts'];
-
-            var fieldsObj = {};
-            for (var k = 0; k < editableFields.length; k++) {
-              var field = editableFields[k];
-              if (changes[field] !== undefined && changes[field] !== null) {
-                fieldsObj[field] = changes[field];
-              }
-            }
-
-            // Regenerate lookup key if email changed
-            var newLookupKey = null;
-            if (changes['Email'] !== undefined) {
-              var parentRowValues = parentsSheet.getRange(parentRow, 1, 1, parentsSheet.getLastColumn()).getValues()[0];
-              var lastNameCol = parentHeaderMap[norm('Parent Last Name')];
-              var firstNameCol = parentHeaderMap[norm('Parent First Name')];
-              newLookupKey = UtilityScriptLibrary.generateKey(
-                String(parentRowValues[lastNameCol - 1] || '').trim(),
-                String(parentRowValues[firstNameCol - 1] || '').trim(),
-                changes['Email']
-              );
-            }
-
-            UtilityScriptLibrary.updateParentContactFields(
-              parentsSheet, parentRow, fieldsObj, { newLookupKey: newLookupKey }
-            );
-
-            UtilityScriptLibrary.debugLog('submitReregistration', 'INFO', 'Parent contact updated', 'Parent ID: ' + data.parentId, '');
-          }
-        }
-
-        UtilityScriptLibrary.debugLog('submitReregistration', 'SUCCESS', 'Re-registration complete',
-          'Updated students: ' + updatedStudents.join(', '), '');
-
-        return {
-          success: true,
-          updatedStudents: updatedStudents,
-          errors: errors,
-          message: 'Re-registration submitted successfully!'
-        };
-
-      } catch (error) {
-        UtilityScriptLibrary.debugLog('submitReregistration', 'ERROR', 'Failed', '', error.message);
-        return { success: false, message: 'An error occurred. Please try again or contact us.' };
-      }
-}
-
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
@@ -5405,9 +5308,9 @@ function getCurrentBillingCycleDates() {
 
 function getCurrentBillingSheet() {
   try {
-    UtilityScriptLibrary.debugLog("getCurrentBillingSheet", "INFO", "Starting billing sheet lookup", "", "");
-    
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    UtilityScriptLibrary.debugLog('getCurrentBillingSheet', 'INFO', 'Starting billing sheet lookup', '', '');
+
+    var ss = UtilityScriptLibrary.getWorkbook('billing');
     var metadataSheet = ss.getSheetByName('Billing Metadata');
     
     if (!metadataSheet) {
@@ -9351,7 +9254,63 @@ function submitReregistration(data) {
       }
     }
 
-    // === PHASE 2: UPDATE PARENT CONTACT INFO IF CHANGES SUBMITTED ===
+    // === PHASE 2: UPDATE STUDENT INFO IN CONTACTS ===
+    var studentsSheet = UtilityScriptLibrary.getSheet('students');
+    var studentHeaderMap = UtilityScriptLibrary.getHeaderMap(studentsSheet);
+
+    for (var j = 0; j < data.students.length; j++) {
+      var student = data.students[j];
+      if (!student.studentId) continue;
+
+      try {
+        var studentsData = studentsSheet.getDataRange().getValues();
+        var studentIdCol = studentHeaderMap[norm('Student ID')];
+        var studentRow = -1;
+
+        for (var k = 1; k < studentsData.length; k++) {
+          if (String(studentsData[k][studentIdCol - 1]).trim() === student.studentId) {
+            studentRow = k + 1;
+            break;
+          }
+        }
+
+        if (studentRow === -1) {
+          UtilityScriptLibrary.debugLog('submitReregistration', 'WARNING', 'Student not found in Contacts',
+            student.studentId, '');
+          continue;
+        }
+
+        var gradeCol        = studentHeaderMap[norm('Grade')];
+        var gradYearCol     = studentHeaderMap[norm('Graduation Year')];
+        var schoolCol       = studentHeaderMap[norm('School District')];
+        var schoolTeachCol  = studentHeaderMap[norm('School Teacher')];
+
+        if (gradeCol && student.grade !== undefined) {
+          studentsSheet.getRange(studentRow, gradeCol).setValue(student.grade);
+        }
+        if (gradYearCol && student.grade !== undefined) {
+          studentsSheet.getRange(studentRow, gradYearCol).setValue(
+            UtilityScriptLibrary.calculateGraduationYear(student.grade)
+          );
+        }
+        if (schoolCol && student.school !== undefined) {
+          studentsSheet.getRange(studentRow, schoolCol).setValue(student.school);
+        }
+        if (schoolTeachCol && student.schoolTeacher !== undefined) {
+          studentsSheet.getRange(studentRow, schoolTeachCol).setValue(student.schoolTeacher);
+        }
+
+        UtilityScriptLibrary.debugLog('submitReregistration', 'INFO', 'Student info updated in Contacts',
+          student.studentId, '');
+
+      } catch (studentError) {
+        errors.push('Student info update ' + student.studentId + ': ' + studentError.message);
+        UtilityScriptLibrary.debugLog('submitReregistration', 'ERROR', 'Failed to update student info',
+          student.studentId, studentError.message);
+      }
+    }
+
+    // === PHASE 3: UPDATE PARENT CONTACT INFO IF CHANGES SUBMITTED ===
     if (data.contactChanges) {
       try {
         var parentsSheet = UtilityScriptLibrary.getSheet('parents');
@@ -9360,18 +9319,39 @@ function submitReregistration(data) {
 
         if (parentRow !== -1) {
           var changes = data.contactChanges;
+
+          // Assemble Address Formatted from separate fields if provided
+          if (changes.street !== undefined || changes.city !== undefined || changes.zip !== undefined) {
+            var parentsData = parentsSheet.getDataRange().getValues();
+            var addrCol = parentHeaderMap[norm('Address Formatted')];
+            var existingAddr = addrCol
+              ? String(parentsData[parentRow - 1][addrCol - 1] || '').trim()
+              : '';
+            var addrParts = existingAddr.split('\n');
+            var street = changes.street !== undefined ? changes.street : (addrParts[0] || '');
+            var cityZipLine = addrParts[1] || '';
+            var city = changes.city !== undefined
+              ? changes.city
+              : cityZipLine.replace(/,\s*NY.*$/, '').trim();
+            var zip = changes.zip !== undefined
+              ? changes.zip
+              : (cityZipLine.match(/(\d{5})/) || [])[1] || '';
+            changes['Address Formatted'] = UtilityScriptLibrary.formatAddress(street, city, zip);
+            delete changes.street;
+            delete changes.city;
+            delete changes.zip;
+          }
+
           var editableFields = ['Email', 'Email 2', 'Phone', 'Address Formatted',
                                 'Billing Preference', 'Additional Contacts'];
-
           var fieldsObj = {};
-          for (var k = 0; k < editableFields.length; k++) {
-            var field = editableFields[k];
+          for (var m = 0; m < editableFields.length; m++) {
+            var field = editableFields[m];
             if (changes[field] !== undefined && changes[field] !== null) {
               fieldsObj[field] = changes[field];
             }
           }
 
-          // Regenerate lookup key if email changed
           var newLookupKey = null;
           if (changes['Email'] !== undefined) {
             var parentRowValues = parentsSheet.getRange(parentRow, 1, 1,
@@ -9966,6 +9946,9 @@ function verifyAndGetParentData(parentId, lastFourPhone) {
         lastName: sGet('Student Last Name'),
         instrument: sGet('Instrument'),
         teacher: sGet('Teacher'),
+        grade: sGet('Grade'),
+        school: sGet('School District'),
+        schoolTeacher: sGet('School Teacher'),
         lessonLength: lessonLengthLookup[sId] || 30
       });
     }
