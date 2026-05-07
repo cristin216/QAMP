@@ -3045,6 +3045,61 @@ function prefillAttendanceDatesForStudent(rowValues, headers) {
   }
 }
 
+function promptForCustomToday() {
+  if (!isHistoricalDataInputEnabled()) {
+    return new Date();
+  }
+
+  return promptForDate({
+    title: 'Historical Data Entry',
+    message: 'Enter the date to use as "today" (MM/DD/YYYY).',
+    defaultDate: new Date(),
+    cancelMessage: 'Billing cycle setup cancelled.'
+  });
+}
+
+function promptForDate(config) {
+  // config: {
+  //   title: string,
+  //   message: string,
+  //   defaultDate: Date|null,  // if provided, blank input returns this date
+  //   cancelMessage: string    // optional
+  // }
+  // Returns: Date or null (cancelled)
+
+  var ui = SpreadsheetApp.getUi();
+  var cancelMessage = config.cancelMessage || 'Cancelled.';
+
+  var message = config.message;
+  if (config.defaultDate) {
+    var defaultStr = formatDateFlexible(config.defaultDate, "MM/dd/yyyy");
+    message += '\nLeave blank for ' + defaultStr + '.';
+  }
+
+  var response = ui.prompt(config.title, message, ui.ButtonSet.OK_CANCEL);
+
+  if (response.getSelectedButton() !== ui.Button.OK) {
+    ui.alert('❌ ' + cancelMessage);
+    return null;
+  }
+
+  var dateString = response.getResponseText().trim();
+
+  if (dateString === '') {
+    if (config.defaultDate) return config.defaultDate;
+    ui.alert('❌ A date is required.');
+    return null;
+  }
+
+  var parsed = parseDateFromString(dateString);
+  if (!parsed) {
+    ui.alert('❌ Invalid date format. Please use MM/DD/YYYY.');
+    return null;
+  }
+
+  return parsed;
+}
+
 function promptForHistoricalId(sheet, columnName, prefix, recordName) {
   try {
     var ui = SpreadsheetApp.getUi();
