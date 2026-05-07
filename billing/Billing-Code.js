@@ -44,7 +44,8 @@ function runBillingCycleAutomation() {
 
     var ss               = SpreadsheetApp.getActiveSpreadsheet();
     var ui               = SpreadsheetApp.getUi();
-    var customToday      = promptForCustomToday();
+    var customToday = UtilityScriptLibrary.promptForCustomToday();
+    if (!customToday) return;
     var billingCycleName = promptForBillingCycleName(customToday);
     if (!billingCycleName) return;
 
@@ -222,37 +223,54 @@ function runFullReconciliation(reconciliationDate) {
 }
 
 function runFullReconciliationUI() {
-      try {
-        var ui = SpreadsheetApp.getUi();
-        
-        // Prompt for reconciliation date
-        var response = ui.prompt(
-          'Full Reconciliation',
-          'Enter the date to reconcile up to (MM/DD/YYYY):',
-          ui.ButtonSet.OK_CANCEL
-        );
-        
-        if (response.getSelectedButton() !== ui.Button.OK) {
-          ui.alert('❌ Reconciliation cancelled.');
-          return;
-        }
-        
-        // Parse the date
-        var dateString = response.getResponseText().trim();
-        var reconciliationDate = UtilityScriptLibrary.parseDateFromString(dateString);
-        
-        if (!reconciliationDate) {
-          ui.alert('❌ Invalid date format. Please use MM/DD/YYYY.');
-          return;
-        }
-        
-        // Run full reconciliation
-        runFullReconciliation(reconciliationDate);
-        
-      } catch (error) {
-        UtilityScriptLibrary.debugLog("runFullReconciliationUI", "ERROR", "UI reconciliation failed", "", error.message);
-        SpreadsheetApp.getUi().alert('❌ Error: ' + error.message);
-      }
+  try {
+    var ui = SpreadsheetApp.getUi();
+
+    var reconciliationDate = UtilityScriptLibrary.promptForDate({
+      title: 'Full Reconciliation',
+      message: 'Enter the date to reconcile up to (MM/DD/YYYY).',
+      defaultDate: new Date(),
+      cancelMessage: 'Reconciliation cancelled.'
+    });
+    if (!reconciliationDate) return;
+
+    runFullReconciliation(reconciliationDate);
+
+  } catch (error) {
+    UtilityScriptLibrary.debugLog("runFullReconciliationUI", "ERROR", "UI reconciliation failed", "", error.message);
+    SpreadsheetApp.getUi().alert('❌ Error: ' + error.message);
+  }
+}
+
+function runWeeklyLessonReconciliationUI() {
+  try {
+    var ui = SpreadsheetApp.getUi();
+
+    var reconciliationDate = UtilityScriptLibrary.promptForDate({
+      title: 'Lesson Reconciliation',
+      message: 'Enter the date to reconcile up to (MM/DD/YYYY).',
+      defaultDate: new Date(),
+      cancelMessage: 'Lesson reconciliation cancelled.'
+    });
+    if (!reconciliationDate) return;
+
+    var formattedDate = UtilityScriptLibrary.formatDateFlexible(reconciliationDate, "MM/dd/yyyy");
+    var confirm = ui.alert(
+      '🔄 Reconcile lessons up to ' + formattedDate + '?',
+      ui.ButtonSet.YES_NO
+    );
+    if (confirm !== ui.Button.YES) {
+      ui.alert('❌ Lesson reconciliation cancelled.');
+      return;
+    }
+
+    runWeeklyLessonReconciliation(reconciliationDate);
+    ui.alert('✅ Lesson reconciliation completed for ' + formattedDate + '!');
+
+  } catch (error) {
+    UtilityScriptLibrary.debugLog("runWeeklyLessonReconciliationUI", "ERROR", "UI reconciliation failed", "", error.message);
+    SpreadsheetApp.getUi().alert('❌ Error: ' + error.message);
+  }
 }
 
 function runRegistrationPacketGenerationUI() {
@@ -337,55 +355,6 @@ function runPaymentReconciliationUI() {
                 ui.ButtonSet.OK);
       } catch (error) {
         SpreadsheetApp.getUi().alert('❌ Error: ' + error.message);
-      }
-}
-
-function runWeeklyLessonReconciliationUI() {
-      try {
-        var ui = SpreadsheetApp.getUi();
-        
-        // Prompt for admin review date
-        var response = ui.prompt(
-          'Admin Review Date',
-          'Enter the date to pull lessons up to (MM/DD/YYYY):',
-          ui.ButtonSet.OK_CANCEL
-        );
-        
-        if (response.getSelectedButton() !== ui.Button.OK) {
-          ui.alert('❌ Lesson reconciliation cancelled.');
-          return;
-        }
-        
-        // Parse the date
-        var dateString = response.getResponseText().trim();
-        var reconciliationDate = UtilityScriptLibrary.parseDateFromString(dateString);
-        
-        if (!reconciliationDate) {
-          ui.alert('❌ Invalid date format. Please use MM/DD/YYYY.');
-          return;
-        }
-        
-        // Confirm the date
-        var formattedDate = UtilityScriptLibrary.formatDateFlexible(reconciliationDate, "MM/dd/yyyy");
-        var confirm = ui.alert(
-          `🔄 Reconcile lessons up to ${formattedDate}?`,
-          ui.ButtonSet.YES_NO
-        );
-        
-        if (confirm !== ui.Button.YES) {
-          ui.alert('❌ Lesson reconciliation cancelled.');
-          return;
-        }
-        
-        // Run the reconciliation
-        runWeeklyLessonReconciliation(reconciliationDate);
-        
-        // Success message
-        ui.alert(`✅ Lesson reconciliation completed for ${formattedDate}!`);
-        
-      } catch (error) {
-        UtilityScriptLibrary.debugLog(`❌ Error in lesson reconciliation UI: ${error.message}`);
-        SpreadsheetApp.getUi().alert(`❌ Error: ${error.message}`);
       }
 }
 
@@ -7982,42 +7951,6 @@ function promptForBillingCycleName(customToday) {
   });
 }
 
-function promptForCustomToday() {
-  var ui = SpreadsheetApp.getUi();
-  var today = new Date();
-  var defaultTodayStr = UtilityScriptLibrary.formatDateFlexible(today, "MM/dd/yyyy");
-
-  var confirm = ui.alert(
-    'Use today\'s date (' + defaultTodayStr + ') for this billing cycle?',
-    ui.ButtonSet.YES_NO
-  );
-
-  if (confirm === ui.Button.YES) {
-    UtilityScriptLibrary.debugLog('Using today\'s date: ' + today);
-    return today;
-  }
-
-  var response = ui.prompt(
-    'Enter Custom Date',
-    'Please enter the date to use as "today" (MM/DD/YYYY):',
-    ui.ButtonSet.OK_CANCEL
-  );
-
-  if (response.getSelectedButton() !== ui.Button.OK) {
-    ui.alert('Billing cycle setup cancelled.');
-    throw new Error('User cancelled custom date entry.');
-  }
-
-  var parsedDate = UtilityScriptLibrary.parseDateFromString(response.getResponseText().trim());
-  if (!parsedDate) {
-    ui.alert('Invalid date. Please use MM/DD/YYYY.');
-    throw new Error('Invalid date value.');
-  }
-
-  UtilityScriptLibrary.debugLog('Parsed custom date: ' + parsedDate);
-  return parsedDate;
-}
-
 function promptForMonthAndYear() {
   var ui = SpreadsheetApp.getUi();
   var monthNames = UtilityScriptLibrary.getMonthNames();
@@ -8099,124 +8032,29 @@ function promptForMonthAndYear() {
 }
 
 function promptForSemesterDates() {
-  var result = UtilityScriptLibrary.executeWithErrorHandling(function() {
-    UtilityScriptLibrary.debugLog('📅 promptForSemesterDates - Starting semester date prompts');
-    
-    var ui = SpreadsheetApp.getUi();
-    
-    // Prompt for start date
-    var startPrompt = ui.prompt(
-      'Semester Start Date', 
-      'Enter the semester start date (MM/DD/YYYY):\nExample: 01/15/2024', 
-      ui.ButtonSet.OK_CANCEL
-    );
-    
-    if (startPrompt.getSelectedButton() !== ui.Button.OK) {
-      UtilityScriptLibrary.debugLog('📅 promptForSemesterDates - User cancelled start date prompt');
-      throw new Error('Semester setup cancelled.');
-    }
-    
-    var startDateRaw = startPrompt.getResponseText();
-    UtilityScriptLibrary.debugLog('📅 Raw start date input: "' + startDateRaw + '" (type: ' + typeof startDateRaw + ')');
-    
-    if (!startDateRaw) {
-      var emptyStartMsg = 'Start date cannot be empty. Please enter a valid date.';
-      ui.alert('Error', emptyStartMsg, ui.ButtonSet.OK);
-      UtilityScriptLibrary.debugLog('📅 promptForSemesterDates - Empty start date input');
-      throw new Error(emptyStartMsg);
-    }
-    
-    var startDateText = startDateRaw.trim();
-    UtilityScriptLibrary.debugLog('📅 Trimmed start date input: "' + startDateText + '" (length: ' + startDateText.length + ')');
-    
-    var startDate = UtilityScriptLibrary.parseDateFromString(startDateText);
-    UtilityScriptLibrary.debugLog('📅 Parsed start date result: ' + startDate + ' (type: ' + typeof startDate + ')');
-    
-    if (!startDate) {
-      var startErrorMsg = 'Invalid start date format. Please use MM/DD/YYYY format (e.g., 01/15/2024).';
-      ui.alert('Error', startErrorMsg + '\n\nYou entered: "' + startDateText + '"', ui.ButtonSet.OK);
-      UtilityScriptLibrary.debugLog('📅 promptForSemesterDates - Invalid start date: "' + startDateText + '"');
-      throw new Error('Invalid startDate returned from prompt.');
-    }
-    
-    UtilityScriptLibrary.debugLog('📅 promptForSemesterDates - Valid start date parsed: ' + startDate.toDateString());
-    
-    // Prompt for end date
-    var endPrompt = ui.prompt(
-      'Semester End Date', 
-      'Enter the semester end date (MM/DD/YYYY):\nExample: 05/15/2024', 
-      ui.ButtonSet.OK_CANCEL
-    );
-    
-    if (endPrompt.getSelectedButton() !== ui.Button.OK) {
-      UtilityScriptLibrary.debugLog('📅 promptForSemesterDates - User cancelled end date prompt');
-      throw new Error('Semester setup cancelled.');
-    }
-    
-    var endDateRaw = endPrompt.getResponseText();
-    UtilityScriptLibrary.debugLog('📅 Raw end date input: "' + endDateRaw + '" (type: ' + typeof endDateRaw + ')');
-    
-    if (!endDateRaw) {
-      var emptyEndMsg = 'End date cannot be empty. Please enter a valid date.';
-      ui.alert('Error', emptyEndMsg, ui.ButtonSet.OK);
-      UtilityScriptLibrary.debugLog('📅 promptForSemesterDates - Empty end date input');
-      throw new Error(emptyEndMsg);
-    }
-    
-    var endDateText = endDateRaw.trim();
-    UtilityScriptLibrary.debugLog('📅 Trimmed end date input: "' + endDateText + '" (length: ' + endDateText.length + ')');
-    
-    var endDate = UtilityScriptLibrary.parseDateFromString(endDateText);
-    UtilityScriptLibrary.debugLog('📅 Parsed end date result: ' + endDate + ' (type: ' + typeof endDate + ')');
-    
-    if (!endDate) {
-      var endErrorMsg = 'Invalid end date format. Please use MM/DD/YYYY format (e.g., 05/15/2024).';
-      ui.alert('Error', endErrorMsg + '\n\nYou entered: "' + endDateText + '"', ui.ButtonSet.OK);
-      UtilityScriptLibrary.debugLog('📅 promptForSemesterDates - Invalid end date: "' + endDateText + '"');
-      throw new Error('Invalid endDate returned from prompt.');
-    }
-    
-    UtilityScriptLibrary.debugLog('📅 promptForSemesterDates - Valid end date parsed: ' + endDate.toDateString());
-    
-    // Validate date range
-    if (startDate.getTime() >= endDate.getTime()) {
-      var rangeErrorMsg = 'Start date must be before end date. Please check your dates.';
-      ui.alert('Error', rangeErrorMsg + '\n\nStart: ' + startDate.toDateString() + '\nEnd: ' + endDate.toDateString(), ui.ButtonSet.OK);
-      UtilityScriptLibrary.debugLog('📅 promptForSemesterDates - Invalid date range: start=' + startDate.toDateString() + ', end=' + endDate.toDateString());
-      throw new Error(rangeErrorMsg);
-    }
-    
-    // Additional validation: check if dates are reasonable for a semester
-    var timeDiff = endDate.getTime() - startDate.getTime();
-    var daysDiff = Math.round(timeDiff / (1000 * 3600 * 24));
-    
-    if (daysDiff < 30) {
-      UtilityScriptLibrary.debugLog('📅 promptForSemesterDates - Warning: Short semester duration: ' + daysDiff + ' days');
-      ui.alert('Warning', 'Semester duration is only ' + daysDiff + ' days. This seems short for a typical semester.', ui.ButtonSet.OK);
-    } else if (daysDiff > 365) {
-      UtilityScriptLibrary.debugLog('📅 promptForSemesterDates - Warning: Long semester duration: ' + daysDiff + ' days');
-      ui.alert('Warning', 'Semester duration is ' + daysDiff + ' days. This seems long for a typical semester.', ui.ButtonSet.OK);
-    }
-    
-    UtilityScriptLibrary.debugLog('📅 promptForSemesterDates - Valid date range confirmed: ' + startDate.toDateString() + ' to ' + endDate.toDateString() + ' (' + daysDiff + ' days)');
-    
-    return { 
-      startDate: startDate, 
-      endDate: endDate 
-    };
-    
-  }, 'Semester dates collected successfully', 'promptForSemesterDates', {
+  return UtilityScriptLibrary.executeWithErrorHandling(function() {
+    UtilityScriptLibrary.debugLog('promptForSemesterDates', 'INFO', 'Starting semester date prompts', '', '');
+
+    var startDate = UtilityScriptLibrary.promptForDate({
+      title: 'Semester Start Date',
+      message: 'Enter the semester start date (MM/DD/YYYY).',
+      cancelMessage: 'Semester setup cancelled.'
+    });
+    if (!startDate) throw new Error('Semester setup cancelled.');
+
+    var endDate = UtilityScriptLibrary.promptForDate({
+      title: 'Semester End Date',
+      message: 'Enter the semester end date (MM/DD/YYYY).',
+      cancelMessage: 'Semester setup cancelled.'
+    });
+    if (!endDate) throw new Error('Semester setup cancelled.');
+
+    return { startDate: startDate, endDate: endDate };
+
+  }, 'Semester dates prompt completed', 'promptForSemesterDates', {
     showUI: false,
-    logLevel: 'INFO'
-  });
-  
-  // Handle the executeWithErrorHandling response properly
-  if (!result.success) {
-    UtilityScriptLibrary.debugLog('📅 promptForSemesterDates - executeWithErrorHandling failed: ' + result.error);
-    throw new Error(result.error);
-  }
-  
-  return result.data;
+    logLevel: 'DEBUG'
+  }).data;
 }
 
 function promptForSemesterName() {
