@@ -7740,134 +7740,100 @@ function processSemesterEndCredits(currentSemesterName) {
   }).data;
 }
 
-function processTeacherAttendanceForBilling(teacherSS, teacherName, targetDate, cycleStartDate) {
-  // Process attendance sheets row by row: mark reconcilable lessons AND sum billable hours
-  
-  // DETERMINE APPROPRIATE START DATE FOR RECONCILIATION
-  var effectiveStartDate;
-  
-  if (targetDate < cycleStartDate) {
-    // Retroactive reconciliation - use start of target month
-    effectiveStartDate = new Date(targetDate.getFullYear(), targetDate.getMonth(), 1);
-    UtilityScriptLibrary.debugLog("processTeacherAttendanceForBilling", "INFO", 
-                                  "Retroactive reconciliation detected", 
-                                  "Target: " + targetDate.toDateString() + ", Effective start: " + effectiveStartDate.toDateString() + 
-                                  " (was: " + cycleStartDate.toDateString() + ")", "");
-  } else {
-    // Normal forward reconciliation - look back 4 months to catch late-added lessons
-    effectiveStartDate = new Date(cycleStartDate);
-    effectiveStartDate.setMonth(effectiveStartDate.getMonth() - 4);
-    UtilityScriptLibrary.debugLog("processTeacherAttendanceForBilling", "INFO", 
-                                  "Forward reconciliation with 4-month lookback", 
-                                  "Cycle start: " + cycleStartDate.toDateString() + ", Effective start: " + effectiveStartDate.toDateString(), "");
-  }
-  
-  var studentHours = {};
-  var stats = {
-    lessonsMarked: 0,
-    lessonsCounted: 0
-  };
-  
+function processTeacherAttendanceForBilling(teacherSS, teacherName, targetDate) {
+  // Returns studentHoursByMonth: { "April 2026": { studentId: hours }, ... }
+  // Hours are grouped by LESSON DATE month, not reconciliation date
+
+  var studentHoursByMonth = {};
+  var stats = { lessonsMarked: 0, lessonsCounted: 0 };
+  var monthNames = UtilityScriptLibrary.getMonthNames();
   var sheets = teacherSS.getSheets();
-  
+
   for (var sheetIdx = 0; sheetIdx < sheets.length; sheetIdx++) {
     var sheet = sheets[sheetIdx];
     var sheetName = sheet.getName();
-    
-    // Only process attendance sheets
-    if (!UtilityScriptLibrary.isMonthSheet(sheetName)) {
-      continue;
-    }
-    
+
+    if (!UtilityScriptLibrary.isMonthSheet(sheetName)) continue;
+
     var data = sheet.getDataRange().getValues();
-    if (data.length < 2) {
-      continue;
-    }
-    
+    if (data.length < 2) continue;
+
     var headers = data[0];
-    
-    // Find column indices
-    var studentIdCol = -1;
-    var dateCol = -1;
-    var lengthCol = -1;
-    var statusCol = -1;
-    var adminReviewCol = -1;
-    var invoiceDateCol = -1;
-    
+    var studentIdCol = -1, dateCol = -1, lengthCol = -1, statusCol = -1,
+        adminReviewCol = -1, invoiceDateCol = -1;
+
     for (var i = 0; i < headers.length; i++) {
       var normalized = UtilityScriptLibrary.normalizeHeader(headers[i]);
-      if (normalized === 'studentid') studentIdCol = i;
-      else if (normalized === 'date') dateCol = i;
-      else if (normalized === 'length') lengthCol = i;
-      else if (normalized === 'status') statusCol = i;
-      else if (normalized === 'adminreviewdate') adminReviewCol = i;
-      else if (normalized === 'invoicedate') invoiceDateCol = i;
+      if      (normalized === 'studentid')       studentIdCol    = i;
+      else if (normalized === 'date')            dateCol         = i;
+      else if (normalized === 'length')          lengthCol       = i;
+      else if (normalized === 'status')          statusCol       = i;
+      else if (normalized === 'adminreviewdate') adminReviewCol  = i;
+      else if (normalized === 'invoicedate')     invoiceDateCol  = i;
     }
-    
-    if (studentIdCol === -1 || dateCol === -1 || lengthCol === -1 || statusCol === -1 || adminReviewCol === -1) {
-      UtilityScriptLibrary.debugLog("processTeacherAttendanceForBilling", "WARNING", 
-                                    "Missing required columns", sheetName, "");
+
+    if (studentIdCol === -1 || dateCol === -1 || lengthCol === -1 ||
+        statusCol === -1 || adminReviewCol === -1) {
+      UtilityScriptLibrary.debugLog("processTeacherAttendanceForBilling", "WARNING",
+        "Missing required columns", sheetName, "");
       continue;
     }
-    
-    // Process each row
+
     for (var rowIdx = 1; rowIdx < data.length; rowIdx++) {
       var row = data[rowIdx];
-      
-      var studentId = row[studentIdCol];
-      var lessonDate = row[dateCol];
-      var length = parseFloat(row[lengthCol]) || 0;
-      var status = row[statusCol];
+      var studentId    = row[studentIdCol];
+      var lessonDate   = row[dateCol];
+      var length       = parseFloat(row[lengthCol]) || 0;
+      var status       = row[statusCol];
       var adminReviewDate = row[adminReviewCol];
-      var invoiceDate = invoiceDateCol !== -1 ? row[invoiceDateCol] : '';
-      
-      // Skip if no student ID or invalid date
-      if (!studentId || !lessonDate || !(lessonDate instanceof Date)) {
-        continue;
-      }
-      
-      // STEP 1 & 2: Check if reconcilable and mark it
+      var invoiceDate  = invoiceDateCol !== -1 ? row[invoiceDateCol] : '';
+
+      if (!studentId || !lessonDate || !(lessonDate instanceof Date)) continue;
+      if (lessonDate > targetDate) continue;
+
+      // Billing month is determined by LESSON DATE, not reconciliation date
+      var billingMonthName = monthNames[lessonDate.getMonth()] + ' ' + lessonDate.getFullYear();
+
+      // Mark unreconciled lessons
       var isReconcilable = (
         (status === 'Lesson' || status === 'No Show' || status === 'No Lesson') &&
-        lessonDate >= effectiveStartDate &&  // Uses effectiveStartDate (4 months back for forward reconciliation)
-        lessonDate <= targetDate &&
         (!adminReviewDate || adminReviewDate === '')
       );
-      
+
       if (isReconcilable) {
         sheet.getRange(rowIdx + 1, adminReviewCol + 1).setValue(targetDate);
+        adminReviewDate = targetDate;
         stats.lessonsMarked++;
       }
-      
-      // STEP 3: Check if should be summed for billing
-      // After marking above, we need to check if THIS row should count
-      // (either just marked OR was already marked in previous reconciliation)
+
+      // Sum billable hours into the correct billing month bucket
+      var hasAdminReview = (adminReviewDate instanceof Date) ||
+                           (typeof adminReviewDate === 'string' && adminReviewDate !== '');
       var shouldSum = (
-        (adminReviewDate !== '' || isReconcilable) && // Has admin review date (or just got it)
-        (!invoiceDate || invoiceDate === '') &&        // No invoice date
-        status !== 'No Lesson' &&                      // Not a "No Lesson"
-        length > 0                                     // Has length
+        hasAdminReview &&
+        (!invoiceDate || invoiceDate === '') &&
+        status !== 'No Lesson' &&
+        length > 0
       );
-      
+
       if (shouldSum) {
-        var hours = length / 60;
-        if (!studentHours[studentId]) {
-          studentHours[studentId] = 0;
+        if (!studentHoursByMonth[billingMonthName]) {
+          studentHoursByMonth[billingMonthName] = {};
         }
-        studentHours[studentId] += hours;
+        if (!studentHoursByMonth[billingMonthName][studentId]) {
+          studentHoursByMonth[billingMonthName][studentId] = 0;
+        }
+        studentHoursByMonth[billingMonthName][studentId] += length / 60;
         stats.lessonsCounted++;
       }
     }
   }
-  
-  UtilityScriptLibrary.debugLog("processTeacherAttendanceForBilling", "INFO", 
-                                "Processed attendance", 
-                                "Marked: " + stats.lessonsMarked + ", Counted: " + stats.lessonsCounted, "");
-  
-  return {
-    studentHours: studentHours,
-    stats: stats
-  };
+
+  UtilityScriptLibrary.debugLog("processTeacherAttendanceForBilling", "INFO",
+    "Processed attendance",
+    "Marked: " + stats.lessonsMarked + ", Counted: " + stats.lessonsCounted, "");
+
+  return { studentHoursByMonth: studentHoursByMonth, stats: stats };
 }
 
 function processTeacherForNewAttendance(teacherName, rosterUrl, targetMonthName) {
@@ -7955,43 +7921,50 @@ function processTeacherForNewAttendance(teacherName, rosterUrl, targetMonthName)
   }
 }
 
-function processTeacherReconciliation(teacherName, rosterUrl, billingSheet, targetDate, billingCycleDates, currentSemester) {
-  // This function processes ONE teacher completely in a single pass
-  
-  var stats = {
-    lessonsCollected: 0,
-    studentsUpdated: 0,
-    warningsApplied: 0
-  };
-  
-  // Extract file ID from roster URL
+function processTeacherReconciliation(teacherName, rosterUrl, currentBillingSheet, targetDate, currentSemester) {
+  var stats = { lessonsCollected: 0, studentsUpdated: 0, warningsApplied: 0 };
+
   var fileIdMatch = rosterUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-  if (!fileIdMatch) {
-    throw new Error('Invalid roster URL format');
-  }
-  
-  // STEP 1: Open teacher workbook (ONCE)
+  if (!fileIdMatch) throw new Error('Invalid roster URL format');
+
+  // STEP 1: Open teacher workbook
   var teacherSS = SpreadsheetApp.openById(fileIdMatch[1]);
-  
-  // STEP 2: Process attendance sheets (mark reconcilable lessons AND calculate billing totals)
-  var attendanceResult = processTeacherAttendanceForBilling(teacherSS, teacherName, targetDate, billingCycleDates.startDate);
+
+  // STEP 2: Process attendance — returns hours grouped by lesson month
+  var attendanceResult = processTeacherAttendanceForBilling(teacherSS, teacherName, targetDate);
   stats.lessonsCollected = attendanceResult.stats.lessonsMarked;
-  
-  // STEP 3: Update billing sheet for THIS teacher's students
-  updateBillingForTeacherStudents(billingSheet, attendanceResult.studentHours, teacherName);
-  
-  // STEP 4: Read back Hours Remaining from billing sheet
-  var studentBalances = getStudentBalancesFromBilling(billingSheet, teacherName);
-  
-  // STEP 5: Update roster sheet with balances
+
+  // STEP 3: Write hours to each month's billing sheet
+  var billingSS = UtilityScriptLibrary.getWorkbook('billing');
+  for (var monthName in attendanceResult.studentHoursByMonth) {
+    var monthBillingSheet = billingSS.getSheetByName(monthName);
+    if (!monthBillingSheet) {
+      UtilityScriptLibrary.debugLog("processTeacherReconciliation", "WARNING",
+        "Billing sheet not found for month", monthName, "");
+      continue;
+    }
+    updateBillingForTeacherStudents(
+      monthBillingSheet,
+      attendanceResult.studentHoursByMonth[monthName],
+      teacherName
+    );
+    UtilityScriptLibrary.debugLog("processTeacherReconciliation", "INFO",
+      "Wrote hours to billing sheet", monthName, "");
+  }
+
+  // STEP 4: Read balances from CURRENT billing sheet
+  // The VLOOKUP chain automatically reflects all past-month updates
+  var studentBalances = getStudentBalancesFromBilling(currentBillingSheet, teacherName);
+
+  // STEP 5: Update roster with current balances
   updateTeacherRosterBalances(teacherSS, studentBalances, currentSemester);
   stats.studentsUpdated = studentBalances.length;
-  
-  // STEP 6: Apply attendance warnings (pink headers for ≤3 lessons)
+
+  // STEP 6: Apply attendance warnings
   var warningStudents = identifyWarningStudents(studentBalances);
   applyWarningsToTeacherWorkbook(teacherSS, warningStudents, targetDate);
   stats.warningsApplied = warningStudents.length;
-  
+
   return stats;
 }
 
@@ -8673,120 +8646,105 @@ function runCombinedReconciliation() {
 function runWeeklyLessonReconciliation(customDate) {
   try {
     var targetDate = customDate || new Date();
-    
-    UtilityScriptLibrary.debugLog("runWeeklyLessonReconciliation", "INFO", 
-                                  "Starting single-pass weekly lesson reconciliation", 
-                                  "Target date: " + targetDate, "");
-    
-    // Get current billing sheet
-    var billingSheet = getCurrentBillingSheet();
-    
-    if (!billingSheet) {
+
+    UtilityScriptLibrary.debugLog("runWeeklyLessonReconciliation", "INFO",
+      "Starting lesson reconciliation", "Target date: " + targetDate, "");
+
+    // Current billing sheet is used only for reading back balances after writes;
+    // actual hour writes go to each lesson's own month sheet
+    var currentBillingSheet = getCurrentBillingSheet();
+    if (!currentBillingSheet) {
       throw new Error('No active billing sheet found. Please create a billing cycle first.');
     }
-    
-    var billingCycleDates = getCurrentBillingCycleDates();
-    
-    // Get current semester name for roster sheet lookup
-    var currentSemester = UtilityScriptLibrary.getCurrentSemesterName(new Date());
+
+    // Use targetDate to resolve semester — avoids returning Summer when reconciling Spring lessons
+    var currentSemester = UtilityScriptLibrary.getCurrentSemesterName(targetDate);
     if (!currentSemester || currentSemester === 'Unknown Semester') {
-      throw new Error('Could not determine current semester name');
+      throw new Error('Could not determine semester for date: ' + targetDate);
     }
-    
-    // Get all active teachers
+
     var teacherLookupSS = UtilityScriptLibrary.getWorkbook('formResponses');
     var teacherLookupSheet = teacherLookupSS.getSheetByName('Teacher Roster Lookup');
-    
-    if (!teacherLookupSheet) {
-      throw new Error('Teacher Roster Lookup sheet not found');
-    }
-    
+    if (!teacherLookupSheet) throw new Error('Teacher Roster Lookup sheet not found');
+
     var teacherData = teacherLookupSheet.getDataRange().getValues();
     var teacherHeaders = teacherData[0];
-    var teacherIdCol = teacherHeaders.indexOf('Teacher ID');
-    var rosterUrlCol = teacherHeaders.indexOf('Roster URL');
-    var statusCol = teacherHeaders.indexOf('Status');
-    
+    var teacherIdCol  = teacherHeaders.indexOf('Teacher ID');
+    var rosterUrlCol  = teacherHeaders.indexOf('Roster URL');
+    var statusCol     = teacherHeaders.indexOf('Status');
+
     if (teacherIdCol === -1 || rosterUrlCol === -1 || statusCol === -1) {
       throw new Error('Required teacher columns not found in lookup sheet');
     }
-    
-    // Process statistics
+
     var stats = {
       teachersProcessed: 0,
-      teachersSkipped: 0,
-      teachersErrored: 0,
-      totalLessons: 0,
-      totalStudents: 0,
-      errors: []
+      teachersSkipped:   0,
+      teachersErrored:   0,
+      totalLessons:      0,
+      totalStudents:     0,
+      errors:            []
     };
-    
-    // SINGLE PASS: Process each teacher one at a time
+
     for (var i = 1; i < teacherData.length; i++) {
       var teacherRow = teacherData[i];
-      var teacherId = String(teacherRow[teacherIdCol] || '').trim();
-      var rosterUrl = teacherRow[rosterUrlCol];
-      var status = teacherRow[statusCol];
-      
+      var teacherId  = String(teacherRow[teacherIdCol] || '').trim();
+      var rosterUrl  = teacherRow[rosterUrlCol];
+      var status     = teacherRow[statusCol];
+
       if (status !== 'active' || !teacherId || !rosterUrl) {
         stats.teachersSkipped++;
         continue;
       }
-      
+
       try {
-        UtilityScriptLibrary.debugLog("runWeeklyLessonReconciliation", "INFO", 
-                                      "Processing teacher", teacherId, "");
-        
+        UtilityScriptLibrary.debugLog("runWeeklyLessonReconciliation", "INFO",
+          "Processing teacher", teacherId, "");
+
         var teacherStats = processTeacherReconciliation(
           teacherId,
           rosterUrl,
-          billingSheet,
+          currentBillingSheet,
           targetDate,
-          billingCycleDates,
           currentSemester
         );
-        
+
         stats.teachersProcessed++;
-        stats.totalLessons += teacherStats.lessonsCollected;
+        stats.totalLessons  += teacherStats.lessonsCollected;
         stats.totalStudents += teacherStats.studentsUpdated;
-        
-        UtilityScriptLibrary.debugLog("runWeeklyLessonReconciliation", "SUCCESS", 
-                                      "Completed teacher", 
-                                      teacherId + " - Lessons: " + teacherStats.lessonsCollected + 
-                                      ", Students: " + teacherStats.studentsUpdated, "");
-        
+
+        UtilityScriptLibrary.debugLog("runWeeklyLessonReconciliation", "SUCCESS",
+          "Completed teacher",
+          teacherId + " - Lessons: " + teacherStats.lessonsCollected +
+          ", Students: " + teacherStats.studentsUpdated, "");
+
       } catch (teacherError) {
         stats.teachersErrored++;
         stats.errors.push(teacherId + ": " + teacherError.message);
-        UtilityScriptLibrary.debugLog("runWeeklyLessonReconciliation", "ERROR", 
-                                      "Failed to process teacher", 
-                                      teacherId, teacherError.message);
-        // Continue with next teacher
+        UtilityScriptLibrary.debugLog("runWeeklyLessonReconciliation", "ERROR",
+          "Failed to process teacher", teacherId, teacherError.message);
       }
     }
-    
-    // Apply visual formatting to billing sheet (once at the end)
-    applyBillingConditionalFormatting(billingSheet);
-    
-    // Add lesson rows where needed (once at the end)
+
+    applyBillingConditionalFormatting(currentBillingSheet);
     expandTeacherAttendanceSheets();
-    
-    UtilityScriptLibrary.debugLog("runWeeklyLessonReconciliation", "SUCCESS", 
-                                  "Weekly lesson reconciliation completed", 
-                                  "Teachers: " + stats.teachersProcessed + "/" + (teacherData.length - 1) + 
-                                  ", Lessons: " + stats.totalLessons + ", Students: " + stats.totalStudents +
-                                  (stats.errors.length > 0 ? ", Errors: " + stats.errors.length : ""), "");
-    
+
+    UtilityScriptLibrary.debugLog("runWeeklyLessonReconciliation", "SUCCESS",
+      "Reconciliation completed",
+      "Teachers: " + stats.teachersProcessed + "/" + (teacherData.length - 1) +
+      ", Lessons: " + stats.totalLessons + ", Students: " + stats.totalStudents +
+      (stats.errors.length > 0 ? ", Errors: " + stats.errors.length : ""), "");
+
     if (stats.errors.length > 0) {
-      UtilityScriptLibrary.debugLog("runWeeklyLessonReconciliation", "WARNING", 
-                                    "Errors encountered", stats.errors.join("; "), "");
+      UtilityScriptLibrary.debugLog("runWeeklyLessonReconciliation", "WARNING",
+        "Errors encountered", stats.errors.join("; "), "");
     }
-    
+
     return stats;
-    
+
   } catch (error) {
-    UtilityScriptLibrary.debugLog("runWeeklyLessonReconciliation", "ERROR", 
-                                  "Reconciliation failed", "", error.message);
+    UtilityScriptLibrary.debugLog("runWeeklyLessonReconciliation", "ERROR",
+      "Reconciliation failed", "", error.message);
     throw error;
   }
 }

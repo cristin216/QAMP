@@ -2074,7 +2074,7 @@ function getCurrentSemesterName(asOfDate) {
     var nameCol = -1, startCol = -1;
     for (var i = 0; i < headers.length; i++) {
       var header = normalizeHeader(headers[i]);
-      if (header.indexOf('start') !== -1) {
+      if (header.indexOf('start') !== -1 || header.indexOf('begin') !== -1) {
         startCol = i;
       } else if (header.indexOf('semester') !== -1 || header.indexOf('name') !== -1) {
         nameCol = i;
@@ -2373,7 +2373,7 @@ function getSemesterForDate(targetDate) {
       var header = normalizeHeader(headers[i]);
       if (header.indexOf('semester') !== -1 || header.indexOf('name') !== -1) {
         nameCol = i;
-      } else if (header.indexOf('start') !== -1) {
+      } else if (header.indexOf('start') !== -1 || header.indexOf('begin') !== -1) {
         startCol = i;
       } else if (header.indexOf('end') !== -1) {
         endCol = i;
