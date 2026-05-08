@@ -1,5 +1,4 @@
-
-       
+     
 function onOpen() {
   try {
     var ui = SpreadsheetApp.getUi();
@@ -533,30 +532,41 @@ function collectUninvoicedLessonsUpToDate(cutoffDate, invoiceDate, invoicePeriod
       throw new Error('Teacher Roster Lookup sheet not found or empty');
     }
     
-    // Read all teachers into memory
-    var data = lookupSheet.getRange(2, 1, lookupSheet.getLastRow() - 1, 6).getValues();
+    // Read all teachers into memory using header map
+    var headerMap = UtilityScriptLibrary.getHeaderMap(lookupSheet);
+    var firstNameCol   = headerMap[UtilityScriptLibrary.normalizeHeader('First Name')];
+    var lastNameCol    = headerMap[UtilityScriptLibrary.normalizeHeader('Last Name')];
+    var rosterUrlCol   = headerMap[UtilityScriptLibrary.normalizeHeader('Roster URL')];
+    var teacherIdCol   = headerMap[UtilityScriptLibrary.normalizeHeader('Teacher ID')];
+    var displayNameCol = headerMap[UtilityScriptLibrary.normalizeHeader('Display Name')];
+    var statusCol      = headerMap[UtilityScriptLibrary.normalizeHeader('Status')];
+
+    var data = lookupSheet.getRange(2, 1, lookupSheet.getLastRow() - 1, lookupSheet.getLastColumn()).getValues();
     var allTeachers = [];
     
     for (var i = 0; i < data.length; i++) {
       var row = data[i];
-      var teacherName = row[0];      // Column A: Teacher Name
-      var rosterUrl = row[1];        // Column B: Roster URL
-      var teacherId = row[2];        // Column C: Teacher ID
-      var displayName = row[3];      // Column D: Display Name
-      var status = row[4];           // Column E: Status
+      var firstName   = firstNameCol   ? row[firstNameCol - 1].toString().trim()   : '';
+      var lastName    = lastNameCol    ? row[lastNameCol - 1].toString().trim()    : '';
+      var rosterUrl   = rosterUrlCol   ? row[rosterUrlCol - 1].toString().trim()   : '';
+      var teacherId   = teacherIdCol   ? row[teacherIdCol - 1].toString().trim()   : '';
+      var displayName = displayNameCol ? row[displayNameCol - 1].toString().trim() : '';
+      var status      = statusCol      ? row[statusCol - 1].toString().trim()      : '';
+      var teacherName = (firstName + ' ' + lastName).trim();
       
       // Only include teachers that have roster URLs
-      if (teacherName && rosterUrl && rosterUrl.toString().trim() !== '') {
-        // Generate invoice number NOW (before processing teacher)
+      if (teacherName && rosterUrl !== '') {
         var invoiceNumber = generateInvoiceNumber(teacherId || teacherName, invoiceDate);
         
         allTeachers.push({
           teacherName: teacherName,
+          firstName: firstName,
+          lastName: lastName,
           rosterUrl: rosterUrl,
           teacherId: teacherId || '',
           displayName: displayName || '',
           status: status || 'Unknown',
-          invoiceNumber: invoiceNumber  // Store invoice number with teacher data
+          invoiceNumber: invoiceNumber
         });
       }
     }
@@ -572,12 +582,11 @@ function collectUninvoicedLessonsUpToDate(cutoffDate, invoiceDate, invoicePeriod
     for (var i = 0; i < allTeachers.length; i++) {
       var teacher = allTeachers[i];
       try {
-        // SINGLE PASS: Collect AND mark lessons
         var teacherLessons = getUninvoicedLessonsForTeacher(
           teacher, 
           cutoffDate, 
           invoiceDate, 
-          teacher.invoiceNumber  // Pass invoice number
+          teacher.invoiceNumber
         );
         
         if (teacherLessons.length > 0) {
@@ -606,7 +615,7 @@ function collectUninvoicedLessonsUpToDate(cutoffDate, invoiceDate, invoicePeriod
     
     return {
       lessons: groupedLessons,
-      allLessons: allUninvoicedLessons,  // Keep flat list for reference
+      allLessons: allUninvoicedLessons,
       errors: errors,
       validation: validationResults,
       cutoffDate: cutoffDate,
@@ -655,6 +664,8 @@ function convertFolderDocsToPdfUI() {
   // Extract teacher data from sheet to match PDFs back to teachers
   var teacherData = extractTeachersFromFormattedSheet(activeSheet);
   var teacherMap = {};
+  var invoiceHeaderMap = UtilityScriptLibrary.getHeaderMap(activeSheet);
+  var pdfCol = invoiceHeaderMap['pdf'];
   
   // Build a map of "FirstName LastName - InvoiceNumber" to teacher data
   for (var i = 0; i < teacherData.length; i++) {
@@ -681,12 +692,10 @@ function convertFolderDocsToPdfUI() {
   
   // Find the folder matching the active tab name
   var folderIterator = teacherInvoicesFolder.getFoldersByName(activeTabName);
-  
   if (!folderIterator.hasNext()) {
     SpreadsheetApp.getUi().alert('Folder "' + activeTabName + '" not found in Teacher Invoices');
     return;
   }
-  
   var monthFolder = folderIterator.next();
   
   // Create a "[folder name] PDFs" subfolder if it doesn't exist
@@ -733,9 +742,15 @@ function convertFolderDocsToPdfUI() {
     var pdfFile = pdfFolder.createFile(pdfBlob);
     convertedCount++;
     
-    // Update teacher roster with PDF URL
+    // Match PDF to teacher data and update records
     var teacher = teacherMap[docName];
     if (teacher) {
+      // Write PDF URL to the PDF column on the invoice sheet
+      if (pdfCol && teacher.headerRowIndex) {
+        activeSheet.getRange(teacher.headerRowIndex, pdfCol)
+                   .setFormula('=HYPERLINK("' + pdfFile.getUrl() + '", "' + pdfFile.getId() + '")');
+      }
+      
       try {
         var pdfResult = {
           success: true,
@@ -1133,6 +1148,7 @@ function extractTeachersFromFormattedSheet(sheet) {
     // Get column indices
     var teacherCol = headerMap['teacher'];
     var urlCol = headerMap['url'];
+    var pdfCol = headerMap['pdf'];
     var idCol = headerMap['id'];
     var invoiceDateCol = headerMap['invoicedate'];
     var invoiceNumberCol = headerMap['invoicenumber'];
@@ -1144,7 +1160,7 @@ function extractTeachersFromFormattedSheet(sheet) {
     var quantityCol = headerMap['quantity'];
     var rateCol = headerMap['rate'];
     var costCol = headerMap['cost'];
-    var commentsCol = headerMap['comments'];  // ADD THIS LINE
+    var commentsCol = headerMap['comments'];
     
     var teachers = [];
     var currentTeacher = null;
@@ -1159,33 +1175,27 @@ function extractTeachersFromFormattedSheet(sheet) {
       
       if (!teacherName) continue;
       
-      // Check if this is a teacher header row using multiple criteria:
-      // 1. ID starts with 'T' (teacher pattern)
-      // 2. Has invoice date/number (only teacher headers have these)
-      // 3. No duration (student rows have duration)
       var isTeacherHeader = (studentId && studentId.toString().startsWith('T')) ||
                            (invoiceDate && invoiceDate.toString().trim() !== '') ||
                            (invoiceNumber && invoiceNumber.toString().trim() !== '') ||
                            (!duration || duration.toString().trim() === '');
       
       if (isTeacherHeader) {
-        // This is a teacher header row
-        var hasUrl = urlCol && rowData[urlCol - 1] && rowData[urlCol - 1].toString().trim() !== '';
+        var hasPdfUrl = pdfCol && rowData[pdfCol - 1] && rowData[pdfCol - 1].toString().trim() !== '';
         
-        // Only process teachers without URLs
-        if (!hasUrl) {
-          // Get teacher's first and last name directly from the sheet
+        // Only process teachers without a PDF already generated
+        if (!hasPdfUrl) {
           var teacherFirstName = firstNameCol ? rowData[firstNameCol - 1] : '';
           var teacherLastName = lastNameCol ? rowData[lastNameCol - 1] : '';
           var teacherAddress = addressCol ? rowData[addressCol - 1] : '';
-          var teacherComment = commentsCol ? rowData[commentsCol - 1] : '';  // ADD THIS LINE
+          var teacherComment = commentsCol ? rowData[commentsCol - 1] : '';
           
           currentTeacher = {
             teacherName: teacherName,
             teacherFirstName: teacherFirstName,
             teacherLastName: teacherLastName,
             teacherAddress: teacherAddress,
-            comment: teacherComment,  // ADD THIS LINE
+            comment: teacherComment,
             headerRowIndex: row + 1,
             invoiceNumber: invoiceNumber,
             invoiceDate: invoiceDate,
@@ -1194,10 +1204,9 @@ function extractTeachersFromFormattedSheet(sheet) {
           };
           teachers.push(currentTeacher);
         } else {
-          currentTeacher = null; // Skip this teacher
+          currentTeacher = null; // Skip - PDF already generated
         }
       } else if (currentTeacher) {
-        // This is a student row for the current teacher
         var lastName = lastNameCol ? rowData[lastNameCol - 1] : '';
         var firstName = firstNameCol ? rowData[firstNameCol - 1] : '';
         var quantity = quantityCol ? parseInt(rowData[quantityCol - 1]) || 0 : 0;
@@ -1351,6 +1360,10 @@ function generateMonthlyTeacherInvoices(month, cutoffDate, invoiceDate, lessonRe
       return { success: false, message: "No uninvoiced lessons found" };
     }
     
+    // Resolve rates column for this invoice period
+    var semesterName = getSemesterForDate(cutoffDate);
+    var ratesLookup = getRatesLookupForSemester(semesterName);
+    
     // Create monthly invoice sheet
     var invoiceSheet = createMonthlyInvoiceSheet(month);
     
@@ -1359,7 +1372,8 @@ function generateMonthlyTeacherInvoices(month, cutoffDate, invoiceDate, lessonRe
       invoiceSheet, 
       lessonResults.lessons, 
       invoiceDate,
-      lessonResults.invoicePeriod
+      lessonResults.invoicePeriod,
+      ratesLookup
     );
     
     // Format the sheet
@@ -1373,7 +1387,7 @@ function generateMonthlyTeacherInvoices(month, cutoffDate, invoiceDate, lessonRe
       success: true,
       teacherCount: populationResult.teacherCount,
       lineItemCount: populationResult.lineItemCount,
-      markedCount: lessonResults.summary.totalLessons  // Already marked during collection
+      markedCount: lessonResults.summary.totalLessons
     };
     
   } catch (error) {
@@ -1563,7 +1577,6 @@ function getActiveTeacherList() {
   try {
     UtilityScriptLibrary.debugLog("getActiveTeacherList", "INFO", "Getting active teacher list", "", "");
     
-    // Use utility library to get form responses workbook
     var formResponsesSS = UtilityScriptLibrary.getWorkbook('formResponses');
     var teacherLookupSheet = formResponsesSS.getSheetByName('Teacher Roster Lookup');
     
@@ -1572,29 +1585,31 @@ function getActiveTeacherList() {
     }
     
     var data = teacherLookupSheet.getDataRange().getValues();
-    
-    // Use utility function for header mapping
     var headerMap = UtilityScriptLibrary.getHeaderMap(teacherLookupSheet);
     
-    var teacherNameCol = headerMap[UtilityScriptLibrary.normalizeHeader('Teacher Name')];
-    var rosterUrlCol = headerMap[UtilityScriptLibrary.normalizeHeader('Roster URL')];
-    var teacherIdCol = headerMap[UtilityScriptLibrary.normalizeHeader('Teacher ID')];
-    var statusCol = headerMap[UtilityScriptLibrary.normalizeHeader('Status')];
+    var firstNameCol   = headerMap[UtilityScriptLibrary.normalizeHeader('First Name')];
+    var lastNameCol    = headerMap[UtilityScriptLibrary.normalizeHeader('Last Name')];
+    var rosterUrlCol   = headerMap[UtilityScriptLibrary.normalizeHeader('Roster URL')];
+    var teacherIdCol   = headerMap[UtilityScriptLibrary.normalizeHeader('Teacher ID')];
+    var statusCol      = headerMap[UtilityScriptLibrary.normalizeHeader('Status')];
     
     var activeTeachers = [];
     
     for (var i = 1; i < data.length; i++) {
       var row = data[i];
-      var teacherName = teacherNameCol ? row[teacherNameCol - 1] : '';
-      var rosterUrl = rosterUrlCol ? row[rosterUrlCol - 1] : '';
-      var teacherId = teacherIdCol ? row[teacherIdCol - 1] : '';
-      var status = statusCol ? row[statusCol - 1] : '';
+      var firstName = firstNameCol ? row[firstNameCol - 1].toString().trim() : '';
+      var lastName  = lastNameCol  ? row[lastNameCol - 1].toString().trim()  : '';
+      var rosterUrl = rosterUrlCol ? row[rosterUrlCol - 1].toString().trim() : '';
+      var teacherId = teacherIdCol ? row[teacherIdCol - 1].toString().trim() : '';
+      var status    = statusCol    ? row[statusCol - 1].toString().trim()    : '';
+      var teacherName = (firstName + ' ' + lastName).trim();
       
-      // Only include active teachers with roster URLs
       if (status === 'Active' && rosterUrl && teacherName) {
         activeTeachers.push({
           teacherName: teacherName,
-          teacherId: teacherId || teacherName, // fallback to name if no ID
+          firstName: firstName,
+          lastName: lastName,
+          teacherId: teacherId || teacherName,
           rosterUrl: rosterUrl
         });
       }
@@ -1893,7 +1908,6 @@ function getTeacherInfoByName(teacherName) {
     UtilityScriptLibrary.debugLog("getTeacherInfoByName", "INFO", "Looking up teacher info", 
                  "Teacher: " + teacherName, "");
     
-    // Use getSheet instead of getWorkbook + getSheetByName
     var lookupSheet = UtilityScriptLibrary.getSheet('teacherRosterLookup');
     
     if (!lookupSheet || lookupSheet.getLastRow() <= 1) {
@@ -1901,50 +1915,41 @@ function getTeacherInfoByName(teacherName) {
       return null;
     }
     
-    // Get all data from lookup sheet
-    var data = lookupSheet.getRange(2, 1, lookupSheet.getLastRow() - 1, 6).getValues();
+    var data = lookupSheet.getDataRange().getValues();
+    var headerMap = UtilityScriptLibrary.getHeaderMap(lookupSheet);
+
+    var firstNameCol   = headerMap[UtilityScriptLibrary.normalizeHeader('First Name')];
+    var lastNameCol    = headerMap[UtilityScriptLibrary.normalizeHeader('Last Name')];
+    var rosterUrlCol   = headerMap[UtilityScriptLibrary.normalizeHeader('Roster URL')];
+    var teacherIdCol   = headerMap[UtilityScriptLibrary.normalizeHeader('Teacher ID')];
+    var displayNameCol = headerMap[UtilityScriptLibrary.normalizeHeader('Display Name')];
+    var statusCol      = headerMap[UtilityScriptLibrary.normalizeHeader('Status')];
+    var lastUpdatedCol = headerMap[UtilityScriptLibrary.normalizeHeader('Last Updated')];
+
     var searchName = String(teacherName).trim();
-    
-    // Try exact match first
-    for (var i = 0; i < data.length; i++) {
-      var rowTeacherName = String(data[i][0]).trim();
-      
-      if (rowTeacherName === searchName) {
+
+    for (var i = 1; i < data.length; i++) {
+      var row = data[i];
+      var firstName    = firstNameCol   ? row[firstNameCol - 1].toString().trim()   : '';
+      var lastName     = lastNameCol    ? row[lastNameCol - 1].toString().trim()    : '';
+      var rowFullName  = (firstName + ' ' + lastName).trim();
+
+      // Try full name exact match, then last name only
+      if (rowFullName === searchName || lastName === searchName) {
         var teacherInfo = {
-          teacherName: data[i][0],
-          rosterUrl: data[i][1],
-          teacherId: data[i][2],
-          displayName: data[i][3],
-          status: data[i][4],
-          lastUpdated: data[i][5]
+          teacherName:  rowFullName,
+          firstName:    firstName,
+          lastName:     lastName,
+          rosterUrl:    rosterUrlCol   ? row[rosterUrlCol - 1].toString().trim()   : '',
+          teacherId:    teacherIdCol   ? row[teacherIdCol - 1].toString().trim()   : '',
+          displayName:  displayNameCol ? row[displayNameCol - 1].toString().trim() : '',
+          status:       statusCol      ? row[statusCol - 1].toString().trim()      : '',
+          lastUpdated:  lastUpdatedCol ? row[lastUpdatedCol - 1]                   : ''
         };
-        
-        UtilityScriptLibrary.debugLog("getTeacherInfoByName", "SUCCESS", "Found exact match", 
-                     "Teacher: " + searchName, "");
-        return teacherInfo;
-      }
-    }
-    
-    // If no exact match, try matching last name
-    UtilityScriptLibrary.debugLog("getTeacherInfoByName", "DEBUG", "No exact match, trying last name match", 
-                 "Teacher: " + searchName, "");
-    
-    for (var i = 0; i < data.length; i++) {
-      var rowTeacherName = String(data[i][0]).trim();
-      var rowLastName = rowTeacherName.split(' ').pop();
-      
-      if (rowLastName === searchName || rowTeacherName.endsWith(' ' + searchName)) {
-        var teacherInfo = {
-          teacherName: data[i][0],
-          rosterUrl: data[i][1],
-          teacherId: data[i][2],
-          displayName: data[i][3],
-          status: data[i][4],
-          lastUpdated: data[i][5]
-        };
-        
-        UtilityScriptLibrary.debugLog("getTeacherInfoByName", "SUCCESS", "Found last name match", 
-                     "Searched: " + searchName + ", Found: " + rowTeacherName, "");
+
+        UtilityScriptLibrary.debugLog("getTeacherInfoByName", "SUCCESS", 
+                     rowFullName === searchName ? "Found exact match" : "Found last name match", 
+                     "Searched: " + searchName + ", Found: " + rowFullName, "");
         return teacherInfo;
       }
     }
@@ -2279,9 +2284,10 @@ function loadProgramRateKeysCache() {
   }
 }
 
-function loadRatesCache() {
+function loadRatesCache(ratesColumnHeader) {
   try {
-    UtilityScriptLibrary.debugLog("loadRatesCache", "INFO", "Loading rates cache", "", "");
+    UtilityScriptLibrary.debugLog("loadRatesCache", "INFO", "Loading rates cache", 
+                                  "Column: " + ratesColumnHeader, "");
     
     var billingWorkbook = UtilityScriptLibrary.getWorkbook('billing');
     var ratesSheet = billingWorkbook.getSheetByName('Rates');
@@ -2290,23 +2296,17 @@ function loadRatesCache() {
       throw new Error('Rates sheet not found in billing workbook');
     }
     
-    var data = ratesSheet.getDataRange().getValues();
-    var currentRatesCol = 1; // Column B (0-indexed)
+    var headers = ratesSheet.getRange(1, 1, 1, ratesSheet.getLastColumn()).getValues()[0];
+    var colIndex = headers.indexOf(ratesColumnHeader);
     
-    var ratesCache = {};
-    
-    // Load all rates into cache (skip header row)
-    for (var i = 1; i < data.length; i++) {
-      var rateType = data[i][0]; // Column A contains rate titles
-      var rate = data[i][currentRatesCol];
-      
-      if (rateType && rate !== undefined && rate !== null && rate !== '') {
-        ratesCache[rateType] = rate;
-      }
+    if (colIndex === -1) {
+      throw new Error('Rates column "' + ratesColumnHeader + '" not found in Rates sheet');
     }
     
+    var ratesCache = UtilityScriptLibrary.buildRateMapFromSheet(ratesSheet, headers, colIndex);
+    
     UtilityScriptLibrary.debugLog("loadRatesCache", "SUCCESS", "Rates cache loaded", 
-                                  "Total rates: " + Object.keys(ratesCache).length, "");
+                                  "Column: " + ratesColumnHeader + ", Total rates: " + Object.keys(ratesCache).length, "");
     
     return ratesCache;
     
@@ -2405,14 +2405,14 @@ function parseStudentName(studentName) {
   }
 }
 
-function populateInvoiceSheetFromLessons(sheet, groupedLessons, invoiceDate, invoicePeriod) {
+function populateInvoiceSheetFromLessons(sheet, groupedLessons, invoiceDate, invoicePeriod, ratesColumnHeader) {
   try {
     UtilityScriptLibrary.debugLog("populateInvoiceSheetFromLessons", "INFO", 
                                   "Starting invoice sheet population", 
                                   "Line items: " + Object.keys(groupedLessons).length, "");
     
     // Load rates and program rate keys once
-    var ratesCache = loadRatesCache();
+    var ratesCache = loadRatesCache(ratesColumnHeader);
     var programRateKeysCache = loadProgramRateKeysCache();
     
     // Get column mappings directly from utility library
@@ -3049,7 +3049,7 @@ function updateTeacherInvoiceHistory(teacherData, invoiceResult, metadata) {
     
     // Now set the URL column (column 4) as a HYPERLINK formula (text = fileId, link = URL)
     if (invoiceResult.url && invoiceResult.fileId) {
-      var urlFormula = '=HYPERLINK("' + invoiceResult.url + '", "' + invoiceResult.fileId + '")';
+      var urlFormula = '=HYPERLINK("' + invoiceResult.url + '", "' + (teacherData.invoiceNumber || invoiceResult.fileId) + '")';
       invoiceLogSheet.getRange(newRowNumber, 4).setFormula(urlFormula);
       
       UtilityScriptLibrary.debugLog("updateTeacherInvoiceHistory", "DEBUG", "Set URL as hyperlink formula", 
@@ -5725,9 +5725,9 @@ function addLateTeacherToInvoice() {
     
     var teacherLessons = getUninvoicedLessonsForTeacher(
       selectedTeacher,
-      new Date(metadata.lessonsEndingDate), // cutoffDate
-      new Date(metadata.invoiceDate),       // invoiceDate
-      invoiceNumber                         // invoiceNumber
+      new Date(metadata.lessonsEndingDate),
+      new Date(metadata.invoiceDate),
+      invoiceNumber
     );
     
     if (teacherLessons.length === 0) {
@@ -5760,7 +5760,8 @@ function addLateTeacherToInvoice() {
       activeSheet, 
       groupedLessons, 
       new Date(metadata.invoiceDate),
-      invoicePeriod
+      invoicePeriod,
+      metadata.ratesLookup
     );
     
     ui.alert(
@@ -5778,12 +5779,12 @@ function addLateTeacherToInvoice() {
   }
 }
 
-function appendTeacherToInvoiceSheet(sheet, groupedLessons, invoiceDate, invoicePeriod) {
+function appendTeacherToInvoiceSheet(sheet, groupedLessons, invoiceDate, invoicePeriod, ratesColumnHeader) {
   try {
     var columnMap = UtilityScriptLibrary.getHeaderMap(sheet);
     
     // Load caches once for all rate lookups
-    var ratesCache = loadRatesCache();
+    var ratesCache = loadRatesCache(ratesColumnHeader);
     var programRateKeysCache = loadProgramRateKeysCache();
     
     // Start at the next available row
@@ -5800,21 +5801,17 @@ function appendTeacherToInvoiceSheet(sheet, groupedLessons, invoiceDate, invoice
       if (groupedLessons.hasOwnProperty(key)) {
         var lessonGroup = groupedLessons[key];
         
-        // If this is a new teacher, add teacher header row
         if (lessonGroup.teacherName !== currentTeacher) {
           currentTeacher = lessonGroup.teacherName;
           
-          // Get teacher information
           var teacherInfo = getTeacherInfoFromLessonGroup(lessonGroup);
           
-          // Add teacher header row
           currentRow = addTeacherHeaderRow(
             sheet, currentRow, columnMap, teacherInfo, 
             invoiceDate, lessonGroup.invoiceNumber, invoicePeriod
           );
         }
         
-        // Add student line item row
         currentRow = addStudentLineItem(
           sheet, currentRow, columnMap, lessonGroup, currentTeacher, 
           ratesCache, programRateKeysCache
