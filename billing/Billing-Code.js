@@ -714,7 +714,7 @@ function appendReregistrationNewStudents(billingSheet, reregMap, overwroteIds, c
       setCol('Student First Name', studentRow[studentHdrMap[norm('Student First Name')] - 1]);
       setCol('Student ID',         entry.studentId);
       setCol('Instrument',         studentRow[studentHdrMap[norm('Instrument')] - 1]);
-      setCol('Teacher',            studentRow[studentHdrMap[norm('Teacher')] - 1]);
+      setCol('Teacher ID',         studentRow[studentHdrMap[norm('Teacher ID')] - 1]);
       setCol('Enrollment',         entry.enrollment);
 
       // Parent fields
@@ -2758,7 +2758,7 @@ function convertFolderDocsToPdfUI() {
 function copyStaticFieldsToBillingRow(newRow, sourceRow, context, getFn) {
   var fields = [
     "Student Last Name", "Student First Name", "Student ID", "Instrument",
-    "Teacher", "Enrollment", "Salutation", "Parent First Name",
+    "Teacher ID", "Enrollment", "Salutation", "Parent First Name",
     "Parent Last Name", "Parent ID"
   ];
 
@@ -3949,93 +3949,94 @@ function expandTeacherAttendanceRows(teacherSS) {
 
 function expandTeacherAttendanceSheets() {
   try {
-    UtilityScriptLibrary.debugLog("expandTeacherAttendanceSheets", "INFO", "Expanding teacher attendance sheets", "", "");
-    
+    UtilityScriptLibrary.debugLog('expandTeacherAttendanceSheets', 'INFO',
+      'Expanding teacher attendance sheets', '', '');
+
     var teacherLookupSS = UtilityScriptLibrary.getWorkbook('formResponses');
     var teacherLookupSheet = teacherLookupSS.getSheetByName('Teacher Roster Lookup');
-    
+
     if (!teacherLookupSheet) {
-      UtilityScriptLibrary.debugLog("expandTeacherAttendanceSheets", "ERROR", "Teacher Roster Lookup sheet not found", "", "");
+      UtilityScriptLibrary.debugLog('expandTeacherAttendanceSheets', 'ERROR',
+        'Teacher Roster Lookup sheet not found', '', '');
       return;
     }
 
     var teacherData = teacherLookupSheet.getDataRange().getValues();
     if (teacherData.length <= 1) {
-      UtilityScriptLibrary.debugLog("expandTeacherAttendanceSheets", "WARNING", "No teacher data found", "", "");
+      UtilityScriptLibrary.debugLog('expandTeacherAttendanceSheets', 'WARNING',
+        'No teacher data found', '', '');
       return;
     }
 
-    var headers = teacherData[0];
-    
-    var teacherNameCol = headers.indexOf('Teacher Name');
-    var rosterUrlCol = headers.indexOf('Roster URL');
-    var statusCol = headers.indexOf('Status');
-    
-    if (teacherNameCol === -1 || rosterUrlCol === -1 || statusCol === -1) {
-      UtilityScriptLibrary.debugLog("expandTeacherAttendanceSheets", "ERROR", "Required columns not found in Teacher Roster Lookup", "", "");
+    var getCol = UtilityScriptLibrary.createColumnFinder(teacherLookupSheet);
+    var firstNameCol  = getCol('First Name');
+    var lastNameCol   = getCol('Last Name');
+    var teacherIdCol  = getCol('Teacher ID');
+    var rosterUrlCol  = getCol('Roster URL');
+    var statusCol     = getCol('Status');
+
+    if (!firstNameCol || !lastNameCol || !teacherIdCol || !rosterUrlCol || !statusCol) {
+      UtilityScriptLibrary.debugLog('expandTeacherAttendanceSheets', 'ERROR',
+        'Required columns not found in Teacher Roster Lookup', '', '');
       return;
     }
-    
+
     var processedCount = 0;
-    var expandedCount = 0;
-    
+    var expandedCount  = 0;
+
     for (var i = 1; i < teacherData.length; i++) {
-      var row = teacherData[i];
-      var teacherName = row[teacherNameCol];
-      var rosterUrl = row[rosterUrlCol];
-      var status = row[statusCol];
-      
-      if (!teacherName || !rosterUrl || status !== 'Active') {
-        continue;
-      }
-      
-      UtilityScriptLibrary.debugLog("expandTeacherAttendanceSheets", "DEBUG", "Processing teacher", 
-                   "Name: " + teacherName + ", Status: " + status + ", URL: " + (rosterUrl ? "present" : "missing"), "");
-      
+      var row        = teacherData[i];
+      var firstName  = String(row[firstNameCol - 1]  || '').trim();
+      var lastName   = String(row[lastNameCol - 1]   || '').trim();
+      var teacherId  = String(row[teacherIdCol - 1]  || '').trim();
+      var rosterUrl  = row[rosterUrlCol - 1];
+      var status     = String(row[statusCol - 1]     || '').trim().toLowerCase();
+      var teacherLabel = firstName + ' ' + lastName + ' (' + teacherId + ')';
+
+      if (status !== 'active' || !teacherId || !rosterUrl) continue;
+
+      UtilityScriptLibrary.debugLog('expandTeacherAttendanceSheets', 'DEBUG',
+        'Processing teacher', teacherLabel, '');
+
       try {
         var fileIdMatch = rosterUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
         if (!fileIdMatch) {
-          UtilityScriptLibrary.debugLog("expandTeacherAttendanceSheets", "WARNING", "Invalid roster URL", 
-                       "Teacher: " + teacherName + ", URL: " + rosterUrl, "");
+          UtilityScriptLibrary.debugLog('expandTeacherAttendanceSheets', 'WARNING',
+            'Invalid roster URL', teacherLabel, '');
           continue;
         }
-        
-        UtilityScriptLibrary.debugLog("expandTeacherAttendanceSheets", "DEBUG", "Opening teacher spreadsheet", 
-                     "Teacher: " + teacherName + ", File ID: " + fileIdMatch[1], "");
-        
-        var teacherSS = SpreadsheetApp.openById(fileIdMatch[1]);
-        
-        // OPTIMIZATION: Use getMonthSheets to get all month sheets at once
-        var monthSheets = UtilityScriptLibrary.getMonthSheets(teacherSS);
+
+        var teacherSS    = SpreadsheetApp.openById(fileIdMatch[1]);
+        var monthSheets  = UtilityScriptLibrary.getMonthSheets(teacherSS);
         var teacherExpanded = false;
-        
+
         for (var j = 0; j < monthSheets.length; j++) {
           if (expandSheetAttendanceRows(monthSheets[j])) {
             teacherExpanded = true;
           }
         }
-        
-        if (teacherExpanded) {
-          expandedCount++;
-        }
-        
-        UtilityScriptLibrary.debugLog("expandTeacherAttendanceSheets", "DEBUG", "Teacher processing result", 
-                     "Teacher: " + teacherName + ", Expanded: " + teacherExpanded, "");
-        
+
+        if (teacherExpanded) expandedCount++;
+
+        UtilityScriptLibrary.debugLog('expandTeacherAttendanceSheets', 'DEBUG',
+          'Teacher processing result',
+          teacherLabel + ', Expanded: ' + teacherExpanded, '');
+
         processedCount++;
-        
+
       } catch (teacherError) {
-        UtilityScriptLibrary.debugLog("expandTeacherAttendanceSheets", "WARNING", "Failed to process teacher", 
-                     "Teacher: " + teacherName, teacherError.message);
+        UtilityScriptLibrary.debugLog('expandTeacherAttendanceSheets', 'WARNING',
+          'Failed to process teacher', teacherLabel, teacherError.message);
       }
     }
-    
-    UtilityScriptLibrary.debugLog("expandTeacherAttendanceSheets", "SUCCESS", "Expanded attendance sheets", 
-                 "Active teachers: " + processedCount + ", Processed: " + processedCount + ", Expanded: " + expandedCount, "");
-    
+
+    UtilityScriptLibrary.debugLog('expandTeacherAttendanceSheets', 'SUCCESS',
+      'Expanded attendance sheets',
+      'Processed: ' + processedCount + ', Expanded: ' + expandedCount, '');
+
   } catch (error) {
-    UtilityScriptLibrary.debugLog("expandTeacherAttendanceSheets", "ERROR", "Failed to expand attendance sheets", 
-                 "", error.message);
+    UtilityScriptLibrary.debugLog('expandTeacherAttendanceSheets', 'ERROR',
+      'Failed to expand attendance sheets', '', error.message);
     throw error;
   }
 }
@@ -6017,59 +6018,50 @@ function getRateMap(context) {
   return context.rateMap;
 }
 
-function getStudentBalancesFromBilling(billingSheet, teacherName) {
+function getStudentBalancesFromBilling(billingSheet, teacherId) {
   var headerMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
   var dataRange = billingSheet.getRange(2, 1, billingSheet.getLastRow() - 1, billingSheet.getLastColumn());
   var data = dataRange.getValues();
-  
-  // Get column indices dynamically
+
   var norm = UtilityScriptLibrary.normalizeHeader;
-  var studentIdCol = headerMap[norm('Student ID')] - 1;
-  var teacherCol = headerMap[norm('Teacher')] - 1;
+  var studentIdCol      = headerMap[norm('Student ID')] - 1;
+  var teacherCol        = headerMap[norm('Teacher ID')] - 1;
   var hoursRemainingCol = headerMap[norm('Hours Remaining')] - 1;
-  var lessonLengthCol = headerMap[norm('Lesson Length')] - 1;
-  var firstNameCol = headerMap[norm('Student First Name')] - 1;
-  var lastNameCol = headerMap[norm('Student Last Name')] - 1;
-  var instrumentCol = headerMap[norm('Instrument')] - 1;
-  
-  if (studentIdCol === undefined || teacherCol === undefined || hoursRemainingCol === undefined || 
-      lessonLengthCol === undefined || firstNameCol === undefined || lastNameCol === undefined || 
+  var lessonLengthCol   = headerMap[norm('Lesson Length')] - 1;
+  var firstNameCol      = headerMap[norm('Student First Name')] - 1;
+  var lastNameCol       = headerMap[norm('Student Last Name')] - 1;
+  var instrumentCol     = headerMap[norm('Instrument')] - 1;
+
+  if (studentIdCol === undefined || teacherCol === undefined || hoursRemainingCol === undefined ||
+      lessonLengthCol === undefined || firstNameCol === undefined || lastNameCol === undefined ||
       instrumentCol === undefined) {
     throw new Error('Required billing columns not found for reading balances');
   }
-  
+
   var studentBalances = [];
-  
+
   for (var i = 0; i < data.length; i++) {
     var row = data[i];
-    var rowTeacher = row[teacherCol];
-    
-    // Only get students for THIS teacher
-    if (rowTeacher === teacherName) {
-      var studentId = row[studentIdCol];
-      var hoursRemaining = parseFloat(row[hoursRemainingCol]) || 0;
-      var lessonLength = parseFloat(row[lessonLengthCol]) || 30;
-      var firstName = row[firstNameCol] || '';
-      var lastName = row[lastNameCol] || '';
-      var instrument = row[instrumentCol] || '';
-      
-      // Calculate lessons remaining
-      var lessonsRemaining = lessonLength > 0 ? Math.floor((hoursRemaining * 60) / lessonLength) : 0;
-      
-      if (studentId) {
-        studentBalances.push({
-          studentId: studentId,
-          firstName: firstName,
-          lastName: lastName,
-          instrument: instrument,
-          hoursRemaining: hoursRemaining,
-          lessonsRemaining: lessonsRemaining,
-          lessonLength: lessonLength
-        });
-      }
+    if (row[teacherCol] !== teacherId) continue;
+
+    var studentId      = row[studentIdCol];
+    var hoursRemaining = parseFloat(row[hoursRemainingCol]) || 0;
+    var lessonLength   = parseFloat(row[lessonLengthCol]) || 30;
+    var lessonsRemaining = lessonLength > 0 ? Math.floor((hoursRemaining * 60) / lessonLength) : 0;
+
+    if (studentId) {
+      studentBalances.push({
+        studentId:        studentId,
+        firstName:        row[firstNameCol] || '',
+        lastName:         row[lastNameCol]  || '',
+        instrument:       row[instrumentCol] || '',
+        hoursRemaining:   hoursRemaining,
+        lessonsRemaining: lessonsRemaining,
+        lessonLength:     lessonLength
+      });
     }
   }
-  
+
   return studentBalances;
 }
 
@@ -6621,37 +6613,41 @@ function locateStudentRecordEnhanced(rowData, billingInfo, studentIdInput, invoi
 function logMysteryStudents(mysteryStudents) {
   try {
     if (mysteryStudents.length === 0) return;
-    
-    UtilityScriptLibrary.debugLog('🕵️ Logging mystery students...');
-    
+
+    UtilityScriptLibrary.debugLog('logMysteryStudents', 'INFO',
+      'Logging mystery students', 'Count: ' + mysteryStudents.length, '');
+
     var billingSS = SpreadsheetApp.getActiveSpreadsheet();
     var mysterySheet = billingSS.getSheetByName('Mystery Students');
-    
-    // Create sheet if it doesn't exist
+
     if (!mysterySheet) {
       mysterySheet = billingSS.insertSheet('Mystery Students');
       mysterySheet.getRange(1, 1, 1, 5).setValues([
-        ['Date Found', 'Student ID', 'Student Name', 'Teacher', 'Notes']
+        ['Date Found', 'Student ID', 'Student Name', 'Teacher ID', 'Notes']
       ]);
       mysterySheet.getRange(1, 1, 1, 5).setFontWeight('bold');
     }
-    
-  for (var i = 0; i < mysteryStudents.length; i++) {
-        var student = mysteryStudents[i];
-        mysterySheet.appendRow([
-          today,
-          student.studentId || 'Unknown',
-          student.studentName || 'Unknown',
-          student.teacherName || 'Unknown',
-          'Found in teacher attendance but not in billing - teacher needs to report new student'
-        ]);
-      }
-      
-      UtilityScriptLibrary.debugLog('âœ… Logged ' + mysteryStudents.length + ' mystery students');
-      
-    } catch (error) {
-      UtilityScriptLibrary.debugLog('âŒ Error logging mystery students: ' + error.message);
+
+    var today = new Date();
+
+    for (var i = 0; i < mysteryStudents.length; i++) {
+      var student = mysteryStudents[i];
+      mysterySheet.appendRow([
+        today,
+        student.studentId  || 'Unknown',
+        student.studentName || 'Unknown',
+        student.teacherId  || 'Unknown',
+        'Found in teacher attendance but not in billing - teacher needs to report new student'
+      ]);
     }
+
+    UtilityScriptLibrary.debugLog('logMysteryStudents', 'SUCCESS',
+      'Logged mystery students', 'Count: ' + mysteryStudents.length, '');
+
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('logMysteryStudents', 'ERROR',
+      'Error logging mystery students', '', error.message);
+  }
 }
 
 function markReregistrationProcessed(reregSheet, processedIds) {
@@ -6749,8 +6745,14 @@ function migrateTeacherDisplayNamesToIds() {
 
     try {
       var headerMap  = UtilityScriptLibrary.getHeaderMap(sheet);
-      var teacherCol = headerMap[norm('Teacher')];
+      var teacherCol = headerMap[norm('Teacher')] || headerMap[norm('Teacher ID')];
       if (!teacherCol) continue;
+
+      // Rename header from 'Teacher' to 'Teacher ID' if needed
+      var headerRow = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      if (String(headerRow[teacherCol - 1]).trim() === 'Teacher') {
+        sheet.getRange(1, teacherCol).setValue('Teacher ID');
+      }
 
       var lastRow = sheet.getLastRow();
       if (lastRow < 2) continue;
@@ -7784,10 +7786,7 @@ function processSemesterEndCredits(currentSemesterName) {
   }).data;
 }
 
-function processTeacherAttendanceForBilling(teacherSS, teacherName, targetDate) {
-  // Returns studentHoursByMonth: { "April 2026": { studentId: hours }, ... }
-  // Hours are grouped by LESSON DATE month, not reconciliation date
-
+function processTeacherAttendanceForBilling(teacherSS, targetDate) {
   var studentHoursByMonth = {};
   var stats = { lessonsMarked: 0, lessonsCounted: 0 };
   var monthNames = UtilityScriptLibrary.getMonthNames();
@@ -7818,27 +7817,25 @@ function processTeacherAttendanceForBilling(teacherSS, teacherName, targetDate) 
 
     if (studentIdCol === -1 || dateCol === -1 || lengthCol === -1 ||
         statusCol === -1 || adminReviewCol === -1) {
-      UtilityScriptLibrary.debugLog("processTeacherAttendanceForBilling", "WARNING",
-        "Missing required columns", sheetName, "");
+      UtilityScriptLibrary.debugLog('processTeacherAttendanceForBilling', 'WARNING',
+        'Missing required columns', sheetName, '');
       continue;
     }
 
     for (var rowIdx = 1; rowIdx < data.length; rowIdx++) {
       var row = data[rowIdx];
-      var studentId    = row[studentIdCol];
-      var lessonDate   = row[dateCol];
-      var length       = parseFloat(row[lengthCol]) || 0;
-      var status       = row[statusCol];
+      var studentId       = row[studentIdCol];
+      var lessonDate      = row[dateCol];
+      var length          = parseFloat(row[lengthCol]) || 0;
+      var status          = row[statusCol];
       var adminReviewDate = row[adminReviewCol];
-      var invoiceDate  = invoiceDateCol !== -1 ? row[invoiceDateCol] : '';
+      var invoiceDate     = invoiceDateCol !== -1 ? row[invoiceDateCol] : '';
 
       if (!studentId || !lessonDate || !(lessonDate instanceof Date)) continue;
       if (lessonDate > targetDate) continue;
 
-      // Billing month is determined by LESSON DATE, not reconciliation date
       var billingMonthName = monthNames[lessonDate.getMonth()] + ' ' + lessonDate.getFullYear();
 
-      // Mark unreconciled lessons
       var isReconcilable = (
         (status === 'Lesson' || status === 'No Show' || status === 'No Lesson') &&
         (!adminReviewDate || adminReviewDate === '')
@@ -7850,7 +7847,6 @@ function processTeacherAttendanceForBilling(teacherSS, teacherName, targetDate) 
         stats.lessonsMarked++;
       }
 
-      // Sum billable hours into the correct billing month bucket
       var hasAdminReview = (adminReviewDate instanceof Date) ||
                            (typeof adminReviewDate === 'string' && adminReviewDate !== '');
       var shouldSum = (
@@ -7873,138 +7869,111 @@ function processTeacherAttendanceForBilling(teacherSS, teacherName, targetDate) 
     }
   }
 
-  UtilityScriptLibrary.debugLog("processTeacherAttendanceForBilling", "INFO",
-    "Processed attendance",
-    "Marked: " + stats.lessonsMarked + ", Counted: " + stats.lessonsCounted, "");
+  UtilityScriptLibrary.debugLog('processTeacherAttendanceForBilling', 'INFO',
+    'Processed attendance',
+    'Marked: ' + stats.lessonsMarked + ', Counted: ' + stats.lessonsCounted, '');
 
   return { studentHoursByMonth: studentHoursByMonth, stats: stats };
 }
 
-function processTeacherForNewAttendance(teacherName, rosterUrl, targetMonthName) {
+function processTeacherForNewAttendance(teacherId, rosterUrl, targetMonthName) {
   try {
-    UtilityScriptLibrary.debugLog("processTeacherForNewAttendance", "INFO", 
-                                  "Processing teacher", teacherName, "");
-    
-    // Open teacher roster
+    UtilityScriptLibrary.debugLog('processTeacherForNewAttendance', 'INFO',
+      'Processing teacher', teacherId, '');
+
     var rosterSS = SpreadsheetApp.openByUrl(rosterUrl);
-    
-    // Find the most recent roster sheet
     var rosterSheet = findMostRecentRosterSheet(rosterSS);
-    
+
     if (!rosterSheet) {
-      UtilityScriptLibrary.debugLog("processTeacherForNewAttendance", "INFO", 
-                                    "No roster sheet found - skipping", 
-                                    teacherName, "");
+      UtilityScriptLibrary.debugLog('processTeacherForNewAttendance', 'INFO',
+        'No roster sheet found - skipping', teacherId, '');
       return { skipped: true, reason: 'no_roster' };
     }
-    
+
     var usedRosterName = rosterSheet.getName();
-    UtilityScriptLibrary.debugLog("processTeacherForNewAttendance", "INFO", 
-                                  "Using roster sheet", 
-                                  teacherName + " - " + usedRosterName, "");
-    
-    // Extract roster data and filter for students with lessons remaining
+    UtilityScriptLibrary.debugLog('processTeacherForNewAttendance', 'INFO',
+      'Using roster sheet', teacherId + ' - ' + usedRosterName, '');
+
     var allStudents = extractRosterDataForAttendance(rosterSheet);
     var activeStudents = [];
-    
+
     for (var i = 0; i < allStudents.length; i++) {
       var student = allStudents[i];
       var status = (student.status || '').toString().trim();
-      // Include student if they have lessons remaining > 0 AND status is Active or Carryover
-      if (student.lessonsRemaining && student.lessonsRemaining > 0 && 
+      if (student.lessonsRemaining && student.lessonsRemaining > 0 &&
           (status === 'Active' || status === 'Carryover')) {
         activeStudents.push(student);
       }
     }
-    
+
     if (activeStudents.length === 0) {
-      UtilityScriptLibrary.debugLog("processTeacherForNewAttendance", "INFO", 
-                                    "No active/carryover students with lessons remaining - skipping", 
-                                    teacherName, "");
+      UtilityScriptLibrary.debugLog('processTeacherForNewAttendance', 'INFO',
+        'No active/carryover students with lessons remaining - skipping', teacherId, '');
       return { skipped: true, reason: 'no_active_students' };
     }
-    
-    // Alphabetize students by last name, then first name
+
     activeStudents.sort(function(a, b) {
       var lastNameCompare = (a.lastName || '').localeCompare(b.lastName || '');
-      if (lastNameCompare !== 0) {
-        return lastNameCompare;
-      }
+      if (lastNameCompare !== 0) return lastNameCompare;
       return (a.firstName || '').localeCompare(b.firstName || '');
     });
-    
-    // Check if target month sheet already exists
+
     var existingSheet = rosterSS.getSheetByName(targetMonthName);
-    
+
     if (existingSheet) {
-      // Update existing sheet by adding missing students
       var studentsAdded = addMissingStudentsToAttendanceSheet(existingSheet, activeStudents);
-      
-      UtilityScriptLibrary.debugLog("processTeacherForNewAttendance", "SUCCESS", 
-                                    "Updated attendance sheet", 
-                                    teacherName + " - " + targetMonthName + " (added " + studentsAdded + " students)", "");
-      
+      UtilityScriptLibrary.debugLog('processTeacherForNewAttendance', 'SUCCESS',
+        'Updated attendance sheet',
+        teacherId + ' - ' + targetMonthName + ' (added ' + studentsAdded + ' students)', '');
       return { updated: true, studentsAdded: studentsAdded };
-      
     } else {
-      // Create new attendance sheet using Utility function
       UtilityScriptLibrary.createMonthlyAttendanceSheet(rosterSS, targetMonthName, activeStudents);
-      
-      UtilityScriptLibrary.debugLog("processTeacherForNewAttendance", "SUCCESS", 
-                                    "Created attendance sheet", 
-                                    teacherName + " - " + targetMonthName + " (" + activeStudents.length + " students)", "");
-      
+      UtilityScriptLibrary.debugLog('processTeacherForNewAttendance', 'SUCCESS',
+        'Created attendance sheet',
+        teacherId + ' - ' + targetMonthName + ' (' + activeStudents.length + ' students)', '');
       return { created: true, studentCount: activeStudents.length };
     }
-    
+
   } catch (error) {
-    UtilityScriptLibrary.debugLog("processTeacherForNewAttendance", "ERROR", 
-                                  "Error processing teacher", 
-                                  teacherName, error.message);
+    UtilityScriptLibrary.debugLog('processTeacherForNewAttendance', 'ERROR',
+      'Error processing teacher', teacherId, error.message);
     throw error;
   }
 }
 
-function processTeacherReconciliation(teacherName, rosterUrl, currentBillingSheet, targetDate, currentSemester) {
+function processTeacherReconciliation(teacherId, rosterUrl, currentBillingSheet, targetDate, currentSemester) {
   var stats = { lessonsCollected: 0, studentsUpdated: 0, warningsApplied: 0 };
 
   var fileIdMatch = rosterUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
   if (!fileIdMatch) throw new Error('Invalid roster URL format');
 
-  // STEP 1: Open teacher workbook
   var teacherSS = SpreadsheetApp.openById(fileIdMatch[1]);
 
-  // STEP 2: Process attendance — returns hours grouped by lesson month
-  var attendanceResult = processTeacherAttendanceForBilling(teacherSS, teacherName, targetDate);
+  var attendanceResult = processTeacherAttendanceForBilling(teacherSS, targetDate);
   stats.lessonsCollected = attendanceResult.stats.lessonsMarked;
 
-  // STEP 3: Write hours to each month's billing sheet
   var billingSS = UtilityScriptLibrary.getWorkbook('billing');
   for (var monthName in attendanceResult.studentHoursByMonth) {
     var monthBillingSheet = billingSS.getSheetByName(monthName);
     if (!monthBillingSheet) {
-      UtilityScriptLibrary.debugLog("processTeacherReconciliation", "WARNING",
-        "Billing sheet not found for month", monthName, "");
+      UtilityScriptLibrary.debugLog('processTeacherReconciliation', 'WARNING',
+        'Billing sheet not found for month', monthName, '');
       continue;
     }
     updateBillingForTeacherStudents(
       monthBillingSheet,
       attendanceResult.studentHoursByMonth[monthName],
-      teacherName
+      teacherId
     );
-    UtilityScriptLibrary.debugLog("processTeacherReconciliation", "INFO",
-      "Wrote hours to billing sheet", monthName, "");
+    UtilityScriptLibrary.debugLog('processTeacherReconciliation', 'INFO',
+      'Wrote hours to billing sheet', monthName, '');
   }
 
-  // STEP 4: Read balances from CURRENT billing sheet
-  // The VLOOKUP chain automatically reflects all past-month updates
-  var studentBalances = getStudentBalancesFromBilling(currentBillingSheet, teacherName);
+  var studentBalances = getStudentBalancesFromBilling(currentBillingSheet, teacherId);
 
-  // STEP 5: Update roster with current balances
   updateTeacherRosterBalances(teacherSS, studentBalances, currentSemester);
   stats.studentsUpdated = studentBalances.length;
 
-  // STEP 6: Apply attendance warnings
   var warningStudents = identifyWarningStudents(studentBalances);
   applyWarningsToTeacherWorkbook(teacherSS, warningStudents, targetDate);
   stats.warningsApplied = warningStudents.length;
@@ -9368,54 +9337,47 @@ function sumPayments(sheet, studentId, startDate, endDate) {
   }
 }
 
-function updateBillingForTeacherStudents(billingSheet, studentHours, teacherName) {
+function updateBillingForTeacherStudents(billingSheet, studentHours, teacherId) {
   var headerMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
   var lastRow = billingSheet.getLastRow();
-  
+
   if (lastRow < 2) {
-    UtilityScriptLibrary.debugLog("updateBillingForTeacherStudents", "INFO", 
-                                  "No data rows in billing sheet", "", "");
+    UtilityScriptLibrary.debugLog('updateBillingForTeacherStudents', 'INFO',
+      'No data rows in billing sheet', '', '');
     return;
   }
-  
-  // Get column indices
-  var studentIdCol = headerMap[UtilityScriptLibrary.normalizeHeader('Student ID')];
-  var teacherCol = headerMap[UtilityScriptLibrary.normalizeHeader('Teacher')];
+
+  var studentIdCol      = headerMap[UtilityScriptLibrary.normalizeHeader('Student ID')];
+  var teacherCol        = headerMap[UtilityScriptLibrary.normalizeHeader('Teacher ID')];
   var hoursThisCycleCol = headerMap[UtilityScriptLibrary.normalizeHeader('Current Hours Taught This Billing Cycle')];
-  
+
   if (!studentIdCol || !teacherCol || !hoursThisCycleCol) {
     throw new Error('Required billing columns not found');
   }
-  
-  // Read ONLY the columns we need for matching
-  var numDataRows = lastRow - 1;
+
+  var numDataRows   = lastRow - 1;
   var studentIdData = billingSheet.getRange(2, studentIdCol, numDataRows, 1).getValues();
-  var teacherData = billingSheet.getRange(2, teacherCol, numDataRows, 1).getValues();
-  
-  // Update ONLY the hours column for matching students, one cell at a time
+  var teacherData   = billingSheet.getRange(2, teacherCol,   numDataRows, 1).getValues();
+
   var updatedCount = 0;
   for (var i = 0; i < numDataRows; i++) {
     var rowStudentId = studentIdData[i][0];
-    var rowTeacher = teacherData[i][0];
-    
-    // Only update rows for THIS teacher with matching student IDs
-    if (rowTeacher === teacherName && studentHours[rowStudentId] !== undefined) {
-      var rowNumber = i + 2; // +2 for header row and 0-based index
-      billingSheet.getRange(rowNumber, hoursThisCycleCol).setValue(studentHours[rowStudentId]);
+    var rowTeacher   = teacherData[i][0];
+
+    if (rowTeacher === teacherId && studentHours[rowStudentId] !== undefined) {
+      billingSheet.getRange(i + 2, hoursThisCycleCol).setValue(studentHours[rowStudentId]);
       updatedCount++;
     }
   }
-  
-  // Force recalculation of formulas
+
   if (updatedCount > 0) {
     SpreadsheetApp.flush();
-    UtilityScriptLibrary.debugLog("updateBillingForTeacherStudents", "SUCCESS", 
-                                  "Updated billing for teacher", 
-                                  teacherName + " - " + updatedCount + " students updated", "");
+    UtilityScriptLibrary.debugLog('updateBillingForTeacherStudents', 'SUCCESS',
+      'Updated billing for teacher',
+      teacherId + ' - ' + updatedCount + ' students updated', '');
   } else {
-    UtilityScriptLibrary.debugLog("updateBillingForTeacherStudents", "INFO", 
-                                  "No students updated for teacher", 
-                                  teacherName, "");
+    UtilityScriptLibrary.debugLog('updateBillingForTeacherStudents', 'INFO',
+      'No students updated for teacher', teacherId, '');
   }
 }
 
