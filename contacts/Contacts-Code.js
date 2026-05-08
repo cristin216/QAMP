@@ -22,7 +22,7 @@ function migrateStudentTeacherDisplayNamesToIds() {
       var current = String(teacherData[r][0] || '').trim();
       if (!current || /^T\d+$/.test(current)) continue;
 
-      var resolved = UtilityScriptLibrary.getTeacherIdByName(current);
+      var resolved = UtilityScriptLibrary.getTeacherIdByDisplayName(current);
       if (resolved) {
         updates.push({ row: r + 2, id: resolved });
       } else {

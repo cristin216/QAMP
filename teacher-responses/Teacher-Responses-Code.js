@@ -1,4 +1,3 @@
-
 function handleReturningFormSubmit(e) {
   if (e && e.range && e.range.getSheet().getName() !== UtilityScriptLibrary.SHEET_MAP.teacherReturningResponses.name) {
     UtilityScriptLibrary.debugLog('handleReturningFormSubmit', 'INFO', 'Wrong sheet — skipping', e.range.getSheet().getName(), '');
@@ -305,6 +304,46 @@ function extractTeacherFormData(e) {
   return formData;
 }
 
+function migrateTeacherDisplayNames() {
+  try {
+    var lookupSheet = UtilityScriptLibrary.getSheet('teacherRosterLookup');
+    var getCol = UtilityScriptLibrary.createColumnFinder(lookupSheet);
+
+    var firstNameCol    = getCol('First Name');
+    var lastNameCol     = getCol('Last Name');
+    var teacherIdCol    = getCol('Teacher ID');
+    var displayNameCol  = getCol('Display Name');
+
+    if (!firstNameCol || !lastNameCol || !teacherIdCol || !displayNameCol) {
+      throw new Error('Required columns not found in Teacher Roster Lookup');
+    }
+
+    var data = lookupSheet.getDataRange().getValues();
+    var updated = 0;
+
+    for (var i = 1; i < data.length; i++) {
+      var firstName  = String(data[i][firstNameCol - 1]  || '').trim();
+      var lastName   = String(data[i][lastNameCol - 1]   || '').trim();
+      var teacherId  = String(data[i][teacherIdCol - 1]  || '').trim();
+
+      if (!firstName || !lastName || !teacherId) continue;
+
+      var displayName = buildTeacherDisplayName(firstName, lastName, teacherId);
+      lookupSheet.getRange(i + 1, displayNameCol).setValue(displayName);
+      updated++;
+
+      UtilityScriptLibrary.debugLog('migrateTeacherDisplayNames', 'INFO',
+        'Updated display name', firstName + ' ' + lastName + ' → ' + displayName, '');
+    }
+
+    SpreadsheetApp.getUi().alert('Migration complete. Updated ' + updated + ' teacher display names.');
+
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('migrateTeacherDisplayNames', 'ERROR', 'Failed', '', error.message);
+    SpreadsheetApp.getUi().alert('Migration failed: ' + error.message);
+  }
+}
+
 function processSingleInstrument(instrumentSheet, instrumentData, firstName, lastName, teacherId, getCol) {
   var instrument = instrumentData.instrument;
   var level = instrumentData.level || 'all';
@@ -420,6 +459,7 @@ function addOrUpdateTeacherRosterLookup(formData, teacherId, get) {
   try {
     var firstName = get('First Name');
     var lastName = get('Last Name');
+    var displayName = buildTeacherDisplayName(firstName, lastName, teacherId);
 
     var lookupSheet = UtilityScriptLibrary.getSheet('teacherRosterLookup');
     var getCol = UtilityScriptLibrary.createColumnFinder(lookupSheet);
@@ -429,16 +469,17 @@ function addOrUpdateTeacherRosterLookup(formData, teacherId, get) {
       var headers = UtilityScriptLibrary.getColumnHeaders(lookupSheet);
       var newRow = headers.map(function(h) {
         var key = UtilityScriptLibrary.normalizeHeader(h);
-        if (key === UtilityScriptLibrary.normalizeHeader('First Name')) return firstName;
-        if (key === UtilityScriptLibrary.normalizeHeader('Last Name')) return lastName;
-        if (key === UtilityScriptLibrary.normalizeHeader('Teacher ID')) return teacherId;
-        if (key === UtilityScriptLibrary.normalizeHeader('Status')) return 'Potential';
-        if (key === UtilityScriptLibrary.normalizeHeader('Last Updated')) return new Date();
+        if (key === UtilityScriptLibrary.normalizeHeader('First Name'))    return firstName;
+        if (key === UtilityScriptLibrary.normalizeHeader('Last Name'))     return lastName;
+        if (key === UtilityScriptLibrary.normalizeHeader('Teacher ID'))    return teacherId;
+        if (key === UtilityScriptLibrary.normalizeHeader('Display Name'))  return displayName;
+        if (key === UtilityScriptLibrary.normalizeHeader('Status'))        return 'Potential';
+        if (key === UtilityScriptLibrary.normalizeHeader('Last Updated'))  return new Date();
         return '';
       });
       lookupSheet.appendRow(newRow);
       UtilityScriptLibrary.debugLog('addOrUpdateTeacherRosterLookup', 'INFO',
-        'Added new teacher', firstName + ' ' + lastName, '');
+        'Added new teacher', firstName + ' ' + lastName + ' / ' + displayName, '');
     } else {
       var lastUpdatedCol = getCol('Last Updated');
       if (lastUpdatedCol) lookupSheet.getRange(existingRow, lastUpdatedCol).setValue(new Date());
@@ -457,6 +498,13 @@ function appendAdminFlag(contactsSheet, contactRow, headerMap, message) {
   var existing = String(contactsSheet.getRange(contactRow, notesCol).getValue() || '').trim();
   var updated = existing ? existing + ' | ' + message : message;
   contactsSheet.getRange(contactRow, notesCol).setValue(updated);
+}
+
+function buildTeacherDisplayName(firstName, lastName, teacherId) {
+  var last = String(lastName || '').trim();
+  var firstInitial = String(firstName || '').trim().charAt(0).toUpperCase();
+  var idNum = String(teacherId || '').replace(/^T0*/, '');
+  return last + ' ' + firstInitial + '-' + idNum;
 }
 
 function createPartialReturningRecord(contactsSheet, firstName, lastName, email) {
@@ -578,4 +626,26 @@ function updateTeacherFields(sheet, row, fieldMap, get, getCol) {
     sheet.getRange(row, addressCol).setValue(address);
     UtilityScriptLibrary.debugLog("Updated Address with: " + address);
   }
+}
+
+function logSheetHeaders() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheets = ss.getSheets();
+  var output = [];
+  
+  for (var i = 0; i < sheets.length; i++) {
+    var sheet = sheets[i];
+    var name = sheet.getName();
+    var lastCol = sheet.getLastColumn();
+    
+    if (lastCol === 0) {
+      output.push(name + ': [empty]');
+      continue;
+    }
+    
+    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    output.push(name + ': ' + headers.filter(String).join(' | '));
+  }
+  
+  Logger.log(output.join('\n\n'));
 }

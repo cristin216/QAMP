@@ -6723,6 +6723,81 @@ function markStudentsInactive() {
   }).data;
 }
 
+function migrateTeacherDisplayNamesToIds() {
+  var ss         = SpreadsheetApp.getActiveSpreadsheet();
+  var norm       = UtilityScriptLibrary.normalizeHeader;
+  var monthNames = UtilityScriptLibrary.getMonthNames();
+  var stats      = { sheetsFixed: 0, cellsFixed: 0, skipped: 0, errors: [] };
+
+  var metaSheet = ss.getSheetByName('Billing Metadata');
+  if (!metaSheet) throw new Error('Billing Metadata sheet not found');
+
+  var metaData = metaSheet.getDataRange().getValues();
+
+  for (var m = 1; m < metaData.length; m++) {
+    var cycleDate = metaData[m][0];
+    if (!cycleDate || !(cycleDate instanceof Date)) continue;
+
+    var sheetName = monthNames[cycleDate.getMonth()] + ' ' + cycleDate.getFullYear();
+    var sheet     = ss.getSheetByName(sheetName);
+
+    if (!sheet) {
+      UtilityScriptLibrary.debugLog('migrateTeacherDisplayNamesToIds', 'WARNING',
+        'Billing sheet not found', sheetName, '');
+      continue;
+    }
+
+    try {
+      var headerMap  = UtilityScriptLibrary.getHeaderMap(sheet);
+      var teacherCol = headerMap[norm('Teacher')];
+      if (!teacherCol) continue;
+
+      var lastRow = sheet.getLastRow();
+      if (lastRow < 2) continue;
+
+      var teacherData = sheet.getRange(2, teacherCol, lastRow - 1, 1).getValues();
+      var updates     = [];
+
+      for (var r = 0; r < teacherData.length; r++) {
+        var current = String(teacherData[r][0] || '').trim();
+        if (!current || /^T\d+$/.test(current)) continue;
+
+        var resolved = UtilityScriptLibrary.getTeacherIdByDisplayName(current);
+        if (resolved) {
+          updates.push({ row: r + 2, id: resolved });
+        } else {
+          stats.skipped++;
+          UtilityScriptLibrary.debugLog('migrateTeacherDisplayNamesToIds', 'WARNING',
+            'Could not resolve teacher name', sheetName + ' row ' + (r + 2) + ': ' + current, '');
+        }
+      }
+
+      for (var u = 0; u < updates.length; u++) {
+        sheet.getRange(updates[u].row, teacherCol).setValue(updates[u].id);
+        stats.cellsFixed++;
+      }
+
+      if (updates.length > 0) stats.sheetsFixed++;
+
+    } catch (e) {
+      stats.errors.push(sheetName + ': ' + e.message);
+    }
+  }
+
+  UtilityScriptLibrary.debugLog('migrateTeacherDisplayNamesToIds', 'SUCCESS',
+    'Migration complete',
+    'Sheets: ' + stats.sheetsFixed + ', Cells: ' + stats.cellsFixed +
+    ', Unresolved: ' + stats.skipped +
+    (stats.errors.length ? ', Errors: ' + stats.errors.join('; ') : ''), '');
+
+  SpreadsheetApp.getUi().alert(
+    '✅ Migration complete.\n' +
+    'Sheets updated: '  + stats.sheetsFixed + '\n' +
+    'Cells updated: '   + stats.cellsFixed  + '\n' +
+    'Unresolved: '      + stats.skipped
+  );
+}
+
 function parseMonthYear(monthStr) {
   var parts = monthStr.split(' ');
   var month = parts[0];

@@ -2554,6 +2554,46 @@ function getTeacherGroupAssignments(teacherName) {
   }
 }
 
+function getTeacherIdByDisplayName(displayName) {
+  try {
+    if (!displayName || String(displayName).trim() === '') {
+      debugLog('getTeacherIdByDisplayName', 'WARNING', 'No display name provided', '', '');
+      return '';
+    }
+
+    var name = String(displayName).trim();
+
+    // If it already looks like a Teacher ID, return as-is
+    if (/^T\d+$/.test(name)) return name;
+
+    var lookupSheet = getSheet('teacherRosterLookup');
+    var getCol = createColumnFinder(lookupSheet);
+    var displayNameCol = getCol('Display Name');
+    var teacherIdCol   = getCol('Teacher ID');
+
+    if (!displayNameCol || !teacherIdCol) {
+      debugLog('getTeacherIdByDisplayName', 'ERROR', 'Required columns not found in Teacher Roster Lookup', '', '');
+      return '';
+    }
+
+    var data = lookupSheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][displayNameCol - 1]).trim() === name) {
+        var teacherId = String(data[i][teacherIdCol - 1]).trim();
+        debugLog('getTeacherIdByDisplayName', 'SUCCESS', 'Teacher ID resolved', name + ' -> ' + teacherId, '');
+        return teacherId;
+      }
+    }
+
+    debugLog('getTeacherIdByDisplayName', 'WARNING', 'No match found for display name', name, '');
+    return '';
+
+  } catch (error) {
+    debugLog('getTeacherIdByDisplayName', 'ERROR', 'Failed', displayName, error.message);
+    return '';
+  }
+}
+
 function getTeacherNameById(teacherId) {
   try {
     if (!teacherId || String(teacherId).trim() === '') {

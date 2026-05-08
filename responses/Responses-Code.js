@@ -171,7 +171,7 @@ function handleReturningStudentSubmit(e) {
     if (studentMatched) {
       var getStudentCol = UtilityScriptLibrary.createColumnFinder(studentsSheet);
       var studentData = studentsSheet.getRange(studentRow, 1, 1, studentsSheet.getLastColumn()).getValues()[0];
-      teacherId = String(studentData[getStudentCol('Teacher') - 1] || '').trim();
+      teacherId = String(studentData[getStudentCol('Teacher ID') - 1] || '').trim();
 
       // === BACKFILL CONTACT DATA IF NO UPDATE NEEDED ===
       var needsUpdate = String(formData['Needs Update'] || '').trim().toLowerCase();
@@ -294,23 +294,6 @@ function onEdit(e) {
   if (editedRow < 2) return;
 
   UtilityScriptLibrary.debugLog("🔍 Form edit detected on sheet: " + sheetName);
-
-  // Swap display name -> Teacher ID before any further processing
-  var selectedValue = String(e.range.getValue()).trim();
-  if (selectedValue) {
-    var lookupSheet = getTeacherRosterLookupSheet();
-    if (lookupSheet) {
-      var displayNameMap = generateTeacherDisplayNames(lookupSheet);
-      // Reverse lookup: displayName -> teacherId
-      for (var teacherId in displayNameMap) {
-        if (displayNameMap[teacherId] === selectedValue) {
-          e.range.setValue(teacherId);
-          UtilityScriptLibrary.debugLog('onEdit', 'INFO', 'Swapped display name to Teacher ID', selectedValue + ' -> ' + teacherId, '');
-          break;
-        }
-      }
-    }
-  }
 
   if (!shouldProcessEdit(e, sheet)) {
     UtilityScriptLibrary.debugLog("⏭️ Skipping form edit processing");
@@ -1955,100 +1938,6 @@ function generateAttendanceSheetFromRoster(teacherWorkbook, monthName) {
   }
 }
 
-function generateTeacherDisplayNames(lookupSheet) {
-  try {
-    var getCol = UtilityScriptLibrary.createColumnFinder(lookupSheet);
-    var firstNameCol = getCol('First Name');
-    var lastNameCol = getCol('Last Name');
-    var teacherIdCol = getCol('Teacher ID');
-    var statusCol = getCol('Status');
-
-    if (!firstNameCol || !lastNameCol || !teacherIdCol || !statusCol) {
-      UtilityScriptLibrary.debugLog('generateTeacherDisplayNames', 'ERROR', 'Required columns not found', '', '');
-      return {};
-    }
-
-    var validStatuses = ['potential', 'active', 'returning'];
-    var data = lookupSheet.getDataRange().getValues();
-    var teachers = [];
-
-    for (var i = 1; i < data.length; i++) {
-      var status = String(data[i][statusCol - 1]).trim().toLowerCase();
-      if (validStatuses.indexOf(status) === -1) continue;
-      var firstName = String(data[i][firstNameCol - 1]).trim();
-      var lastName = String(data[i][lastNameCol - 1]).trim();
-      var teacherId = String(data[i][teacherIdCol - 1]).trim();
-      if (!firstName || !lastName || !teacherId) continue;
-      teachers.push({ firstName: firstName, lastName: lastName, teacherId: teacherId, row: i + 1 });
-    }
-
-    // Count last name occurrences
-    var lastNameCounts = {};
-    for (var i = 0; i < teachers.length; i++) {
-      var ln = teachers[i].lastName;
-      lastNameCounts[ln] = (lastNameCounts[ln] || 0) + 1;
-    }
-
-    // Generate display names with collision detection
-    var displayNameMap = {}; // teacherId -> displayName
-
-    // First pass: assign last-name-only where no collision
-    var collisionGroups = {}; // lastName -> [teacher, ...]
-    for (var i = 0; i < teachers.length; i++) {
-      var t = teachers[i];
-      if (lastNameCounts[t.lastName] === 1) {
-        displayNameMap[t.teacherId] = t.lastName;
-      } else {
-        if (!collisionGroups[t.lastName]) collisionGroups[t.lastName] = [];
-        collisionGroups[t.lastName].push(t);
-      }
-    }
-
-    // Second pass: resolve collisions by appending minimum first name chars
-    for (var lastName in collisionGroups) {
-      var group = collisionGroups[lastName];
-      var charsNeeded = 1;
-      var resolved = false;
-
-      while (!resolved && charsNeeded <= group[0].firstName.length) {
-        var candidates = {};
-        var collision = false;
-
-        for (var i = 0; i < group.length; i++) {
-          var suffix = group[i].firstName.substring(0, charsNeeded);
-          if (candidates[suffix]) {
-            collision = true;
-            break;
-          }
-          candidates[suffix] = true;
-        }
-
-        if (!collision) {
-          resolved = true;
-          for (var i = 0; i < group.length; i++) {
-            displayNameMap[group[i].teacherId] = group[i].lastName + group[i].firstName.substring(0, charsNeeded);
-          }
-        } else {
-          charsNeeded++;
-        }
-      }
-
-      // Fallback: full first name still collides (identical names), append teacher ID
-      if (!resolved) {
-        for (var i = 0; i < group.length; i++) {
-          displayNameMap[group[i].teacherId] = group[i].lastName + group[i].firstName + group[i].teacherId;
-        }
-      }
-    }
-
-    return displayNameMap; // { teacherId: displayName, ... }
-
-  } catch (error) {
-    UtilityScriptLibrary.debugLog('generateTeacherDisplayNames', 'ERROR', 'Failed', '', error.message);
-    return {};
-  }
-}
-
 function getActiveStudentsFromRoster(rosterSheet) {
   try {
     UtilityScriptLibrary.debugLog("getActiveStudentsFromRoster", "DEBUG", "Starting to extract students from roster", "Sheet: " + rosterSheet.getName(), "");
@@ -2123,18 +2012,11 @@ function getActiveTeachersForDropdown() {
     }
 
     var getCol = UtilityScriptLibrary.createColumnFinder(lookupSheet);
-    var teacherIdCol = getCol('Teacher ID');
-    var statusCol = getCol('Status');
+    var displayNameCol = getCol('Display Name');
+    var statusCol      = getCol('Status');
 
-    if (!teacherIdCol || !statusCol) {
+    if (!displayNameCol || !statusCol) {
       UtilityScriptLibrary.debugLog('getActiveTeachersForDropdown', 'ERROR', 'Required columns not found', '', '');
-      return [];
-    }
-
-    var displayNameMap = generateTeacherDisplayNames(lookupSheet);
-
-    if (Object.keys(displayNameMap).length === 0) {
-      UtilityScriptLibrary.debugLog('getActiveTeachersForDropdown', 'WARNING', 'No display names generated', '', '');
       return [];
     }
 
@@ -2143,11 +2025,11 @@ function getActiveTeachersForDropdown() {
     var data = lookupSheet.getDataRange().getValues();
 
     for (var i = 1; i < data.length; i++) {
-      var teacherId = String(data[i][teacherIdCol - 1]).trim();
-      var status = String(data[i][statusCol - 1]).trim().toLowerCase();
+      var status      = String(data[i][statusCol - 1]).trim().toLowerCase();
+      var displayName = String(data[i][displayNameCol - 1]).trim();
       if (validStatuses.indexOf(status) === -1) continue;
-      if (!displayNameMap[teacherId]) continue;
-      displayNames.push(displayNameMap[teacherId]);
+      if (!displayName) continue;
+      displayNames.push(displayName);
     }
 
     displayNames.sort();
@@ -2468,50 +2350,35 @@ function getTeacherInfoByDisplayName(displayName) {
       return null;
     }
 
-    var displayNameMap = generateTeacherDisplayNames(lookupSheet);
-
-    // Reverse lookup: displayName -> teacherId
-    var resolvedTeacherId = null;
-    for (var teacherId in displayNameMap) {
-      if (displayNameMap[teacherId] === displayName) {
-        resolvedTeacherId = teacherId;
-        break;
-      }
-    }
-
-    if (!resolvedTeacherId) {
-      UtilityScriptLibrary.debugLog('getTeacherInfoByDisplayName', 'WARNING', 'Teacher not found', displayName, '');
-      return null;
-    }
-
     var getCol = UtilityScriptLibrary.createColumnFinder(lookupSheet);
-    var firstNameCol = getCol('First Name');
-    var lastNameCol = getCol('Last Name');
-    var rosterUrlCol = getCol('Roster URL');
-    var teacherIdCol = getCol('Teacher ID');
-    var statusCol = getCol('Status');
+    var firstNameCol   = getCol('First Name');
+    var lastNameCol    = getCol('Last Name');
+    var rosterUrlCol   = getCol('Roster URL');
+    var teacherIdCol   = getCol('Teacher ID');
+    var displayNameCol = getCol('Display Name');
+    var statusCol      = getCol('Status');
     var lastUpdatedCol = getCol('Last Updated');
 
-    if (!teacherIdCol) {
+    if (!teacherIdCol || !displayNameCol) {
       UtilityScriptLibrary.debugLog('getTeacherInfoByDisplayName', 'ERROR', 'Required columns not found', '', '');
       return null;
     }
 
     var data = lookupSheet.getDataRange().getValues();
     for (var i = 1; i < data.length; i++) {
-      if (String(data[i][teacherIdCol - 1]).trim() !== resolvedTeacherId) continue;
+      if (String(data[i][displayNameCol - 1]).trim() !== displayName) continue;
 
       return {
         firstName:   firstNameCol   ? String(data[i][firstNameCol - 1]).trim()  : '',
         lastName:    lastNameCol     ? String(data[i][lastNameCol - 1]).trim()   : '',
         rosterUrl:   rosterUrlCol    ? String(data[i][rosterUrlCol - 1]).trim()  : '',
-        teacherId:   resolvedTeacherId,
+        teacherId:   String(data[i][teacherIdCol - 1]).trim(),
         status:      statusCol       ? String(data[i][statusCol - 1]).trim()     : '',
         lastUpdated: lastUpdatedCol  ? data[i][lastUpdatedCol - 1]               : ''
       };
     }
 
-    UtilityScriptLibrary.debugLog('getTeacherInfoByDisplayName', 'WARNING', 'Teacher ID not found in data rows', resolvedTeacherId, '');
+    UtilityScriptLibrary.debugLog('getTeacherInfoByDisplayName', 'WARNING', 'Display name not found', displayName, '');
     return null;
 
   } catch (error) {
@@ -2663,6 +2530,28 @@ function loadStudentMapFromContacts() {
     Logger.log('❌ Error loading student map: ' + error.message);
     throw error;
   }
+}
+
+function logSheetHeaders() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheets = ss.getSheets();
+  var output = [];
+  
+  for (var i = 0; i < sheets.length; i++) {
+    var sheet = sheets[i];
+    var name = sheet.getName();
+    var lastCol = sheet.getLastColumn();
+    
+    if (lastCol === 0) {
+      output.push(name + ': [empty]');
+      continue;
+    }
+    
+    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    output.push(name + ': ' + headers.filter(String).join(' | '));
+  }
+  
+  Logger.log(output.join('\n\n'));
 }
 
 function populateRosterWithContinuingStudents(workbook, semesterName, students) {
@@ -3047,7 +2936,7 @@ function processReassignment() {
 
     var contactsSheet = UtilityScriptLibrary.getSheet('students');
     var contactsHeaderMap = contactsSheet ? UtilityScriptLibrary.getHeaderMap(contactsSheet) : null;
-    var teacherCol = contactsHeaderMap ? contactsHeaderMap[UtilityScriptLibrary.normalizeHeader('Teacher')] : null;
+    var teacherCol = contactsHeaderMap ? contactsHeaderMap[UtilityScriptLibrary.normalizeHeader('Teacher ID')] : null;
     var studentIdCol = contactsHeaderMap ? contactsHeaderMap[UtilityScriptLibrary.normalizeHeader('Student ID')] : null;
     var contactsData = contactsSheet ? contactsSheet.getDataRange().getValues() : null;
     
@@ -3333,7 +3222,7 @@ function processStudent(formData, contactsSheet, enrollmentTerm) {
     };
 
     var requiredFields = [
-      "Student Last Name", "Student First Name", "Instrument", "Teacher",
+      "Student Last Name", "Student First Name", "Instrument", "Teacher ID",
       "Age", "Currently Registered", "Student ID", "Parent ID", "Student Lookup", "First Enrollment Term"
     ];
     var missingFields = [];
@@ -3347,10 +3236,10 @@ function processStudent(formData, contactsSheet, enrollmentTerm) {
       throw new Error("Missing required columns in Students sheet: " + missingFields.join(", "));
     }
 
-    // Teacher ID is stored directly — onEdit already swapped display name to ID
-    var teacherId = String(formData["Teacher"] || '').trim();
+    // Resolve display name from semester sheet to Teacher ID
+    var teacherId = UtilityScriptLibrary.getTeacherIdByDisplayName(String(formData["Teacher"] || '').trim());
     if (!teacherId) {
-      UtilityScriptLibrary.debugLog("processStudent", "WARNING", "No Teacher ID found in form data", "", "");
+      UtilityScriptLibrary.debugLog("processStudent", "WARNING", "Could not resolve Teacher ID from display name", formData["Teacher"] || '', "");
     }
 
     var studentId = formData["Student ID"] || '';
@@ -3382,8 +3271,8 @@ function processStudent(formData, contactsSheet, enrollmentTerm) {
         checkboxCell.setValue(true);
       }
 
-      if (getCol("Teacher")) {
-        contactsSheet.getRange(studentRow, getCol("Teacher")).setValue(teacherId);
+      if (getCol("Teacher ID")) {
+        contactsSheet.getRange(studentRow, getCol("Teacher ID")).setValue(teacherId);
       }
       
       if (getCol("Age")) {
@@ -3425,7 +3314,7 @@ function processStudent(formData, contactsSheet, enrollmentTerm) {
       newRow[getCol("Student Last Name") - 1] = formData["Student Last Name"] || '';
       newRow[getCol("Student First Name") - 1] = formData["Student First Name"] || '';
       newRow[getCol("Instrument") - 1] = formData["Instrument"] || '';
-      newRow[getCol("Teacher") - 1] = teacherId;
+      newRow[getCol("Teacher ID") - 1] = teacherId;
       newRow[getCol("Age") - 1] = standardizedAge;
       newRow[getCol("First Enrollment Term") - 1] = enrollmentTerm || '';
       newRow[getCol("Student Lookup") - 1] = studentKey;
