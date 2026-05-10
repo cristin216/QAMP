@@ -3,7 +3,7 @@
 WORKBOOK DOCUMENTATION
 ================================================================================
   Workbook Name: Responses
-  Most Recent version: 113
+  Most Recent version: 114
 
   Primary Purpose:
       Stores all form submissions, teacher and student metadata, semester registration
@@ -125,7 +125,7 @@ WORKBOOK DOCUMENTATION
 ================================================================================
 RESPONSES FUNCTION DIRECTORY
 ================================================================================
-    Total Functions: 76
+    Total Functions: 77
 
     This directory provides a quick reference for all functions in Responses script.
     Parameters marked with ? are optional.
@@ -151,7 +151,6 @@ RESPONSES FUNCTION DIRECTORY
     applyTeacherDropdownToSheet
     authorizeScript
     calculateExperienceStartRange
-    calculateGraduationYear
     checkIfStudentExists
     checkSheet
     checkWorkbook
@@ -171,7 +170,6 @@ RESPONSES FUNCTION DIRECTORY
     findSemesterRoster
     formatInvoiceLogSheet
     generateAttendanceSheetFromRoster
-    generateTeacherDisplayNames
     getActiveStudentsFromRoster
     getActiveTeachersForDropdown
     getAllTeachersWithGroupAssignments
@@ -185,8 +183,11 @@ RESPONSES FUNCTION DIRECTORY
     getTeacherRosterLookupSheet
     getYearRosterFolders
     handleFormEdit
+    handleReturningStudentSubmit
     hasMonthBeenInvoiced
+    logSheetHeaders
     loadStudentMapFromContacts
+    onEdit
     onOpen
     populateRosterWithContinuingStudents
     processParent
@@ -251,15 +252,15 @@ RESPONSES FUNCTION DIRECTORY
         Adds a new student to the roster template sheet with all form data.
         Handles grade, experience, instrument, lesson length, and parent information.
         Category: ROSTER_OPERATIONS
-        Local functions used: calculateGraduationYear(), calculateExperienceStartRange()
-        Utility functions used: debugLog(), createColumnFinder()
+        Local functions used: calculateExperienceStartRange()
+        Utility functions used: debugLog(), createColumnFinder(), calculateGraduationYear()
 
     addStudentToRosterFromData(rosterSheet, studentInfo, headerMap) -> void
         Adds student to roster using extracted student data with proper formatting.
         Used when processing pending assignments or reassignments.
         Category: ROSTER_OPERATIONS
-        Local functions used: calculateGraduationYear(), calculateExperienceStartRange()
-        Utility functions used: debugLog()
+        Local functions used: calculateExperienceStartRange()
+        Utility functions used: debugLog(), calculateGraduationYear()
 
     addStudentToSemesterRoster(workbook, formData, studentId, semesterName) -> void
         Adds student to the semester-specific roster sheet within a teacher workbook.
@@ -299,13 +300,6 @@ RESPONSES FUNCTION DIRECTORY
     calculateExperienceStartRange(experience) -> String
         Converts experience level to a range string (e.g., "3-5 years" from "4").
         Handles various input formats and edge cases.
-        Category: DATA_PROCESSING
-        Local functions used: None
-        Utility functions used: debugLog()
-
-    calculateGraduationYear(grade) -> Number|String
-        Calculates graduation year from current grade level.
-        Returns "N/A" for adult students.
         Category: DATA_PROCESSING
         Local functions used: None
         Utility functions used: debugLog()
@@ -445,14 +439,6 @@ RESPONSES FUNCTION DIRECTORY
         Local functions used: getActiveStudentsFromRoster(), addStudentToAttendanceSheet()
         Utility functions used: debugLog()
 
-    generateTeacherDisplayNames(lookupSheet) -> Object
-        Builds a map of teacherId -> display name from the Teacher Roster Lookup sheet.
-        Uses last name only unless there's a collision; appends first initial to disambiguate.
-        Only processes teachers with status: potential, active, or returning.
-        Category: DATA_PROCESSING
-        Local functions used: None
-        Utility functions used: debugLog(), createColumnFinder()
-
     getActiveStudentsFromRoster(rosterSheet) -> Array
         Retrieves all active students from a roster sheet.
         Excludes withdrawn students and returns array of student data objects.
@@ -462,11 +448,11 @@ RESPONSES FUNCTION DIRECTORY
 
     getActiveTeachersForDropdown() -> Array
         Gets sorted list of display names for teacher dropdown validation.
-        Calls generateTeacherDisplayNames() to regenerate names, writes changes back to lookup sheet,
+        Regenerates teacher display names, writes changes back to lookup sheet,
         and syncs renamed display names into the current semester Teacher column.
         Returns display names for teachers with status: potential, active, or returning.
         Category: DATA_RETRIEVAL
-        Local functions used: getTeacherRosterLookupSheet(), generateTeacherDisplayNames()
+        Local functions used: getTeacherRosterLookupSheet()
         Utility functions used: debugLog(), getCurrentSemesterName(), getHeaderMap(), normalizeHeader()
 
     getAllTeachersWithGroupAssignments() -> Array
@@ -547,6 +533,16 @@ RESPONSES FUNCTION DIRECTORY
         Local functions used: shouldProcessEdit(), processSingleRow()
         Utility functions used: debugLog(), getHeaderMap(), normalizeHeader()
 
+    handleReturningStudentSubmit(e) -> void
+        Event handler for new submissions to the Returning Student Responses sheet.
+        Acquires a script lock, extracts returning student form data using the returning
+        student field map, matches against the current semester sheet, and calls
+        processSingleRow() to complete student processing.
+        Category: EVENT_HANDLER
+        Local functions used: processSingleRow()
+        Utility functions used: getSheet(), getHeaderMap(), getFieldMappingFromSheet(),
+                                getCurrentSemesterName(), debugLog()
+
     hasMonthBeenInvoiced(sheet) -> Boolean
         Checks if a month attendance sheet has already been invoiced.
         Looks for "Invoiced" status in metadata or specific cells.
@@ -560,6 +556,23 @@ RESPONSES FUNCTION DIRECTORY
         Category: DATA_RETRIEVAL
         Local functions used: None
         Utility functions used: getSheet(), createColumnFinder()
+
+    logSheetHeaders() -> void
+        Logs all sheet names and their header row values to the console for debugging.
+        Skips empty sheets.
+        Category: SETUP
+        Local functions used: None
+        Utility functions used: None
+
+    onEdit(e) -> void
+        Triggers on Teacher column edits in the current semester sheet. Validates the
+        edit is on the correct sheet and column, calls shouldProcessEdit() to filter
+        duplicates, acquires a script lock, and calls processSingleRow() to process the row.
+        Displays a success or error message via Browser.msgBox().
+        Category: EVENT_HANDLER
+        Local functions used: shouldProcessEdit(), processSingleRow()
+        Utility functions used: getHeaderMap(), normalizeHeader(), getCurrentSemesterName(),
+                                debugLog()
 
     onOpen() -> void
         Runs when spreadsheet opens. Creates custom menu and applies teacher dropdown.
@@ -610,7 +623,7 @@ RESPONSES FUNCTION DIRECTORY
         Local functions used: handleRosterUpdate(), extractStudentDataFromRoster()
         Utility functions used: debugLog()
 
-       processSingleRow(sheet, row, headerMap) -> void
+    processSingleRow(sheet, row, headerMap) -> void
         Processes a single form submission row end-to-end.
         Orchestrates student creation, parent linking, and roster assignment.
         Retrieves fieldMap and semesterName internally.
@@ -784,13 +797,11 @@ RESPONSES FUNCTION DIRECTORY
 
     DATA_PROCESSING (10 functions):
       calculateExperienceStartRange
-      calculateGraduationYear
-      convertStudentInfoToAttendanceObject
+        convertStudentInfoToAttendanceObject
       createStudentObjectForAttendance
       extractFormData
       extractStudentDataFromRoster
-      generateTeacherDisplayNames
-      processParent
+        processParent
       processSingleRow
       processStudent
 
@@ -804,14 +815,17 @@ RESPONSES FUNCTION DIRECTORY
       getMostRecentMonthSheets
       getTeacherInfoByDisplayName
       getTeacherInfoByFullName
-      loadStudentMapFromContacts
+      logSheetHeaders
+    loadStudentMapFromContacts
 
     DATA_UPDATE (2 functions):
       updateStudentWithParentId
       updateTeacherRosterLookup
 
-    EVENT_HANDLER (2 functions):
+    EVENT_HANDLER (4 functions):
       handleFormEdit
+      handleReturningStudentSubmit
+      onEdit
       onOpen
 
     ROSTER_OPERATIONS (8 functions):
@@ -824,8 +838,9 @@ RESPONSES FUNCTION DIRECTORY
       processRoster
       populateRosterWithContinuingStudents
 
-    SETUP (2 functions):
+    SETUP (3 functions):
       authorizeScript
+      logSheetHeaders
       runLogHeaders
 
     SHEET_CREATION (2 functions):
@@ -862,7 +877,7 @@ RESPONSES FUNCTION DIRECTORY
 
     VALIDATION (4 functions):
       checkIfStudentExists
-      hasMonthBeenInvoiced
+    hasMonthBeenInvoiced
       shouldProcessEdit
       studentExistsInAttendanceSheet
 
