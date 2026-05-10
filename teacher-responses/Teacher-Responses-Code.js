@@ -1,3 +1,13 @@
+/*
+================================================================================
+TEACHER RESPONSES CODE
+================================================================================
+Version: 16
+Total Functions: 17
+Documentation: See Teacher-Responses-Functions.md
+================================================================================
+*/
+
 function handleReturningFormSubmit(e) {
   if (e && e.range && e.range.getSheet().getName() !== UtilityScriptLibrary.SHEET_MAP.teacherReturningResponses.name) {
     UtilityScriptLibrary.debugLog('handleReturningFormSubmit', 'INFO', 'Wrong sheet — skipping', e.range.getSheet().getName(), '');
