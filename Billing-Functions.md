@@ -1,8 +1,8 @@
 ================================================================================
 BILLING FUNCTION DIRECTORY
 ================================================================================
-    Total Functions: 196
-    Most Recent version: 164
+    Total Functions: 194
+    Most Recent version: 165
 
     This directory provides a quick reference for all functions in Billing script.
     Parameters marked with ? are optional.
@@ -16,19 +16,17 @@ BILLING FUNCTION DIRECTORY
   ================================================================================
   ALPHABETICAL INDEX:
   ================================================================================
-    addCumulativeFormulas
     addInvoiceTotalFormula
     addMissingStudentsToAttendanceSheet
     appendReregistrationNewStudents
     appendToBillingMetadata
     appendToSemesterMetadata
-    applyAdminVisualFormatting
+    applyBillingConditionalFormatting
     applyCumulativeHistory
     applyLateFeeToRow
     applyLessonEquivalentCredits
     applyLetterTypeValidation
     applyMultiStudentDiscount
-    applyPastDataToRow
     applyReregistrationOverwrites
     applyWarningsToTeacherWorkbook
     buildBillingContext
@@ -44,9 +42,9 @@ BILLING FUNCTION DIRECTORY
     buildInvoiceTotalFormula
     buildInvoiceVariableMap
     buildMissingDocumentSentence
+    buildPastVlookupFormula
     buildProgramDescription
     buildTemplateVariables
-    calculateLateFee
     calculateLessonEquivalents
     calculateTotalCreditsApplied
     cancelDocumentGeneration
@@ -137,6 +135,7 @@ BILLING FUNCTION DIRECTORY
     logMysteryStudents
     markReregistrationProcessed
     markStudentsInactive
+    migrateTeacherDisplayNamesToIds
     onOpen
     parseMonthYear
     populateAllCumulativeColumns
@@ -148,7 +147,6 @@ BILLING FUNCTION DIRECTORY
     populateInvoiceMetadata
     populateLateFee
     populateLetterType
-    populatePastBalanceAndCredit
     processDocumentSelection
     processFieldMapForSemester
     processFormsData
@@ -160,7 +158,6 @@ BILLING FUNCTION DIRECTORY
     processTeacherForNewAttendance
     processTeacherReconciliation
     promptForBillingCycleName
-    promptForCustomToday
     promptForMonthAndYear
     promptForSemesterDates
     promptForSemesterName
@@ -180,6 +177,7 @@ BILLING FUNCTION DIRECTORY
     selectDocumentTemplate
     sendReregistrationLinks
     setDeliveryPreference
+    setPastColumnFormulas
     setProgramQuantitiesForCarryover
     setupNewSemester
     setupRosterTemplateProtection
@@ -199,7 +197,7 @@ BILLING FUNCTION DIRECTORY
     testFullAgreementGeneration
     testPrompt
     testTemplateLiteral
-    updateBillingForTeacherStudents
+    updateBillingForStudents
     updateCumulativeTracking
     updateDocIdInBillingSheet
     updateInvoiceUrlInBillingSheet
@@ -211,7 +209,8 @@ BILLING FUNCTION DIRECTORY
     verifyPaymentsDetailedForStudents
     verifyProgramsForSemester
     verifyRatesEnhanced
-    writeAndFormatRows  ================================================================================
+    writeAndFormatRows
+  ================================================================================
   FUNCTION CATEGORIES:
   ================================================================================
 
@@ -242,16 +241,15 @@ BILLING FUNCTION DIRECTORY
       renameLatestFormSheet
       verifyProgramsForSemester
 
-    BILLING_CYCLE (41 functions):
-      addCumulativeFormulas
+    BILLING_CYCLE (40 functions):
       addInvoiceTotalFormula
       appendToBillingMetadata
+      applyBillingConditionalFormatting
       applyCumulativeHistory
       applyLateFeeToRow
       applyLessonEquivalentCredits
       applyLetterTypeValidation
       applyMultiStudentDiscount
-      applyPastDataToRow
       buildBillingContext
       buildBillingRowFromForm
       buildBillingRowFromPrevious
@@ -261,7 +259,7 @@ BILLING FUNCTION DIRECTORY
       buildDynamicProgramColumns
       buildFormStudents
       buildInvoiceTotalFormula
-      calculateLateFee
+      buildPastVlookupFormula
       copyStaticFieldsToBillingRow
       createBillingSheet
       formatRow
@@ -275,10 +273,10 @@ BILLING FUNCTION DIRECTORY
       populateInvoiceMetadata
       populateLateFee
       populateLetterType
-      populatePastBalanceAndCredit
       processSemesterEndCredits
       protectPreviousBillingCycle
       setDeliveryPreference
+      setPastColumnFormulas
       setProgramQuantitiesForCarryover
       updateCumulativeTracking
       writeAndFormatRows
@@ -325,8 +323,7 @@ BILLING FUNCTION DIRECTORY
       updateDocIdInBillingSheet
       updateInvoiceUrlInBillingSheet
 
-    RECONCILIATION (27 functions):
-      applyAdminVisualFormatting
+    RECONCILIATION (26 functions):
       applyWarningsToTeacherWorkbook
       expandSheetAttendanceRows
       findBillingRowByStudentId
@@ -349,7 +346,7 @@ BILLING FUNCTION DIRECTORY
       runCombinedReconciliation
       runWeeklyLessonReconciliation
       sumPayments
-      updateBillingForTeacherStudents
+      updateBillingForStudents
       updateSheetStudentWarnings
       updateTeacherRosterBalances
 
@@ -364,7 +361,7 @@ BILLING FUNCTION DIRECTORY
       verifyAndGetParentData
 
     HELPER_FUNCTIONS (47 functions):
-      applyLessonEquivalentCredits (note: also referenced from BILLING_CYCLE)
+      applyLessonEquivalentCredits (note: also listed in BILLING_CYCLE)
       calculateLessonEquivalents
       calculateTotalCreditsApplied
       collectBillingData
@@ -406,9 +403,9 @@ BILLING FUNCTION DIRECTORY
       getStudentsNeedingPackets
       isHeaderRow
       loadProgramConfig
+      migrateTeacherDisplayNamesToIds
       parseMonthYear
       promptForBillingCycleName
-      promptForCustomToday
       promptForSemesterDates
       promptForSemesterName
       protectBillingSheet
@@ -428,16 +425,10 @@ BILLING FUNCTION DIRECTORY
       testPrompt
       testTemplateLiteral
       verifyCumulativeFormulas
-      
+
   ================================================================================
   FUNCTION REFERENCE (Alphabetical)
   ================================================================================
-
-    addCumulativeFormulas(newRow, context, rowIndex, quantityCols) -> void
-        Writes cumulative tracking formulas into the appropriate columns of a new billing row.
-        Category: BILLING_CYCLE
-        Local functions used: None
-        Utility functions used: normalizeHeader(), columnToLetter()
 
     addInvoiceTotalFormula(newRow, context, rowIndex, currencyCols) -> void
         Writes the Current Invoice Total formula into the new billing row.
@@ -457,23 +448,24 @@ BILLING FUNCTION DIRECTORY
         Local functions used: buildBillingRowFromForm()
         Utility functions used: getHeaderMap(), normalizeHeader(), debugLog()
 
-    appendToBillingMetadata(billingCycleName, billingDate, semesterName) -> void
+    appendToBillingMetadata(billingCycleName, customToday, semesterName) -> void
         Appends new billing cycle information to Billing Metadata sheet.
         Category: BILLING_CYCLE
         Local functions used: None
         Utility functions used: debugLog()
 
-    appendToSemesterMetadata(semesterName, startDate, endDate, fieldMap) -> void
+    appendToSemesterMetadata(semesterName, startDate, endDate) -> void
         Appends new semester information to Semester Metadata sheet.
         Category: SETUP_SEMESTER
         Local functions used: None
         Utility functions used: debugLog()
 
-    applyAdminVisualFormatting(sheet, dataRowCount) -> void
-        Applies visual formatting to reconciliation sheets for admin viewing.
-        Category: RECONCILIATION
+    applyBillingConditionalFormatting(billingSheet) -> void
+        Applies conditional formatting rules to Hours Remaining, Current Balance, and Student Last Name
+        columns, highlighting rows in warning style when hours are low or balance is negative.
+        Category: BILLING_CYCLE
         Local functions used: None
-        Utility functions used: debugLog()
+        Utility functions used: normalizeHeader(), getHeaderMap(), columnToLetter(), debugLog(), STYLES
 
     applyCumulativeHistory(newRow, studentId, context, currencyCols) -> void
         Applies historical cumulative hours and billed data from Cumulative Tracking sheet to billing row.
@@ -481,17 +473,19 @@ BILLING FUNCTION DIRECTORY
         Local functions used: getCumulativeHistory()
         Utility functions used: normalizeHeader(), debugLog()
 
-    applyLateFeeToRow(newRow, context, currencyCols) -> void
+    applyLateFeeToRow(newRow, context, currencyCols, pastBalanceValue) -> void
         Calculates and writes late fee into the appropriate column of a new billing row.
+        Uses pastBalanceValue (passed in rather than re-read) to determine if fee applies.
         Category: BILLING_CYCLE
-        Local functions used: calculateLateFee()
-        Utility functions used: normalizeHeader()
+        Local functions used: getRateMap()
+        Utility functions used: normalizeHeader(), addToCurrencyCols()
 
-    applyLessonEquivalentCredits(billingContext, studentData, row, billingSheet) -> void
-        Applies lesson equivalent credits for students switching from packages to private lessons.
-        Category: BILLING_CYCLE
-        Local functions used: calculateLessonEquivalents()
-        Utility functions used: getHeaderMap(), debugLog()
+    applyLessonEquivalentCredits(studentId, newRegistrationData) -> Object
+        Calculates lesson equivalent credits for students switching lesson lengths between semesters.
+        Returns object with adjustment amount and explanation string, or null values if no credits apply.
+        Category: BILLING_CYCLE / HELPER_FUNCTIONS
+        Local functions used: getPreviousSemesterBalance()
+        Utility functions used: debugLog()
 
     applyLetterTypeValidation(sheet) -> void
         Applies data validation dropdown to Letter Type column in billing sheet.
@@ -505,45 +499,45 @@ BILLING FUNCTION DIRECTORY
         Local functions used: None
         Utility functions used: normalizeHeader(), getHeaderMap(), debugLog()
 
-    applyPastDataToRow(newRow, prevRow, context, currencyCols) -> void
-        Copies past-cycle balance and invoice data from the previous billing row into the new row.
-        Category: BILLING_CYCLE
-        Local functions used: None
-        Utility functions used: normalizeHeader()
-
     applyReregistrationOverwrites(billingSheet, reregMap, formStudentIds) -> void
         Overwrites lesson quantity, hours, and length for existing students who re-registered.
         Category: RE_REGISTRATION
         Local functions used: None
         Utility functions used: getHeaderMap(), normalizeHeader(), debugLog()
 
-    applyWarningsToTeacherWorkbook(teacherWorkbook, warningStudents) -> void
+    applyWarningsToTeacherWorkbook(teacherSS, warningStudents, targetDate) -> void
         Highlights warning students in teacher's attendance sheets with red rows.
         Category: RECONCILIATION
         Local functions used: None
         Utility functions used: debugLog()
 
-    buildBillingContext(customToday, semesterName, billingCycleName) -> Object
+    buildBillingContext(customToday, semesterName, billingCycleName, programConfig) -> Object
         Builds comprehensive context object containing all billing cycle information.
-        Returns object with dates, rates, semester info, and configuration.
+        Returns object with dates, rates, semester info, header maps, and program configuration.
         Category: BILLING_CYCLE
-        Local functions used: getCurrentBillingCycleDates(), getCurrentRateChartName(), 
+        Local functions used: getCurrentBillingCycleDates(), getCurrentRateChartName(),
                               getRateColumnFromMetadata()
         Utility functions used: debugLog()
 
-    buildBillingRowFromForm(context, formData, studentId) -> Array
-        Constructs billing row data from student form submission for new students.
+    buildBillingRowFromForm(formRow, prevRow, context, rowIndex) -> Array
+        Constructs billing row array from a new student's form submission row.
         Returns array representing complete billing row.
         Category: BILLING_CYCLE
-        Local functions used: buildDynamicProgramColumns(), populateDeliveryPreference()
-        Utility functions used: getHeaderMap(), debugLog()
+        Local functions used: copyStaticFieldsToBillingRow(), setDeliveryPreference(),
+                              populateInvoiceMetadata(), populateLetterType(), getExpandedPrograms(),
+                              buildDynamicProgramColumns(), setPastColumnFormulas(),
+                              addInvoiceTotalFormula(), applyCumulativeHistory(), applyLateFeeToRow()
+        Utility functions used: parseAllPackageQuantities(), normalizeHeader(), debugLog()
 
-    buildBillingRowFromPrevious(context, prevRow, prevHeaderMap, studentId) -> Array
-        Constructs billing row data from previous billing cycle for continuing students.
+    buildBillingRowFromPrevious(prevRow, context, rowIndex) -> Array
+        Constructs billing row array from a continuing student's previous billing cycle row.
         Returns array representing complete billing row.
         Category: BILLING_CYCLE
-        Local functions used: buildDynamicProgramColumns(), populateDeliveryPreferenceFromPrevious()
-        Utility functions used: getHeaderMap(), debugLog()
+        Local functions used: copyStaticFieldsToBillingRow(), setDeliveryPreference(),
+                              populateInvoiceMetadata(), populateLetterType(), buildDynamicProgramColumns(),
+                              setPastColumnFormulas(), addInvoiceTotalFormula(), applyCumulativeHistory(),
+                              applyLateFeeToRow(), setProgramQuantitiesForCarryover()
+        Utility functions used: getStudentIdFromRow(), normalizeHeader(), debugLog()
 
     buildCarryoverStudents(previousData, existingStudentIds, context, allStudents, startingRowIndex) -> Number
         Builds billing rows for all carryover students from the previous billing cycle.
@@ -552,14 +546,14 @@ BILLING FUNCTION DIRECTORY
         Local functions used: buildBillingRowFromPrevious()
         Utility functions used: debugLog()
 
-    buildDocumentFileName(studentData, docType, newOrReturning, deliveryMode) -> String
+    buildDocumentFileName(studentData, billingData, documentType, deliveryMethod) -> String
         Generates standardized document filename for generated PDFs.
         Returns formatted filename string.
         Category: GENERATE_DOCUMENTS
         Local functions used: None
         Utility functions used: None
 
-    buildDocumentSentence(documentStatus) -> String
+    buildDocumentSentence(billingData, deliveryMethod) -> String
         Builds human-readable sentence describing document generation status.
         Returns formatted status string.
         Category: GENERATE_DOCUMENTS
@@ -580,9 +574,8 @@ BILLING FUNCTION DIRECTORY
         Local functions used: None
         Utility functions used: None
 
-    buildDynamicProgramColumns(context, studentData, programMap?) -> Array
-        Builds array of program registration data for billing row.
-        Returns array of program values for dynamic columns.
+    buildDynamicProgramColumns(newRow, row, enrolledPrograms, context, quantityCols, currencyCols, rowNum, lessonQuantity) -> void
+        Populates dynamic program quantity and rate columns in the new billing row.
         Category: BILLING_CYCLE
         Local functions used: None
         Utility functions used: debugLog()
@@ -594,57 +587,59 @@ BILLING FUNCTION DIRECTORY
         Local functions used: buildBillingRowFromForm()
         Utility functions used: getHeaderMap(), normalizeHeader(), debugLog()
 
-    buildInvoiceTotalFormula(row, headerMap) -> String
-        Generates Excel formula to calculate invoice total from program columns.
+    buildInvoiceTotalFormula(headerMap, rowNum) -> String
+        Generates spreadsheet formula to calculate invoice total from program columns.
         Returns formula string.
         Category: BILLING_CYCLE
         Local functions used: None
         Utility functions used: None
 
-    buildInvoiceVariableMap(studentData, billingData) -> Object
+    buildInvoiceVariableMap(studentData, billingData, isRefund) -> Object
         Creates variable map for invoice template merging.
         Returns object with all invoice template variables.
         Category: GENERATE_DOCUMENTS
         Local functions used: buildDynamicLineItems(), buildDynamicAmounts(), buildProgramDescription()
         Utility functions used: None
 
-    buildMissingDocumentSentence(missingDocuments) -> String
+    buildMissingDocumentSentence(billingData) -> String
         Builds formatted sentence listing missing required documents.
         Returns formatted document list string.
         Category: GENERATE_DOCUMENTS
         Local functions used: None
         Utility functions used: None
 
-    buildProgramDescription(programTotals) -> String
+    buildPastVlookupFormula(prevSheetName, prevColIndex, rowNum) -> String
+        Generates a VLOOKUP formula string that pulls a value from the previous billing cycle sheet
+        by matching on Student ID in column C.
+        Returns formula string.
+        Category: BILLING_CYCLE
+        Local functions used: None
+        Utility functions used: None
+        Called by: setPastColumnFormulas()
+
+    buildProgramDescription(programTotals, lessonLength) -> String
         Builds formatted description of student's program registrations.
         Returns formatted program description string.
         Category: GENERATE_DOCUMENTS
         Local functions used: None
         Utility functions used: None
 
-    buildTemplateVariables(studentData, billingData, docType) -> Object
+    buildTemplateVariables(studentData, billingData, templateType) -> Object
         Builds complete variable map for all document template types.
         Returns object with all template merge variables.
         Category: GENERATE_DOCUMENTS
-        Local functions used: buildInvoiceVariableMap(), buildDocumentSentence(), 
+        Local functions used: buildInvoiceVariableMap(), buildDocumentSentence(),
                               buildProgramDescription()
         Utility functions used: debugLog()
 
-    calculateLateFee(pastBalance, paymentReceived, pastInvoiceNumber, rateMap) -> Number
-        Calculates late fee amount based on past balance, payments received, and grace period from rateMap.
-        Returns late fee amount (0 if not applicable).
-        Category: BILLING_CYCLE
-        Local functions used: None
-        Utility functions used: None
-
-    calculateLessonEquivalents(previousLessons, currentLessonLength) -> Number
+    calculateLessonEquivalents(studentId, actualLength) -> Number
         Calculates lesson equivalents when converting between lesson lengths.
         Returns number of equivalent lessons.
         Category: HELPER_FUNCTIONS
         Local functions used: None
         Utility functions used: debugLog()
 
-    calculateTotalCreditsApplied(billingRow, headerMap) -> Number
+    calculateTotalCreditsApplied(billingData) -> Number
         Calculates total credits applied across all programs for a student.
         Returns total credit amount.
         Category: HELPER_FUNCTIONS
@@ -664,7 +659,7 @@ BILLING FUNCTION DIRECTORY
         Local functions used: shouldIncludeAgreement(), shouldIncludeMediaRelease()
         Utility functions used: None
 
-    checkIfMediaReleaseNeeded(studentData) -> Boolean
+    checkIfMediaReleaseNeeded(studentId) -> Boolean
         Determines if media release document is needed for student.
         Returns true if media release needed.
         Category: GENERATE_DOCUMENTS
@@ -677,10 +672,10 @@ BILLING FUNCTION DIRECTORY
         Local functions used: None
         Utility functions used: None
 
-    clearDocIdFromBillingSheet(studentId, docType) -> void
+    clearDocIdFromBillingSheet(studentId, docType, billingSheet, headerMap) -> void
         Clears document ID from billing sheet for regeneration.
         Category: GENERATE_DOCUMENTS
-        Local functions used: getDocIdColumnName(), getCurrentBillingSheet()
+        Local functions used: getDocIdColumnName()
         Utility functions used: getHeaderMap(), debugLog()
 
     collectBillingData(billingWB) -> Object
@@ -692,7 +687,7 @@ BILLING FUNCTION DIRECTORY
 
     collectBillingDataDetailed(billingWB, studentIds) -> Object
         Collects detailed per-month billing data for a specific list of student IDs.
-        Returns object mapping studentId → month → amount.
+        Returns object mapping studentId -> month -> amount.
         Category: HELPER_FUNCTIONS
         Local functions used: None
         Utility functions used: getHeaderMap(), normalizeHeader()
@@ -706,7 +701,7 @@ BILLING FUNCTION DIRECTORY
 
     collectPaymentsDataDetailed(paymentsWB, studentIds) -> Object
         Collects detailed per-month payment data for a specific list of student IDs.
-        Returns object mapping studentId → month → amount.
+        Returns object mapping studentId -> month -> amount.
         Category: HELPER_FUNCTIONS
         Local functions used: None
         Utility functions used: getHeaderMap(), normalizeHeader()
@@ -729,13 +724,13 @@ BILLING FUNCTION DIRECTORY
         Local functions used: None
         Utility functions used: EnvironmentManager.get(), getConfig()
 
-    copyStaticFieldsToBillingRow(row, headerMap, prevRow, prevHeaderMap) -> void
-        Copies unchanging fields from previous billing row to new row.
+    copyStaticFieldsToBillingRow(newRow, sourceRow, context, getFn) -> void
+        Copies unchanging fields from previous or form billing row to new row.
         Category: BILLING_CYCLE
         Local functions used: None
         Utility functions used: debugLog()
 
-    createBillingSheet(billingCycleName) -> Sheet
+    createBillingSheet(billingMonth, programConfig) -> Sheet
         Creates new billing cycle sheet with headers and formatting.
         Returns newly created billing sheet.
         Category: BILLING_CYCLE
@@ -755,26 +750,26 @@ BILLING FUNCTION DIRECTORY
         Utility functions used: debugLog()
 
     createPaymentVerificationReport(billingWB, paymentsData, billingData) -> void
-        Creates a Payment Verification summary sheet comparing all billed vs. paid amounts for 2024-2025.
+        Creates a Payment Verification summary sheet comparing all billed vs. paid amounts.
         Category: HELPER_FUNCTIONS
         Local functions used: None
         Utility functions used: debugLog()
 
-    createPaymentsTab() -> Sheet
-        Creates Payments tracking tab in billing workbook.
+    createPaymentsTab(semesterName) -> Sheet
+        Creates Payments tracking tab in billing workbook for a given semester.
         Returns newly created payments sheet.
         Category: SETUP_SEMESTER
         Local functions used: None
         Utility functions used: debugLog()
 
-    createRosterFolder(teacherName, semesterName) -> Folder
-        Creates Google Drive folder for teacher roster workbook.
+    createRosterFolder(semesterName) -> Folder
+        Creates Google Drive folder for teacher rosters for the given semester.
         Returns newly created folder.
         Category: SETUP_SEMESTER
         Local functions used: None
         Utility functions used: debugLog()
 
-    createSingleRegistrationPacketWithSelection(studentId, billingCycleName) -> void
+    createSingleRegistrationPacketWithSelection(studentData, billingData, packetType, currentSemester, destinationFolder, forceRegenerate, selectedDocTypes) -> void
         Generates registration packet for single student with document selection dialog.
         Category: GENERATE_DOCUMENTS
         Local functions used: showSimpleDocumentSelectionDialog()
@@ -786,15 +781,15 @@ BILLING FUNCTION DIRECTORY
         Local functions used: getCurrentBillingSheet()
         Utility functions used: getHeaderMap()
 
-    determineIfNewStudent(studentId, semesterName) -> Boolean
+    determineIfNewStudent(studentId, currentSemester) -> Boolean
         Determines if student is new to the current semester.
         Returns true if new student.
         Category: GENERATE_DOCUMENTS
         Local functions used: None
         Utility functions used: debugLog()
 
-    determinePacketVersions(newOrReturning, deliveryMode) -> Object
-        Determines which document versions to use based on student status and delivery.
+    determinePacketVersions(deliveryPreference) -> Object
+        Determines which document versions to use based on delivery preference.
         Returns object with document version selections.
         Category: GENERATE_DOCUMENTS
         Local functions used: None
@@ -806,46 +801,46 @@ BILLING FUNCTION DIRECTORY
         Local functions used: None
         Utility functions used: None
 
-    executeDocumentGeneration(studentId, billingCycleName, selectedDocs) -> void
-        Executes document generation with user-selected documents.
+    executeDocumentGeneration() -> void
+        Executes document generation with user-selected documents from the dialog.
         Category: GENERATE_DOCUMENTS
         Local functions used: generateRegistrationPacketForStudentWithSelection()
         Utility functions used: debugLog()
 
-    expandSheetAttendanceRows(sheet, requiredRows) -> void
-        Expands attendance sheet to have minimum required rows for all students.
-        Category: RECONCILIATION or HELPER_FUNCTIONS (duplicate in both sections)
+    expandSheetAttendanceRows(sheet) -> void
+        Expands attendance sheet rows to accommodate all student lesson slots.
+        Category: RECONCILIATION
         Local functions used: None
         Utility functions used: debugLog()
 
-    expandTeacherAttendanceRows(teacherWorkbook, monthName, studentCount) -> void
-        Expands specific month attendance sheet in teacher workbook.
+    expandTeacherAttendanceRows(teacherSS) -> void
+        Expands attendance rows in all monthly sheets of a teacher workbook.
         Category: HELPER_FUNCTIONS
         Local functions used: None
         Utility functions used: debugLog()
 
-    expandTeacherAttendanceSheets(teacherWorkbook, studentCount) -> void
-        Expands all attendance sheets in teacher workbook to accommodate students.
+    expandTeacherAttendanceSheets() -> void
+        Expands attendance sheets for all teachers in the roster folder.
         Category: HELPER_FUNCTIONS
         Local functions used: expandTeacherAttendanceRows()
         Utility functions used: debugLog()
 
-    extractBillingDataFromRow(billingRow, headerMap) -> Object
+    extractBillingDataFromRow(billingRowData, headerMap) -> Object
         Extracts billing-specific data from billing sheet row.
         Returns object with billing amounts and settings.
         Category: HELPER_FUNCTIONS
         Local functions used: extractProgramTotals()
         Utility functions used: debugLog()
 
-    extractDeliveryPreference(contactsSheet, studentId) -> String
-        Extracts delivery preference (email/print/both) from Contacts sheet.
+    extractDeliveryPreference(billingRowData, headerMap) -> String
+        Extracts delivery preference (email/print/both) from a billing row.
         Returns delivery preference string.
         Category: HELPER_FUNCTIONS
         Local functions used: None
         Utility functions used: getHeaderMap()
 
-    extractDocumentNames(selectedCheckboxes) -> Array
-        Extracts document names from checkbox selection array.
+    extractDocumentNames(documents) -> Array
+        Extracts document names from document array.
         Returns array of document name strings.
         Category: GENERATE_DOCUMENTS
         Local functions used: None
@@ -865,21 +860,21 @@ BILLING FUNCTION DIRECTORY
         Local functions used: None
         Utility functions used: getHeaderMap(), debugLog()
 
-    extractProgramTotals(billingRow, headerMap) -> Object
+    extractProgramTotals(row, headerMap) -> Object
         Extracts program totals from dynamic program columns in billing row.
         Returns object mapping program names to amounts.
         Category: HELPER_FUNCTIONS
         Local functions used: None
         Utility functions used: None
 
-    extractRosterDataForAttendance() -> Array
-        Extracts teacher and roster data needed for attendance sheet generation.
-        Returns array of teacher/roster data objects.
+    extractRosterDataForAttendance(rosterSheet) -> Array
+        Extracts active student data from a teacher roster sheet for attendance generation.
+        Returns array of student data objects.
         Category: GENERATE_DOCUMENTS
         Local functions used: None
         Utility functions used: getHeaderMap(), debugLog()
 
-    extractStudentDataFromBillingRow(billingRow, headerMap) -> Object
+    extractStudentDataFromBillingRow(row, headerMap) -> Object
         Extracts student-specific data from billing sheet row.
         Returns object with student demographic and program data.
         Category: HELPER_FUNCTIONS
@@ -895,16 +890,13 @@ BILLING FUNCTION DIRECTORY
 
     findMostRecentRosterSheet(workbook) -> Sheet or null
         Finds the most recent roster sheet in a teacher workbook based on Semester Metadata ordering.
-        Searches for sheets ending in " Roster", extracts their season names, matches them against
-        Semester Metadata, and returns the roster sheet corresponding to the most recent semester.
         Returns null if no roster sheets exist.
-        Category: ATTENDANCE_OPERATIONS
+        Category: HELPER_FUNCTIONS
         Local functions used: None
-        Utility functions used: getSheet(), normalizeHeader(),
-                              extractSeasonFromSemester(), debugLog()
+        Utility functions used: getSheet(), normalizeHeader(), extractSeasonFromSemester(), debugLog()
 
-    formatRow(sheet, rowIndex) -> void
-        Applies formatting to a specific row in billing sheet.
+    formatRow(sheet, rowIndex, quantityCols, currencyCols) -> void
+        Applies number formatting to a specific billing row, including currency and quantity columns.
         Category: BILLING_CYCLE
         Local functions used: None
         Utility functions used: None
@@ -915,11 +907,11 @@ BILLING FUNCTION DIRECTORY
         Local functions used: None
         Utility functions used: debugLog()
 
-    generateDocumentForStudent(studentId, billingCycleName, docType, newOrReturning, deliveryMode) -> String
+    generateDocumentForStudent(studentData, billingData, templateType, deliveryMethod, currentSemester, billingSheetName, billingSheet, headerMap) -> String
         Generates single document for student and returns document ID.
         Returns Google Docs document ID.
         Category: GENERATE_DOCUMENTS
-        Local functions used: buildTemplateVariables(), selectDocumentTemplate(), 
+        Local functions used: buildTemplateVariables(), selectDocumentTemplate(),
                               buildDocumentFileName()
         Utility functions used: debugLog()
 
@@ -931,44 +923,44 @@ BILLING FUNCTION DIRECTORY
                               buildTemplateVariables(), generateDocumentForStudent()
         Utility functions used: debugLog()
 
-    generateInvoicesForBillingCycle(billingCycleName?) -> void
+    generateInvoicesForBillingCycle(billingSheetName, options?) -> void
         Generates invoices for all students in billing cycle.
         Category: GENERATE_DOCUMENTS
         Local functions used: shouldGenerateInvoice(), buildInvoiceVariableMap()
         Utility functions used: debugLog()
 
-    generateProgramFormulas(row, context, billingSheet) -> void
+    generateProgramFormulas(newRow, context, rowNum, quantityCols, currencyCols) -> void
         Generates formulas in program columns for automatic calculation.
         Category: BILLING_CYCLE
         Local functions used: None
         Utility functions used: getHeaderMap()
 
-    generateReconciliationSummary(reconcileData) -> void
+    generateReconciliationSummary(results) -> void
         Generates and displays reconciliation summary in UI.
         Category: RECONCILIATION
         Local functions used: None
         Utility functions used: None
 
-    generateReconciliationSummaryUpdated(totalStudents, updatedStudents, unchangedStudents) -> void
+    generateReconciliationSummaryUpdated(results) -> void
         Generates updated reconciliation summary with detailed counts.
         Category: RECONCILIATION
         Local functions used: None
         Utility functions used: None
 
-    generateRefundInvoicesForBillingCycle(billingCycleName?) -> void
+    generateRefundInvoicesForBillingCycle(billingSheetName?) -> void
         Generates refund invoices for students with negative balances.
         Category: GENERATE_DOCUMENTS
         Local functions used: None
         Utility functions used: debugLog()
 
-    generateRegistrationPacketForStudentWithSelection(studentId, billingCycleName, selectedDocs) -> void
+    generateRegistrationPacketForStudentWithSelection(studentData, billingData, selectedDocumentTypes, deliveryMethods, currentSemester) -> void
         Generates registration packet with user-selected documents.
         Category: GENERATE_DOCUMENTS
-        Local functions used: determineIfNewStudent(), shouldIncludeDocument(), 
+        Local functions used: determineIfNewStudent(), shouldIncludeDocument(),
                               generateDocumentForStudent()
         Utility functions used: debugLog()
 
-    generateRegistrationPacketsForBillingCycle(billingCycleName?) -> void
+    generateRegistrationPacketsForBillingCycle() -> void
         Generates registration packets for all students needing documents.
         Category: GENERATE_DOCUMENTS
         Local functions used: getStudentsNeedingPackets(), determineIfNewStudent()
@@ -981,8 +973,8 @@ BILLING FUNCTION DIRECTORY
         Local functions used: None
         Utility functions used: debugLog()
 
-    getBillingSheet(billingCycleName?) -> Sheet
-        Gets billing sheet by name or most recent if no name provided.
+    getBillingSheet(paymentDate, activeSheetName?, shouldLog?) -> Sheet
+        Gets billing sheet by date match or active sheet name, with optional logging.
         Returns billing sheet object.
         Category: RECONCILIATION
         Local functions used: None
@@ -995,8 +987,8 @@ BILLING FUNCTION DIRECTORY
         Local functions used: None
         Utility functions used: debugLog()
 
-    getCurrentBillingCycleDates(customToday, semesterName) -> Object
-        Calculates billing cycle start and end dates based on current date.
+    getCurrentBillingCycleDates() -> Object
+        Returns billing cycle start and end dates based on the current billing metadata.
         Returns object with startDate and endDate.
         Category: HELPER_FUNCTIONS
         Local functions used: None
@@ -1009,15 +1001,15 @@ BILLING FUNCTION DIRECTORY
         Local functions used: None
         Utility functions used: debugLog()
 
-    getCurrentRateChartName(semesterName) -> String
-        Gets the rate chart name for current semester.
+    getCurrentRateChartName() -> String
+        Gets the rate chart name for current semester from Billing Metadata.
         Returns rate chart name string.
         Category: HELPER_FUNCTIONS
         Local functions used: None
         Utility functions used: None
 
-    getCurrentSemesterFromBillingMetadata() -> String
-        Gets current semester name from Billing Metadata sheet.
+    getCurrentSemesterFromBillingMetadata(billingSheetName) -> String
+        Gets current semester name from Billing Metadata sheet by matching to billing sheet name.
         Returns semester name.
         Category: HELPER_FUNCTIONS
         Local functions used: None
@@ -1027,14 +1019,14 @@ BILLING FUNCTION DIRECTORY
         Gets comprehensive current semester information.
         Returns object with semester name, dates, and configuration.
         Category: HELPER_FUNCTIONS
-        Local functions used: getCurrentSemesterName()
+        Local functions used: None
         Utility functions used: debugLog()
 
     getCurrentSemesterRateForLength(lessonLength) -> Number
         Gets current semester rate for specified lesson length.
         Returns rate amount.
         Category: HELPER_FUNCTIONS
-        Local functions used: getCurrentSemesterInfo(), getRateForSemester()
+        Local functions used: None
         Utility functions used: None
 
     getDocIdColumnName(docType) -> String
@@ -1044,22 +1036,22 @@ BILLING FUNCTION DIRECTORY
         Local functions used: None
         Utility functions used: None
 
-    getDocIdFromBillingSheet(studentId, docType) -> String
-        Retrieves document ID from billing sheet for specific student and document.
+    getDocIdFromBillingSheet(studentId, docType, billingSheet, headerMap) -> String
+        Retrieves document ID from billing sheet for specific student and document type.
         Returns document ID or null.
         Category: GENERATE_DOCUMENTS
-        Local functions used: getDocIdColumnName(), getCurrentBillingSheet()
+        Local functions used: getDocIdColumnName()
         Utility functions used: getHeaderMap()
 
-    getDocumentSelectionHtml(studentData, newOrReturning, deliveryMode) -> String
+    getDocumentSelectionHtml() -> String
         Generates HTML for document selection checkbox dialog.
         Returns HTML string.
         Category: GENERATE_DOCUMENTS
         Local functions used: None
         Utility functions used: None
 
-    getExpandedPrograms() -> Array
-        Gets expanded list of programs including group/private variations.
+    getExpandedPrograms(row, context) -> Array
+        Gets expanded list of enrolled programs for a student based on form row and program config.
         Returns array of expanded program objects.
         Category: HELPER_FUNCTIONS
         Local functions used: None
@@ -1085,43 +1077,43 @@ BILLING FUNCTION DIRECTORY
         Local functions used: None
         Utility functions used: getHeaderMap(), debugLog()
 
-    getInvoiceNumber(billingCycleName) -> String
-        Generates sequential invoice number for billing cycle.
+    getInvoiceNumber(billingSheet, billingRowIndex) -> String
+        Generates sequential invoice number for the given billing row.
         Returns invoice number string.
         Category: RECONCILIATION
         Local functions used: None
         Utility functions used: None
 
-    getLessonLengthFromRow(row, headerMap) -> String
-        Extracts lesson length value from billing row.
+    getLessonLengthFromRow(row, get) -> String
+        Extracts lesson length value from billing row using a column-getter function.
         Returns lesson length string.
         Category: HELPER_FUNCTIONS
         Local functions used: None
         Utility functions used: None
 
-    getNextMonthName(currentMonth) -> String
-        Gets next month name for semester progression.
+    getNextMonthName(targetDate) -> String
+        Gets the name of the month following the given date.
         Returns month name string.
         Category: UI_MENU
         Local functions used: None
         Utility functions used: None
 
-    getPreviousSemester(currentSemester) -> String
-        Gets previous semester name from current semester.
+    getPreviousSemester(currentSemesterName) -> String
+        Gets previous semester name from current semester by looking up Semester Metadata.
         Returns previous semester name.
         Category: HELPER_FUNCTIONS
         Local functions used: None
         Utility functions used: None
 
-    getPreviousSemesterBalance(studentId, programName) -> Number
-        Gets student's balance for specific program from previous semester.
-        Returns balance amount.
+    getPreviousSemesterBalance(studentId) -> Object
+        Gets student's lesson balance from the previous semester's end-of-semester records.
+        Returns object with balance data, or null if not found.
         Category: HELPER_FUNCTIONS
         Local functions used: None
         Utility functions used: debugLog()
 
-    getRateColumnFromMetadata(rateChartName) -> Number
-        Gets column index for rate chart in Rates sheet.
+    getRateColumnFromMetadata(semesterName) -> Number
+        Gets column index for the rate chart matching the given semester name in the Rates sheet.
         Returns column index.
         Category: HELPER_FUNCTIONS
         Local functions used: None
@@ -1134,30 +1126,30 @@ BILLING FUNCTION DIRECTORY
         Local functions used: None
         Utility functions used: getMostRecentRateColumn(), buildRateMapFromSheet()
 
-    getStudentBalancesFromBilling(billingSheet?) -> Object
-        Gets all student balances from billing sheet.
+    getStudentBalancesFromBilling(billingSheet, teacherId) -> Object
+        Gets all student balances from billing sheet, optionally filtered by teacher ID.
         Returns object mapping student IDs to balance data.
         Category: RECONCILIATION
         Local functions used: None
         Utility functions used: getHeaderMap()
 
-    getStudentDocumentsFolder(studentId, semesterName) -> Folder
-        Gets or creates student's documents folder in Google Drive.
-        Returns student documents folder.
+    getStudentDocumentsFolder(monthName) -> Folder
+        Gets or creates the monthly subfolder under Student Documents in the generated documents folder.
+        Returns the monthly folder.
         Category: HELPER_FUNCTIONS
         Local functions used: None
-        Utility functions used: debugLog()
+        Utility functions used: getGeneratedDocumentsFolder(), debugLog()
 
     getStudentRegisteredLessonLength(studentId) -> String
-        Gets student's registered lesson length from Contacts sheet.
+        Gets student's registered lesson length from current billing sheet.
         Returns lesson length string.
         Category: HELPER_FUNCTIONS
         Local functions used: None
         Utility functions used: getHeaderMap()
 
-    getStudentsNeedingPackets(billingCycleName) -> Array
-        Gets list of students needing registration packets generated.
-        Returns array of student IDs.
+    getStudentsNeedingPackets() -> Array
+        Gets list of students in the current billing cycle who still need registration packets.
+        Returns array of student data objects.
         Category: HELPER_FUNCTIONS
         Local functions used: None
         Utility functions used: debugLog()
@@ -1180,15 +1172,15 @@ BILLING FUNCTION DIRECTORY
         Local functions used: continueAttendanceSheetCreation()
         Utility functions used: debugLog()
 
-    identifyWarningStudents(teacherBalances) -> Array
-        Identifies students with attendance/billing discrepancies needing warnings.
+    identifyWarningStudents(studentBalances) -> Array
+        Identifies students with low hours or negative balances needing warnings.
         Returns array of warning student data.
         Category: RECONCILIATION
         Local functions used: None
         Utility functions used: None
 
-    isHeaderRow(row) -> Boolean
-        Checks if row is a header row (contains "Student Name" or similar).
+    isHeaderRow(row, dateIdx, lengthIdx) -> Boolean
+        Checks if a row is a student header row by inspecting date and length column values.
         Returns true if header row.
         Category: HELPER_FUNCTIONS
         Local functions used: None
@@ -1208,21 +1200,23 @@ BILLING FUNCTION DIRECTORY
         Local functions used: None
         Utility functions used: getSheet(), getHeaderMap(), normalizeHeader(), debugLog()
 
-    locateStudentRecord(teacherId, studentId) -> Object
-        Locates student record in teacher roster or attendance sheets.
-        Returns object with sheet and row information.
+    locateStudentRecord(rowData, paymentSheet, billingInfo) -> Object or null
+        Locates a student's row in the billing sheet by matching invoice number or student ID
+        from the given payment row data.
+        Returns object with billingRowIndex and studentId, or null if not found.
+        Category: RECONCILIATION
+        Local functions used: None
+        Utility functions used: getHeaderMap(), normalizeHeader(), debugLog()
+
+    locateStudentRecordEnhanced(rowData, billingInfo, studentIdInput, invoiceNumberInput, lastNameCol, firstNameCol) -> Object or null
+        Enhanced student record locator using multiple lookup strategies: invoice number,
+        past invoice number, student ID, and last/first name fallback.
+        Returns object with billingRowIndex, studentId, and match strategy used, or null if not found.
         Category: RECONCILIATION
         Local functions used: None
         Utility functions used: debugLog()
 
-    locateStudentRecordEnhanced(teacherId, studentId, monthName?) -> Object
-        Enhanced version of locateStudentRecord with month-specific search.
-        Returns object with detailed location information.
-        Category: RECONCILIATION
-        Local functions used: None
-        Utility functions used: debugLog()
-
-    logMysteryStudents(teacherData) -> void
+    logMysteryStudents(mysteryStudents) -> void
         Logs students found in teacher attendance but not in billing sheet.
         Category: RECONCILIATION
         Local functions used: None
@@ -1234,11 +1228,19 @@ BILLING FUNCTION DIRECTORY
         Local functions used: None
         Utility functions used: normalizeHeader(), debugLog()
 
-    markStudentsInactive(semesterName) -> void
-        Marks students as inactive when semester ends.
+    markStudentsInactive() -> void
+        Marks students as inactive in the current billing sheet at semester end.
         Category: SETUP_SEMESTER
         Local functions used: None
         Utility functions used: debugLog()
+
+    migrateTeacherDisplayNamesToIds() -> void
+        One-time migration utility. Scans all billing cycle sheets and replaces teacher display name
+        values with Teacher IDs from the Teachers and Admin sheet. Also renames the "Teacher" column
+        header to "Teacher ID" if needed.
+        Category: HELPER_FUNCTIONS
+        Local functions used: None
+        Utility functions used: getSheet(), getHeaderMap(), normalizeHeader(), getMonthNames(), debugLog()
 
     onOpen() -> void
         Creates custom menu in spreadsheet UI when workbook opens.
@@ -1262,59 +1264,55 @@ BILLING FUNCTION DIRECTORY
     populateBillingSheet(context, carryOverData) -> void
         Populates billing sheet for first cycle of new semester.
         Category: BILLING_CYCLE
-        Local functions used: buildBillingRowFromForm(), getFormsDataFromContacts()
+        Local functions used: buildBillingRowFromForm(), getFormsDataFromContacts(),
+                              applyBillingConditionalFormatting()
         Utility functions used: debugLog()
 
-    populateBillingSheetContinuingSemester(context, billingSheet, existingIds, carryOverData, previousDate?) -> void
+    populateBillingSheetContinuingSemester(context, billingSheet, existingStudentIds, previousData, previousStartDate?) -> void
         Populates billing sheet for continuing semester billing cycle.
         Category: BILLING_CYCLE
-        Local functions used: buildBillingRowFromPrevious(), processSemesterEndCredits()
+        Local functions used: buildBillingRowFromPrevious(), processSemesterEndCredits(),
+                              applyBillingConditionalFormatting()
         Utility functions used: debugLog()
 
-    populateCurrentBalanceFormula(row, headerMap) -> void
+    populateCurrentBalanceFormula(newRow, context, rowIndex) -> void
         Populates formula calculating current balance in billing row.
         Category: BILLING_CYCLE
         Local functions used: None
         Utility functions used: None
 
-    populateDeliveryPreference(rowIndex, billingSheet, studentId) -> void
-        Populates delivery preference in billing row from Contacts sheet.
-        Category: BILLING_CYCLE
-        Local functions used: extractDeliveryPreference()
-        Utility functions used: getHeaderMap()
-
-    populateDeliveryPreferenceFromPrevious(rowIndex, billingSheet, prevRow, prevHeaderMap) -> void
-        Copies delivery preference from previous billing cycle.
+    populateDeliveryPreference(newRow, formRow, context) -> void
+        Populates delivery preference in billing row from form row data.
         Category: BILLING_CYCLE
         Local functions used: None
         Utility functions used: getHeaderMap()
 
-    populateInvoiceMetadata(rowIndex, billingSheet, billingCycleName) -> void
+    populateDeliveryPreferenceFromPrevious(newRow, prevRow, context) -> void
+        Copies delivery preference from previous billing cycle row.
+        Category: BILLING_CYCLE
+        Local functions used: None
+        Utility functions used: getHeaderMap()
+
+    populateInvoiceMetadata(newRow, studentId, context, rowIndex) -> void
         Populates invoice metadata fields (number, URL, etc.) in billing row.
         Category: BILLING_CYCLE
         Local functions used: None
         Utility functions used: getHeaderMap()
 
-    populateLateFee(rowIndex, billingSheet) -> void
-        Calculates and populates late fee based on past balance.
+    populateLateFee(newRow, context, currencyCols) -> void
+        Calculates and populates late fee in billing row.
         Category: BILLING_CYCLE
         Local functions used: None
         Utility functions used: getHeaderMap()
 
-    populateLetterType(rowIndex, billingSheet, newOrReturning) -> void
-        Populates letter type (New/Returning) in billing row.
+    populateLetterType(newRow, context, sourceType, prevRow) -> void
+        Populates letter type (New/Returning) in billing row based on source type and previous data.
         Category: BILLING_CYCLE
         Local functions used: None
         Utility functions used: getHeaderMap()
 
-    populatePastBalanceAndCredit(row, headerMap, prevRow, prevHeaderMap) -> void
-        Populates past balance and credit from previous billing cycle.
-        Category: BILLING_CYCLE
-        Local functions used: None
-        Utility functions used: debugLog()
-
-    processDocumentSelection(studentId, billingCycleName) -> void
-        Processes document selection from checkbox dialog.
+    processDocumentSelection(selectedTypes) -> void
+        Processes document type selection from the checkbox dialog and triggers generation.
         Category: GENERATE_DOCUMENTS
         Local functions used: executeDocumentGeneration()
         Utility functions used: None
@@ -1325,69 +1323,64 @@ BILLING FUNCTION DIRECTORY
         Local functions used: None
         Utility functions used: debugLog()
 
-    processFormsData(formsData, billingData) -> Array
-        Processes form submissions and compares against billing data.
+    processFormsData(paymentSheet, studentsSheet) -> Array
+        Processes form submissions from the payment sheet and reconciles against the students sheet.
         Returns array of form reconciliation results.
         Category: RECONCILIATION
         Local functions used: processFormsReconciliationForRow()
         Utility functions used: debugLog()
 
-    processFormsReconciliationForRow(studentId, formData, billingRow, headerMap) -> Object
-        Processes single student's form reconciliation.
+    processFormsReconciliationForRow(rowData, studentsSheet, studentIdInput, hasAgreement, hasMediaResponse, studentIdCol, agreementCol, mediaCol) -> Object
+        Processes a single form submission row against the students sheet, updating agreement
+        and media consent status in both the students sheet and current billing sheet.
         Returns reconciliation result object.
         Category: RECONCILIATION
-        Local functions used: None
+        Local functions used: getCurrentBillingSheet()
         Utility functions used: debugLog()
 
-    processPaymentReconciliationForRow(payment, billingSheet, billingData) -> Object
-        Processes single payment record against billing data.
-        Returns payment reconciliation result.
+    processPaymentReconciliationForRow(rowData, paymentSheet, rowNumber, studentIdInput, invoiceNumberInput, amountCol, dateCol, lastNameCol, firstNameCol) -> Object
+        Processes a single payment row against billing data using multiple lookup strategies.
+        Returns payment reconciliation result object.
         Category: RECONCILIATION
-        Local functions used: processPaymentRecord()
+        Local functions used: locateStudentRecord(), locateStudentRecordEnhanced(),
+                              processPaymentRecord()
         Utility functions used: debugLog()
 
-    processPaymentRecord(payment, billingSheet, studentRow, headerMap) -> void
-        Processes payment and updates billing sheet.
+    processPaymentRecord(rowData, paymentSheet, headerMap, rowNumber) -> void
+        Extracts payment data from a row and calls reconcilePayment to update the billing sheet.
         Category: RECONCILIATION
-        Local functions used: None
+        Local functions used: reconcilePayment()
         Utility functions used: debugLog()
 
-    processSemesterEndCredits(billingRow, headerMap, previousBalance) -> void
-        Processes credits from previous semester end balances.
+    processSemesterEndCredits(currentSemesterName) -> void
+        Processes end-of-semester lesson balance credits and stores them for the next semester.
         Category: BILLING_CYCLE
-        Local functions used: None
+        Local functions used: storeSemesterEndBalances()
         Utility functions used: debugLog()
 
-    processTeacherAttendanceForBilling(teacherId, billingSheet, billingData) -> Object
-        Processes teacher's attendance data and reconciles with billing.
-        Returns reconciliation results for teacher.
+    processTeacherAttendanceForBilling(teacherSS, targetDate) -> Object
+        Processes teacher's attendance data from monthly sheets and aggregates hours by student and month.
+        Returns object with studentHoursByMonth and aggregated data.
         Category: RECONCILIATION
-        Local functions used: locateStudentRecordEnhanced()
-        Utility functions used: debugLog()
+        Local functions used: None
+        Utility functions used: getMonthNames(), debugLog()
 
-    processTeacherForNewAttendance(teacherData) -> void
-        Processes teacher for new attendance sheet generation.
+    processTeacherForNewAttendance(teacherId, rosterUrl, targetMonthName) -> void
+        Processes a single teacher's roster to create a new monthly attendance sheet.
         Category: GENERATE_DOCUMENTS
         Local functions used: None
         Utility functions used: debugLog()
 
-    processTeacherReconciliation(teacherWorkbook, teacherId, billingCycleName, billingSheet) -> Object
-        Reconciles teacher's roster and attendance with billing data.
+    processTeacherReconciliation(teacherId, rosterUrl, currentBillingSheet, targetDate, currentSemester) -> Object
+        Reconciles teacher's roster and attendance with billing data for a given period.
         Returns reconciliation summary for teacher.
         Category: RECONCILIATION
-        Local functions used: processTeacherAttendanceForBilling()
+        Local functions used: processTeacherAttendanceForBilling(), updateBillingForStudents()
         Utility functions used: debugLog()
 
     promptForBillingCycleName(customToday) -> String
-        Prompts user to enter billing cycle name.
+        Prompts user to enter or confirm billing cycle name based on the custom date.
         Returns billing cycle name.
-        Category: HELPER_FUNCTIONS
-        Local functions used: None
-        Utility functions used: None
-
-    promptForCustomToday() -> Date
-        Prompts user to enter custom date for billing operations.
-        Returns Date object.
         Category: HELPER_FUNCTIONS
         Local functions used: None
         Utility functions used: None
@@ -1413,19 +1406,20 @@ BILLING FUNCTION DIRECTORY
         Utility functions used: None
 
     protectBillingSheet(sheet) -> void
-        Protects billing sheet from accidental edits.
+        Protects billing sheet columns from accidental edits using warning-only protection.
         Category: HELPER_FUNCTIONS
         Local functions used: None
         Utility functions used: None
 
     protectPreviousBillingCycle() -> void
-        Protects previous billing cycle sheet after new cycle created.
+        Protects previous billing cycle sheet after new cycle is created.
         Category: BILLING_CYCLE
         Local functions used: None
         Utility functions used: debugLog()
 
-    reconcilePayment(studentRow, headerMap, amount, paymentDate) -> void
-        Reconciles single payment against student's billing row.
+    reconcilePayment(paymentSheet, billingSheet, billingRowIndex, paymentRowNumber, invoiceValue, totalPayments) -> void
+        Writes the total payment amount to the Payment Received column of the matching billing row
+        and marks the payment row as reconciled.
         Category: RECONCILIATION
         Local functions used: None
         Utility functions used: debugLog()
@@ -1439,22 +1433,19 @@ BILLING FUNCTION DIRECTORY
     runBillingCycleAutomation() -> void
         Main function to run complete billing cycle automation process.
         Category: UI_MENU
-        Local functions used: promptForCustomToday(), promptForBillingCycleName(), 
-                              createBillingSheet(), populateBillingSheet()
-        Utility functions used: debugLog()
+        Local functions used: promptForBillingCycleName(), createBillingSheet(), populateBillingSheet()
+        Utility functions used: promptForCustomToday(), getCurrentSemesterName(), debugLog()
 
-    runCombinedReconciliation(billingCycleName?) -> void
-        Runs combined reconciliation of payments, lessons, and forms.
+    runCombinedReconciliation() -> void
+        Runs combined reconciliation of payments, lessons, and forms for the current billing cycle.
         Category: RECONCILIATION
-        Local functions used: runPaymentReconciliation(), runWeeklyLessonReconciliation(), 
-                              runFormsReconciliation()
+        Local functions used: runPaymentReconciliation(), runWeeklyLessonReconciliation()
         Utility functions used: debugLog()
 
-    runFullReconciliation(billingCycleName?) -> void
-        Runs complete reconciliation process (payments, lessons, forms).
+    runFullReconciliation(reconciliationDate) -> void
+        Runs complete reconciliation process for a given date.
         Category: UI_MENU
-        Local functions used: runPaymentReconciliation(), runWeeklyLessonReconciliation(), 
-                              runFormsReconciliation()
+        Local functions used: runPaymentReconciliation(), runWeeklyLessonReconciliation()
         Utility functions used: debugLog()
 
     runFullReconciliationUI() -> void
@@ -1463,9 +1454,8 @@ BILLING FUNCTION DIRECTORY
         Local functions used: runFullReconciliation()
         Utility functions used: None
 
-    runPaymentReconciliation(billingCycleName?) -> Object
-        Reconciles payments from Payments sheet with billing data.
-        Returns reconciliation results object.
+    runPaymentReconciliation() -> void
+        Reconciles payments from the Payments sheet with billing data.
         Category: UI_MENU
         Local functions used: None
         Utility functions used: debugLog()
@@ -1482,11 +1472,10 @@ BILLING FUNCTION DIRECTORY
         Local functions used: generateRegistrationPacketsForBillingCycle()
         Utility functions used: None
 
-    runWeeklyLessonReconciliation(billingCycleName?) -> Object
-        Reconciles teacher attendance records with billing data.
-        Returns reconciliation results object.
+    runWeeklyLessonReconciliation(customDate?) -> void
+        Reconciles teacher attendance records with billing data for all active teachers.
         Category: RECONCILIATION
-        Local functions used: processTeacherReconciliation()
+        Local functions used: processTeacherReconciliation(), applyBillingConditionalFormatting()
         Utility functions used: debugLog()
 
     runWeeklyLessonReconciliationUI() -> void
@@ -1495,9 +1484,9 @@ BILLING FUNCTION DIRECTORY
         Local functions used: runWeeklyLessonReconciliation()
         Utility functions used: None
 
-    selectDocumentTemplate(docType, newOrReturning, deliveryMode) -> String
-        Selects appropriate document template ID based on parameters.
-        Returns template document ID.
+    selectDocumentTemplate(templateType, studentData, deliveryMethod, currentSemester, billingData) -> Object
+        Selects appropriate document template based on parameters and student data.
+        Returns template file object.
         Category: GENERATE_DOCUMENTS
         Local functions used: determinePacketVersions()
         Utility functions used: None
@@ -1515,6 +1504,15 @@ BILLING FUNCTION DIRECTORY
         Local functions used: None
         Utility functions used: normalizeHeader(), getHeaderMap()
 
+    setPastColumnFormulas(newRow, context, rowNum, currencyCols) -> void
+        Writes VLOOKUP formulas into all "Past" columns (Past Balance, Past Invoice Number,
+        Past Hours Remaining, Past Cumulative Hours) by referencing the previous billing cycle sheet.
+        Marks currency and hours columns appropriately.
+        Category: BILLING_CYCLE
+        Local functions used: buildPastVlookupFormula()
+        Utility functions used: normalizeHeader(), addToCurrencyCols()
+        Called by: buildBillingRowFromForm(), buildBillingRowFromPrevious()
+
     setProgramQuantitiesForCarryover(newRow, context, quantityCols, currencyCols) -> void
         Sets program quantities and prices for carryover students based on the current rate map.
         Category: BILLING_CYCLE
@@ -1524,59 +1522,60 @@ BILLING FUNCTION DIRECTORY
     setupNewSemester() -> void
         Main function to set up new semester with all required configuration.
         Category: UI_MENU
-        Local functions used: promptForSemesterName(), promptForSemesterDates(), 
+        Local functions used: promptForSemesterName(), promptForSemesterDates(),
                               appendToSemesterMetadata()
         Utility functions used: debugLog()
 
-    setupRosterTemplateProtection() -> void
-        Sets up protection on roster template sheets.
+    setupRosterTemplateProtection(sheet) -> void
+        Sets up protection, date validation, and status dropdown on a roster template sheet.
         Category: UI_MENU
         Local functions used: None
-        Utility functions used: None
+        Utility functions used: protectSheetRanges()
 
-    shouldGenerateInvoice(billingRow, headerMap) -> Boolean
-        Determines if invoice should be generated for student.
+    shouldGenerateInvoice(billingData) -> Boolean
+        Determines if invoice should be generated for student based on billing data.
         Returns true if invoice needed.
         Category: GENERATE_DOCUMENTS
         Local functions used: None
         Utility functions used: None
 
-    shouldIncludeAgreement(studentData) -> Boolean
+    shouldIncludeAgreement(studentId, billingSheet, headerMap) -> Boolean
         Determines if agreement document should be included in packet.
         Returns true if agreement needed.
         Category: GENERATE_DOCUMENTS
         Local functions used: None
         Utility functions used: None
 
-    shouldIncludeDocument(docType, newOrReturning, studentData) -> Boolean
+    shouldIncludeDocument(studentId, docType, billingSheet, headerMap) -> Boolean
         Determines if specific document type should be included in packet.
         Returns true if document needed.
         Category: GENERATE_DOCUMENTS
-        Local functions used: shouldIncludeAgreement(), checkIfMediaReleaseNeeded()
+        Local functions used: shouldIncludeAgreement(), shouldIncludeMediaRelease()
         Utility functions used: None
 
-    shouldIncludeMediaRelease(studentData) -> Boolean
+    shouldIncludeMediaRelease(studentId, billingSheet, headerMap) -> Boolean
         Determines if media release should be included in packet.
         Returns true if media release needed.
         Category: GENERATE_DOCUMENTS
-        Local functions used: checkIfMediaReleaseNeeded()
+        Local functions used: None
         Utility functions used: None
 
-    shouldUseMissingDocumentLetter(documentStatus) -> Boolean
+    shouldUseMissingDocumentLetter(billingData) -> Boolean
         Determines if missing document letter should be used instead of welcome letter.
         Returns true if missing documents exist.
         Category: GENERATE_DOCUMENTS
         Local functions used: None
         Utility functions used: None
 
-    showSimpleDocumentSelectionDialog(studentId, billingCycleName) -> void
-        Displays HTML dialog for manual document selection.
+    showSimpleDocumentSelectionDialog() -> void
+        Displays HTML dialog for manual document type selection.
         Category: GENERATE_DOCUMENTS
         Local functions used: getDocumentSelectionHtml()
         Utility functions used: None
 
-    storeSemesterEndBalances() -> void
-        Stores end-of-semester balances for all students.
+    storeSemesterEndBalances(creditBalances) -> void
+        Stores end-of-semester lesson balances from the provided credit balances object
+        into the Semester Lesson Balances sheet, creating it if it does not exist.
         Category: HELPER_FUNCTIONS
         Local functions used: None
         Utility functions used: debugLog()
@@ -1590,24 +1589,24 @@ BILLING FUNCTION DIRECTORY
         Utility functions used: debugLog(), findParentRow(), generateKey(), getHeaderMap(),
                                 getSheet(), normalizeHeader(), updateParentContactFields()
 
-    sumPayments(studentId, throughDate?) -> Number
-        Sums all payments for student up to specified date.
+    sumPayments(sheet, studentId, startDate, endDate) -> Number
+        Sums all payments for a student within the given date range from the provided sheet.
         Returns total payment amount.
         Category: RECONCILIATION
         Local functions used: None
-        Utility functions used: debugLog()
+        Utility functions used: getHeaderMap(), normalizeHeader(), debugLog()
 
     testDynamicInvoiceFunctions() -> void
         Tests dynamic invoice line items and amounts functions.
         Category: TESTING
-        Local functions used: extractBillingDataFromRow(), buildDynamicLineItems(), 
+        Local functions used: extractBillingDataFromRow(), buildDynamicLineItems(),
                               buildDynamicAmounts()
         Utility functions used: None
 
     testDynamicInvoiceFunctionsOnCorrectSheet() -> void
         Tests dynamic invoice functions on correct billing sheet.
         Category: TESTING
-        Local functions used: extractBillingDataFromRow(), buildDynamicLineItems(), 
+        Local functions used: extractBillingDataFromRow(), buildDynamicLineItems(),
                               buildDynamicAmounts()
         Utility functions used: None
 
@@ -1626,7 +1625,7 @@ BILLING FUNCTION DIRECTORY
     testFullAgreementGeneration() -> void
         Tests complete agreement generation process.
         Category: TESTING
-        Local functions used: extractStudentDataFromBillingRow(), extractBillingDataFromRow(), 
+        Local functions used: extractStudentDataFromBillingRow(), extractBillingDataFromRow(),
                               buildTemplateVariables()
         Utility functions used: debugLog()
 
@@ -1642,12 +1641,14 @@ BILLING FUNCTION DIRECTORY
         Local functions used: None
         Utility functions used: None
 
-    updateBillingForTeacherStudents(billingSheet, teacherData, billingData) -> Number
-        Updates billing sheet with reconciled attendance data for teacher's students.
+    updateBillingForStudents(billingSheet, studentHours) -> Number
+        Updates the Current Hours Taught This Billing Cycle column in the billing sheet
+        for each student ID found in the studentHours map.
         Returns count of updated students.
         Category: RECONCILIATION
         Local functions used: None
-        Utility functions used: debugLog()
+        Utility functions used: getHeaderMap(), normalizeHeader(), debugLog()
+        Called by: processTeacherReconciliation(), runWeeklyLessonReconciliation()
 
     updateCumulativeTracking(billingSheetName) -> void
         Updates the Cumulative Tracking sheet with totals from the specified billing cycle sheet.
@@ -1655,26 +1656,26 @@ BILLING FUNCTION DIRECTORY
         Local functions used: None
         Utility functions used: getHeaderMap(), normalizeHeader(), debugLog()
 
-    updateDocIdInBillingSheet(studentId, docType, docId) -> void
-        Updates document ID in billing sheet after document generation.
+    updateDocIdInBillingSheet(studentId, docType, fileId, docUrl, billingSheet, headerMap) -> void
+        Updates document ID and URL in billing sheet as a HYPERLINK formula after document generation.
         Category: GENERATE_DOCUMENTS
-        Local functions used: getDocIdColumnName(), getCurrentBillingSheet()
+        Local functions used: getDocIdColumnName()
         Utility functions used: getHeaderMap(), debugLog()
 
-    updateInvoiceUrlInBillingSheet(studentId, invoiceUrl) -> void
-        Updates invoice URL in billing sheet after invoice generation.
+    updateInvoiceUrlInBillingSheet(billingSheet, rowNumber, headerMap, url) -> void
+        Updates invoice URL in the Invoice URL column of the billing sheet for the given row.
         Category: GENERATE_DOCUMENTS
-        Local functions used: getCurrentBillingSheet()
-        Utility functions used: getHeaderMap()
+        Local functions used: None
+        Utility functions used: normalizeHeader()
 
-    updateSheetStudentWarnings(sheet, warningStudents) -> void
-        Updates attendance sheet with warning highlights for students.
+    updateSheetStudentWarnings(sheet, warningStudentMap, formattedDate) -> void
+        Updates attendance sheet with warning highlights for students with low hours or balances.
         Category: RECONCILIATION
         Local functions used: None
         Utility functions used: debugLog()
 
-    updateTeacherRosterBalances(teacherWorkbook, teacherData) -> void
-        Updates teacher roster with current balance information.
+    updateTeacherRosterBalances(teacherSS, studentBalances, currentSemester) -> void
+        Updates teacher roster with current balance information from billing sheet.
         Category: RECONCILIATION
         Local functions used: None
         Utility functions used: debugLog()
@@ -1708,13 +1709,13 @@ BILLING FUNCTION DIRECTORY
                               createDetailedPaymentReport()
         Utility functions used: EnvironmentManager.get(), getConfig(), debugLog()
 
-    verifyProgramsForSemester(semesterName) -> Boolean
+    verifyProgramsForSemester(semesterName, billingSS) -> Boolean
         Verifies all required programs are set up for semester.
         Returns true if verification passed.
         Category: SETUP_SEMESTER
         Local functions used: None
         Utility functions used: debugLog()
-        
+
     verifyRatesEnhanced() -> Boolean
         Verifies all rates are properly configured for billing.
         Returns true if verification passed.
@@ -1729,4 +1730,4 @@ BILLING FUNCTION DIRECTORY
         Utility functions used: None
 ================================================================================
 END OF FUNCTION DIRECTORY
-================================================================================    
+================================================================================
