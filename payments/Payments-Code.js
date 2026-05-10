@@ -3,7 +3,8 @@
 PAYMENTS CODE
 ================================================================================
 Version: 2
-Documentation: See Payments-Functions.md 
+Total Functions: 2
+Documentation: See Payments-Functions.md
 ================================================================================
 */
 
