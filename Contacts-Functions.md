@@ -1,8 +1,8 @@
 ================================================================================
 CONTACTS FUNCTION DIRECTORY
 ================================================================================
-    Total Functions: 1
-    Most Recent version: 3
+    Total Functions: 2
+    Most Recent version: 4
 
     This directory provides a quick reference for all functions in Contacts script.
     Parameters marked with ? are optional.
@@ -20,6 +20,7 @@ CONTACTS FUNCTION DIRECTORY
 ================================================================================
 ALPHABETICAL INDEX:
 ================================================================================
+    logSheetHeaders
     onEditContacts
 
 ================================================================================
@@ -29,9 +30,19 @@ FUNCTION CATEGORIES:
     EVENT_TRIGGER (1 function):
       onEditContacts
 
+    TESTING (1 function):
+      logSheetHeaders
+
 ================================================================================
 FUNCTION DETAILS (ALPHABETICAL):
 ================================================================================
+
+    logSheetHeaders() -> void
+        Logs all sheet names and their header row values to the console for debugging.
+        Skips empty sheets.
+        Category: TESTING
+        Local functions used: None
+        Utility functions used: None
 
     onEditContacts(e) -> void
         Handles edit events on the Teachers and Admin sheet.
