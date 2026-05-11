@@ -951,87 +951,124 @@ function createLessonRows(sheet, student, startRow, numRows) {
 
 function createMonthlyAttendanceSheet(workbook, monthName, rosterData) {
   try {
-    debugLog('Creating attendance sheet for ' + monthName);
+    debugLog('createMonthlyAttendanceSheet', 'INFO', 'Creating attendance sheet', monthName, '');
     
-    // Create the sheet
     var sheet = workbook.insertSheet(monthName);
     
-    // Set up column headers
     setupAttendanceHeaders(sheet);
     
-    // NEW ORDER: Add group sections FIRST based on teacher's group assignments
     var teacherName = extractTeacherNameFromWorkbook(workbook);
     if (teacherName) {
       var groupEntries = getTeacherGroupAssignments(teacherName);
       if (groupEntries.length > 0) {
         createGroupSections(sheet, groupEntries);
-        debugLog('✅ Created group sections for ' + groupEntries.length + ' groups');
+        debugLog('createMonthlyAttendanceSheet', 'INFO', 'Created group sections', groupEntries.length + ' groups', '');
       }
     }
     
-    // THEN create student sections from roster data (if any)
     if (rosterData && rosterData.length > 0) {
       createStudentSections(sheet, rosterData);
-      debugLog('✅ Created sections for ' + rosterData.length + ' students');
+      debugLog('createMonthlyAttendanceSheet', 'INFO', 'Created student sections', rosterData.length + ' students', '');
     } else {
-      debugLog('📝 Created empty attendance sheet (no students yet)');
+      debugLog('createMonthlyAttendanceSheet', 'INFO', 'Created empty attendance sheet', monthName, '');
     }
     
-    // Apply formatting and protection
     formatAttendanceSheet(sheet);
+    protectAttendanceSheet(sheet);
     
-    debugLog('✅ Successfully created ' + monthName + ' attendance sheet');
+    debugLog('createMonthlyAttendanceSheet', 'SUCCESS', 'Attendance sheet created', monthName, '');
     return sheet;
     
   } catch (error) {
-    debugLog('❌ Error creating attendance sheet: ' + error.message);
+    debugLog('createMonthlyAttendanceSheet', 'ERROR', 'Failed to create attendance sheet', monthName, error.message);
+    throw error;
+  }
+}
+
+function createSignOffRow(sheet) {
+  try {
+    var numCols = 11;
+
+    // Set entire row to white base
+    sheet.getRange(2, 1, 1, numCols).setBackground('#ffffff')
+                                     .setFontColor('#333333')
+                                     .setFontWeight('normal');
+
+    // B2: label
+    sheet.getRange(2, 2)
+         .setValue('Month Complete:')
+         .setFontWeight('bold')
+         .setHorizontalAlignment('right');
+
+    // C2: initials entry cell — plain text, centered, white
+    sheet.getRange(2, 3)
+         .setNumberFormat('@')
+         .setHorizontalAlignment('center')
+         .clearDataValidations();
+
+    // D2: hint text
+    sheet.getRange(2, 4)
+         .setValue('Initial here when done')
+         .setFontColor('#999999')
+         .setFontStyle('italic')
+         .setFontWeight('normal');
+
+    // Conditional formatting: yellow when past day 21 and C2 is blank
+    var rule = SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied('=AND(DAY(TODAY())>21,ISBLANK(C2))')
+      .setBackground('#FFD966')
+      .setFontColor('#333333')
+      .setRanges([sheet.getRange(2, 1, 1, numCols)])
+      .build();
+
+    var rules = sheet.getConditionalFormatRules();
+    rules.push(rule);
+    sheet.setConditionalFormatRules(rules);
+
+    debugLog('createSignOffRow', 'INFO', 'Sign-off row created at row 2', '', '');
+
+  } catch (error) {
+    debugLog('createSignOffRow', 'ERROR', 'Failed to create sign-off row', '', error.message);
     throw error;
   }
 }
 
 function createStudentHeader(sheet, student, row) {
-  // Get the current month name from the sheet name
-  var monthName = sheet.getName(); // Should be "January", "February", etc.
+  var monthName = sheet.getName();
   
-  // Format lesson length with " minutes" suffix for header
   var lessonLengthForHeader = formatLessonLengthWithMinutes(student.lessonLength);
   
   var headerData = [
-    student.id || '',                                                                    // A - Student ID
-    (student.lastName || '') + ', ' + (student.firstName || '') + ' - ' + (student.instrument || ''), // B - Student Name + Instrument
-    monthName,                                                                           // C - Month name
-    lessonLengthForHeader,                                                              // D - Length WITH " minutes" for header
-    '', '', '', '', '', '', ''                                                           // E-K - Empty columns (11 total now)
+    student.id || '',
+    (student.lastName || '') + ', ' + (student.firstName || '') + ' - ' + (student.instrument || ''),
+    monthName,
+    lessonLengthForHeader,
+    '', '', '', '', '', '', ''  // E-K
   ];
   
-  // Set header data
   sheet.getRange(row, 1, 1, headerData.length).setValues([headerData]);
   
-  // Check if student needs warning (less than 2 lessons remaining)
   var lessonsRemaining = student.lessonsRemaining || 0;
   var isWarning = lessonsRemaining < 2 && lessonsRemaining > 0;
   
-  // Style student header
   var headerRange = sheet.getRange(row, 1, 1, headerData.length);
   if (isWarning) {
-    // Warning style (pink)
     headerRange.setBackground(STYLES.WARNING.background)
                .setFontColor(STYLES.WARNING.text)
                .setFontWeight('bold');
     
-    // Update Length column to include warning with " minutes" suffix
     var numericLength = extractNumericLessonLength(student.lessonLength);
     sheet.getRange(row, 4).setValue(numericLength + ' minutes - WARNING: Only ' + lessonsRemaining + ' lessons left!')
-                          .setWrap(false);  // Use overflow instead of text wrap
+                          .setWrap(false);
   } else {
-    // Normal style (light blue)
     headerRange.setBackground(STYLES.SUBHEADER.background)
                .setFontColor(STYLES.SUBHEADER.text)
                .setFontWeight('bold');
   }
   
-  // Add green border between Comments (F) and Admin Review Date (G)
   headerRange.getCell(1, 6).setBorder(null, null, null, true, null, null, STYLES.HEADER.background, SpreadsheetApp.BorderStyle.SOLID_THICK);
+  
+  protectStudentHeaderRow(sheet, row);
   
   return row + 1;
 }
@@ -1039,30 +1076,25 @@ function createStudentHeader(sheet, student, row) {
 function createStudentSections(sheet, rosterData) {
   var lastRow = sheet.getLastRow();
   var currentRow;
-  
-  // If sheet only has headers (row 1), start at row 2
-  // Otherwise, start after the last row with data
-  if (lastRow <= 1) {
-    currentRow = 2;
+
+  // Rows 1 (header) and 2 (sign-off) are reserved — start at row 3
+  if (lastRow <= 2) {
+    currentRow = 3;
   } else {
-    currentRow = lastRow + 2; // +1 for spacing, +1 for next available row
+    currentRow = lastRow + 2;
   }
-  
+
   for (var i = 0; i < rosterData.length; i++) {
     var student = rosterData[i];
-    
-    // Create student header row
+
     currentRow = createStudentHeader(sheet, student, currentRow);
-    
-    // Create 5 lesson rows for this student
     currentRow = createLessonRows(sheet, student, currentRow, 5);
-    
-    // Add spacing between students (except last one)
+
     if (i < rosterData.length - 1) {
-      currentRow += 1; // One empty row between students
+      currentRow += 1;
     }
   }
-  
+
   debugLog('createStudentSections', 'INFO', 'Created sections for ' + rosterData.length + ' students', '', '');
 }
 
@@ -1613,85 +1645,42 @@ function formatAttendanceColumns(sheet, studentCount) {
 
 function formatAttendanceSheet(sheet) {
   try {
-    // Freeze header row
     sheet.setFrozenRows(1);
-    
-    var lastRow = sheet.getLastRow();
+
     var maxRows = sheet.getMaxRows();
-    
-    // Set up ROSTER-STYLE date format and validation for Date column (column C)
-    // Apply to entire column so it works even on empty sheets
-    var dateRange = sheet.getRange(2, 3, maxRows - 1, 1);
-    dateRange.setNumberFormat('ddd, M/d');  // Format: "Tue, 1/15"
-    
+
+    // Date format and validation for column C — start at row 3 to preserve sign-off row
+    var dateRange = sheet.getRange(3, 3, maxRows - 2, 1);
+    dateRange.setNumberFormat('ddd, M/d');
+
     var dateRule = SpreadsheetApp.newDataValidation()
       .requireDate()
       .setAllowInvalid(true)
       .build();
     dateRange.setDataValidation(dateRule);
-    
-    // Set up data validation for Status column (column E) - skip student header rows
-    if (lastRow > 1) {
-      var data = sheet.getDataRange().getValues();
-      var monthNames = MONTH_NAMES.map(function(name) {
-        return name.toLowerCase();
-      });
-      
-      var statusOptions = ['Lesson', 'No Show', 'No Lesson'];
-      var statusRule = SpreadsheetApp.newDataValidation()
-        .requireValueInList(statusOptions)
-        .setAllowInvalid(false)
-        .build();
-      
-      // Apply validation to each row individually, skipping student header rows
-      for (var i = 1; i < data.length; i++) {
-        var row = data[i];
-        var rowNum = i + 1;
-        var dateValue = row[2];  // Column C (Date)
-        var lengthValue = row[3]; // Column D (Length)
-        
-        var isHeaderRow = false;
-        
-        // Check if date contains a month name
-        if (dateValue && typeof dateValue === 'string') {
-          var dateLower = dateValue.toLowerCase();
-          for (var m = 0; m < monthNames.length; m++) {
-            if (dateLower.indexOf(monthNames[m]) !== -1) {
-              isHeaderRow = true;
-              break;
-            }
-          }
-        }
-        
-        // Check if length contains " minutes" suffix
-        if (!isHeaderRow && lengthValue && typeof lengthValue === 'string' && lengthValue.indexOf(' minutes') !== -1) {
-          isHeaderRow = true;
-        }
-        
-        // Only apply status dropdown to non-header rows
-        if (!isHeaderRow) {
-          sheet.getRange(rowNum, 5).setDataValidation(statusRule);
-        }
-      }
-    }
-    
-    // Protect admin columns (G through K) with warning (updated range for new column count)
-    var adminRange = sheet.getRange(1, 7, maxRows, 5);  // 5 columns now (G through K)
+
+    // Status dropdown for column E — start at row 3 to preserve sign-off row
+    var statusOptions = ['Lesson', 'No Show', 'No Lesson'];
+    var statusRule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(statusOptions)
+      .setAllowInvalid(false)
+      .build();
+    sheet.getRange(3, 5, maxRows - 2, 1).setDataValidation(statusRule);
+
+    // Protect admin columns G-K with warning
+    var adminRange = sheet.getRange(1, 7, maxRows, 5);
     var protection = adminRange.protect();
     protection.setDescription('Admin columns - automated data');
     protection.setWarningOnly(true);
-    
-    // Set text wrapping for ALL columns (as requested)
-    var maxCols = sheet.getLastColumn();
-    sheet.getRange(1, 1, maxRows, maxCols).setWrap(true);
-    
-    // Column D (Length) should overflow instead of wrap
-    sheet.getRange(1, 4, maxRows, 1).setWrap(false);
-    
-    debugLog('✅ Applied formatting, protection, dropdown validation (skipping header rows), roster-style dates, and text wrapping');
-    
+
+    // Text wrapping for all columns
+    sheet.getRange(1, 1, maxRows, 11).setWrap(true);
+
+    debugLog('formatAttendanceSheet', 'INFO', 'Attendance sheet formatted', '', '');
+
   } catch (error) {
-    debugLog('⚠️ Error in formatting: ' + error.message);
+    debugLog('formatAttendanceSheet', 'ERROR', 'Failed to format attendance sheet', '', error.message);
+    throw error;
   }
 }
 
@@ -3243,14 +3232,37 @@ function promptForNameWithDefault(config) {
   return customName;
 }
 
+function protectAttendanceSheet(sheet) {
+  try {
+    var maxRows = sheet.getMaxRows();
+
+    protectSheetRanges(sheet, {
+      warningOnly: false,
+      ranges: [
+        { range: sheet.getRange(1, 1, 1, 11),      description: 'Header row - do not edit' },
+        { range: sheet.getRange(2, 1),              description: 'Sign-off label - do not edit' },
+        { range: sheet.getRange(2, 4, 1, 8),        description: 'Sign-off row - do not edit' },
+        { range: sheet.getRange(1, 1, maxRows, 1),  description: 'Student ID column - do not edit' },
+        { range: sheet.getRange(1, 2, maxRows, 1),  description: 'Student Name column - do not edit' }
+      ]
+    });
+
+    debugLog('protectAttendanceSheet', 'INFO', 'Sheet protected', sheet.getName(), '');
+
+  } catch (error) {
+    debugLog('protectAttendanceSheet', 'ERROR', 'Failed to protect sheet', sheet.getName(), error.message);
+    throw error;
+  }
+}
+
 function protectSheetRanges(sheet, options) {
   options = options || {};
   var columns = options.columns || [];
+  var ranges = options.ranges || [];
   var warningOnly = options.warningOnly !== false; // Default true
   var clearExisting = options.clearExisting || false;
-  
+
   try {
-    // Clear existing protections if requested
     if (clearExisting) {
       var existingProtections = sheet.getProtections(SpreadsheetApp.ProtectionType.RANGE);
       for (var i = 0; i < existingProtections.length; i++) {
@@ -3258,38 +3270,55 @@ function protectSheetRanges(sheet, options) {
       }
       debugLog('protectSheetRanges', 'INFO', 'Cleared existing protections', 'Count: ' + existingProtections.length, '');
     }
-    
-    // Apply protection to each specified column range
+
+    // Column string ranges (e.g. "A:A", "G:K")
     for (var j = 0; j < columns.length; j++) {
-      var columnRange = columns[j];
-      
-      // Parse column range (e.g., "E:U" or "A:A")
-      var range = sheet.getRange(columnRange);
-      
-      // Protect the range
-      var protection = range.protect();
-      protection.setDescription('Protected columns: ' + columnRange);
-      
-      // Set warning-only mode if requested
-      if (warningOnly) {
-        protection.setWarningOnly(true);
+      var protection = sheet.getRange(columns[j]).protect();
+      protection.setDescription('Protected columns: ' + columns[j]);
+      protection.setWarningOnly(warningOnly);
+      if (!warningOnly) {
+        var editors = protection.getEditors();
+        if (editors.length > 0) protection.removeEditors(editors);
+        if (protection.canDomainEdit()) protection.setDomainEdit(false);
       }
     }
-    
-    debugLog('protectSheetRanges', 'INFO', 'Protected columns successfully', 
-             'Columns: ' + columns.join(', ') + (warningOnly ? ' (warning only)' : ''), '');
-    
-    return {
-      success: true,
-      protectedRanges: columns.length
-    };
-    
+
+    // Explicit Range objects (e.g. sheet.getRange(1,1,1,11))
+    for (var k = 0; k < ranges.length; k++) {
+      var rProtection = ranges[k].range.protect();
+      rProtection.setDescription(ranges[k].description || 'Protected range');
+      rProtection.setWarningOnly(warningOnly);
+      if (!warningOnly) {
+        var rEditors = rProtection.getEditors();
+        if (rEditors.length > 0) rProtection.removeEditors(rEditors);
+        if (rProtection.canDomainEdit()) rProtection.setDomainEdit(false);
+      }
+    }
+
+    debugLog('protectSheetRanges', 'INFO', 'Protections applied',
+             'Columns: ' + columns.length + ', Ranges: ' + ranges.length +
+             (warningOnly ? ' (warning only)' : ' (hard)'), '');
+
+    return { success: true, protectedRanges: columns.length + ranges.length };
+
   } catch (error) {
     debugLog('protectSheetRanges', 'ERROR', 'Error protecting sheet ranges', '', error.message);
-    return {
-      success: false,
-      error: error.message
-    };
+    return { success: false, error: error.message };
+  }
+}
+
+function protectStudentHeaderRow(sheet, row) {
+  try {
+    protectSheetRanges(sheet, {
+      warningOnly: false,
+      ranges: [
+        { range: sheet.getRange(row, 1, 1, 11), description: 'Student header row - do not edit' }
+      ]
+    });
+    debugLog('protectStudentHeaderRow', 'INFO', 'Protected student header row', 'Row: ' + row, '');
+  } catch (error) {
+    debugLog('protectStudentHeaderRow', 'ERROR', 'Failed to protect student header row', 'Row: ' + row, error.message);
+    throw error;
   }
 }
 
@@ -3319,17 +3348,15 @@ function setupAttendanceHeaders(sheet) {
     'Length',              // D
     'Status',              // E
     'Comments',            // F
-    'Admin Review Date',   // G - NEW COLUMN
+    'Admin Review Date',   // G
     'Invoice Date',        // H
     'Payment Date',        // I
     'Invoice Number',      // J
     'Admin Comments'       // K
   ];
   
-  // Set headers
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   
-  // Style header row - WITH text wrapping
   var headerRange = sheet.getRange(1, 1, 1, headers.length);
   headerRange.setBackground(STYLES.HEADER.background)
              .setFontColor(STYLES.HEADER.text)
@@ -3337,16 +3364,16 @@ function setupAttendanceHeaders(sheet) {
              .setHorizontalAlignment('center')
              .setWrap(true);
   
-  // Updated column widths (added Admin Review Date column - same width as other date columns)
-  var widths = [60, 220, 80, 80, 95, 220, 75, 110, 75, 100, 220];  // 11 columns now
+  var widths = [60, 220, 80, 80, 95, 220, 75, 110, 75, 100, 220];
   for (var i = 0; i < widths.length; i++) {
     sheet.setColumnWidth(i + 1, widths[i]);
   }
   
-  // Add thick green border between Comments (F) and Admin Review Date (G)
   headerRange.getCell(1, 6).setBorder(null, null, null, true, null, null, STYLES.HEADER.background, SpreadsheetApp.BorderStyle.SOLID_THICK);
   
-  debugLog('✅ Headers set up with formatting and green border between F|G');
+  createSignOffRow(sheet);
+  
+  debugLog('setupAttendanceHeaders', 'INFO', 'Headers and sign-off row created', '', '');
 }
 
 function setupRosterTemplateProtection(sheet) {
