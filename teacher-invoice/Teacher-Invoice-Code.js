@@ -22,11 +22,10 @@ function onOpen() {
       .addItem('Verify Invoice vs Billing 2025', 'verifyInvoiceVsBilling2025')
       .addToUi();
 
-    
-    UtilityScriptLibrary.debugLog("✅ Teacher Invoice Tools menu created");
-    
+    UtilityScriptLibrary.debugLog('onOpen', 'INFO', 'Teacher Invoice Tools menu created', '', '');
+
   } catch (error) {
-    UtilityScriptLibrary.debugLog("❌ Error creating menu: " + error.message);
+    UtilityScriptLibrary.debugLog('onOpen', 'ERROR', 'Error creating menu', '', error.message);
   }
 }
 
@@ -35,7 +34,7 @@ function onOpen() {
 
 function showInvoiceGenerationUI() {
   try {
-    UtilityScriptLibrary.debugLog("showInvoiceGenerationUI - Starting invoice generation UI");
+    UtilityScriptLibrary.debugLog('showInvoiceGenerationUI', 'INFO', 'Starting invoice generation UI', '', '');
     
     var ui = SpreadsheetApp.getUi();
     
@@ -86,22 +85,19 @@ function showInvoiceGenerationUI() {
     // Step 7: Write metadata
     try {
       writeTeacherInvoicingMetadata(month, cutoffDate, invoiceDate, invoicePeriod);
-      UtilityScriptLibrary.debugLog("showInvoiceGenerationUI", "SUCCESS", 
-                                    "Metadata written successfully", "", "");
+      UtilityScriptLibrary.debugLog('showInvoiceGenerationUI', 'SUCCESS', 'Metadata written successfully', '', '');
     } catch (metadataError) {
-      UtilityScriptLibrary.debugLog("showInvoiceGenerationUI", "ERROR", 
-                                    "Metadata write failed (non-critical)", 
-                                    "", metadataError.message);
+      UtilityScriptLibrary.debugLog('showInvoiceGenerationUI', 'ERROR', 'Metadata write failed (non-critical)', '', metadataError.message);
       // Continue - this is not critical to invoice generation
     }
     
     // Step 8: Show comprehensive results summary
     showInvoiceGenerationResults(lessonResults, invoiceResults);
     
-    UtilityScriptLibrary.debugLog("showInvoiceGenerationUI - Invoice generation workflow completed successfully");
+    UtilityScriptLibrary.debugLog('showInvoiceGenerationUI', 'SUCCESS', 'Invoice generation workflow completed', '', '');
     
   } catch (error) {
-    UtilityScriptLibrary.debugLog("showInvoiceGenerationUI - ERROR: Invoice generation workflow failed - " + error.message);
+    UtilityScriptLibrary.debugLog('showInvoiceGenerationUI', 'ERROR', 'Invoice generation workflow failed', '', error.message);
     
     var ui = SpreadsheetApp.getUi();
     ui.alert('❌ Error: ' + error.message + '\n\nCheck the Teacher_Invoice_Debug sheet for details.');
@@ -141,10 +137,10 @@ function showResultsSummaryUI(results) {
     // Show the summary
     ui.alert('Data Collection Complete', summaryMessage, ui.ButtonSet.OK);
     
-    UtilityScriptLibrary.debugLog("showResultsSummaryUI - Results summary displayed to user");
+    UtilityScriptLibrary.debugLog('showResultsSummaryUI', 'INFO', 'Results summary displayed to user', '', '');
     
   } catch (error) {
-    UtilityScriptLibrary.debugLog("showResultsSummaryUI - ERROR: Error showing results summary - " + error.message);
+    UtilityScriptLibrary.debugLog('showResultsSummaryUI', 'ERROR', 'Error showing results summary', '', error.message);
   }
 }
 
@@ -1043,9 +1039,8 @@ function extractLessonFromRow(row, headerMap, teacherData, cutoffDate, sheet, sh
         
         sheet.getRange(sheetRowIndex, adminCommentsCol).setValue(newComments);
         
-        UtilityScriptLibrary.debugLog("extractLessonFromRow - VALIDATION ERROR: Invalid length " + lengthValue + 
-                                      " for " + (isGroupSession ? "group" : "student") + 
-                                      " - Row: " + sheetRowIndex + " - Wrote to Admin Comments");
+        UtilityScriptLibrary.debugLog('extractLessonFromRow', 'WARNING', 'Invalid lesson length',
+          (isGroupSession ? 'Group' : 'Student') + ' length: ' + lengthValue + ', Row: ' + sheetRowIndex, '');
       }
       return null; // Skip this row
     }
@@ -1061,7 +1056,7 @@ function extractLessonFromRow(row, headerMap, teacherData, cutoffDate, sheet, sh
     };
     
   } catch (error) {
-    UtilityScriptLibrary.debugLog("extractLessonFromRow - ERROR: Row extraction failed - " + error.message);
+    UtilityScriptLibrary.debugLog('extractLessonFromRow', 'ERROR', 'Row extraction failed', '', error.message);
     return null;
   }
 }
@@ -1096,11 +1091,13 @@ function extractLessonsFromAttendanceSheet(sheet, teacherData, cutoffDate) {
       }
     }
     
-    UtilityScriptLibrary.debugLog('extractLessonsFromAttendanceSheet - Extracted ' + lessons.length + ' lessons from ' + sheet.getName());
+    UtilityScriptLibrary.debugLog('extractLessonsFromAttendanceSheet', 'INFO', 'Lessons extracted',
+      lessons.length + ' lessons from ' + sheet.getName(), '');
     return lessons;
     
   } catch (error) {
-    UtilityScriptLibrary.debugLog('extractLessonsFromAttendanceSheet - ERROR: ' + error.message);
+    UtilityScriptLibrary.debugLog('extractLessonsFromAttendanceSheet', 'ERROR', 'Extraction failed',
+      sheet.getName(), error.message);
     throw error;
   }
 }
@@ -1253,7 +1250,7 @@ function formatDateForInput(date) {
     
     return month + '/' + day + '/' + year;
   } catch (error) {
-    UtilityScriptLibrary.debugLog('❌ Error formatting date: ' + error.message);
+    UtilityScriptLibrary.debugLog('formatDateForInput', 'ERROR', 'Error formatting date', '', error.message);
     return '01/01/2024'; // Fallback
   }
 }
@@ -1313,7 +1310,7 @@ function generateDefaultInvoicePeriod(cutoffDate) {
     return month + ' ' + year;
     
   } catch (error) {
-    UtilityScriptLibrary.debugLog('❌ Error generating default invoice period: ' + error.message);
+    UtilityScriptLibrary.debugLog('generateDefaultInvoicePeriod', 'ERROR', 'Error generating default invoice period', '', error.message);
     return "Unknown Period";
   }
 }
@@ -1325,7 +1322,7 @@ function generateDefaultMonthName(cutoffDate) {
     return monthNames[cutoffDate.getMonth()];
     
   } catch (error) {
-    UtilityScriptLibrary.debugLog('❌ Error generating default month name: ' + error.message);
+    UtilityScriptLibrary.debugLog('generateDefaultMonthName', 'ERROR', 'Error generating default month name', '', error.message);
     return "January"; // Fallback
   }
 }
@@ -1652,18 +1649,19 @@ function getAttendanceSheetsFromWorkbook(spreadsheet) {
       for (var j = 0; j < monthNames.length; j++) {
         if (sheetName.toLowerCase() === monthNames[j].toLowerCase()) {
           attendanceSheets.push(sheet);
-          UtilityScriptLibrary.debugLog("getAttendanceSheetsFromWorkbook - Found attendance sheet: " + sheet.getName());
+          UtilityScriptLibrary.debugLog('getAttendanceSheetsFromWorkbook', 'INFO', 'Found attendance sheet', sheet.getName(), '');
           break; // No need to check other months once we find a match
         }
       }
     }
     
-    UtilityScriptLibrary.debugLog("getAttendanceSheetsFromWorkbook - Attendance sheets found: " + attendanceSheets.length);
+    UtilityScriptLibrary.debugLog('getAttendanceSheetsFromWorkbook', 'INFO', 'Attendance sheets found', 
+      'Count: ' + attendanceSheets.length, '');
     
     return attendanceSheets;
     
   } catch (error) {
-    UtilityScriptLibrary.debugLog("getAttendanceSheetsFromWorkbook - ERROR: Failed to get attendance sheets - " + error.message);
+    UtilityScriptLibrary.debugLog('getAttendanceSheetsFromWorkbook', 'ERROR', 'Failed to get attendance sheets', '', error.message);
     return [];
   }
 }
@@ -2203,11 +2201,12 @@ function groupLessonsByTeacherAndType(allLessons) {
       grouped[groupKey].lessons.push(lesson);
     }
     
-    UtilityScriptLibrary.debugLog('📊 Grouped ' + allLessons.length + ' lessons into ' + Object.keys(grouped).length + ' line items');
+    UtilityScriptLibrary.debugLog('groupLessonsByTeacherAndType', 'INFO', 'Lessons grouped',
+      allLessons.length + ' lessons into ' + Object.keys(grouped).length + ' line items', '');
     return grouped;
     
   } catch (error) {
-    UtilityScriptLibrary.debugLog('❌ Error in groupLessonsByTeacherAndType: ' + error.message);
+    UtilityScriptLibrary.debugLog('groupLessonsByTeacherAndType', 'ERROR', 'Error grouping lessons', '', error.message);
     throw error;
   }
 }
@@ -2367,7 +2366,7 @@ function parseLessonDate(dateValue) {
     return null;
       
   } catch (error) {
-    UtilityScriptLibrary.debugLog("parseLessonDate - ERROR: Date parsing failed - Input: " + dateValue + " - " + error.message);
+    UtilityScriptLibrary.debugLog('parseLessonDate', 'ERROR', 'Date parsing failed', 'Input: ' + dateValue, error.message);
     return null;
   }
 }
@@ -2492,7 +2491,7 @@ function populateInvoiceSheetFromLessons(sheet, groupedLessons, invoiceDate, inv
 
 function promptForCutoffDate() {
   try {
-    UtilityScriptLibrary.debugLog("promptForCutoffDate - Starting cutoff date prompt");
+    UtilityScriptLibrary.debugLog('promptForCutoffDate', 'INFO', 'Starting cutoff date prompt', '', '');
     
     var ui = SpreadsheetApp.getUi();
     var response = ui.prompt(
@@ -2503,38 +2502,43 @@ function promptForCutoffDate() {
       ui.ButtonSet.OK_CANCEL
     );
     
-    UtilityScriptLibrary.debugLog("promptForCutoffDate - User response: Button: " + response.getSelectedButton() + ', Text: "' + response.getResponseText() + '"');
+    UtilityScriptLibrary.debugLog('promptForCutoffDate', 'INFO', 'User response received',
+      'Button: ' + response.getSelectedButton() + ', Text: "' + response.getResponseText() + '"', '');
     
     if (response.getSelectedButton() !== ui.Button.OK) {
-      UtilityScriptLibrary.debugLog("promptForCutoffDate - User cancelled cutoff date prompt");
+      UtilityScriptLibrary.debugLog('promptForCutoffDate', 'INFO', 'User cancelled cutoff date prompt', '', '');
       return null;
     }
     
     var userInput = response.getResponseText().trim();
-    UtilityScriptLibrary.debugLog("promptForCutoffDate - Processing user input: " + userInput);
+    UtilityScriptLibrary.debugLog('promptForCutoffDate', 'INFO', 'Processing user input', userInput, '');
     
     // Try UtilityScriptLibrary first
     var cutoffDate;
     try {
       cutoffDate = UtilityScriptLibrary.parseDateFromString(userInput);
-      UtilityScriptLibrary.debugLog("promptForCutoffDate - UtilityScriptLibrary.parseDateFromString result: " + (cutoffDate ? cutoffDate.toDateString() : 'null'));
+      UtilityScriptLibrary.debugLog('promptForCutoffDate', 'INFO', 'parseDateFromString result',
+        cutoffDate ? cutoffDate.toDateString() : 'null', '');
     } catch (utilityError) {
-      UtilityScriptLibrary.debugLog("promptForCutoffDate - WARNING: UtilityScriptLibrary.parseDateFromString failed for input: " + userInput + " - " + utilityError.message);
+      UtilityScriptLibrary.debugLog('promptForCutoffDate', 'WARNING', 'parseDateFromString failed',
+        userInput, utilityError.message);
       cutoffDate = null;
     }
     
     // Fallback to native Date constructor
     if (!cutoffDate) {
-      UtilityScriptLibrary.debugLog("promptForCutoffDate - WARNING: Falling back to native Date constructor");
+      UtilityScriptLibrary.debugLog('promptForCutoffDate', 'WARNING', 'Falling back to native Date constructor', '', '');
       
       try {
         cutoffDate = new Date(userInput);
         if (isNaN(cutoffDate.getTime())) {
           cutoffDate = null;
         }
-        UtilityScriptLibrary.debugLog("promptForCutoffDate - Native Date constructor result: " + (cutoffDate ? cutoffDate.toDateString() : 'null'));
+        UtilityScriptLibrary.debugLog('promptForCutoffDate', 'INFO', 'Native Date constructor result',
+          cutoffDate ? cutoffDate.toDateString() : 'null', '');
       } catch (nativeError) {
-        UtilityScriptLibrary.debugLog("promptForCutoffDate - ERROR: Native Date constructor failed for input: " + userInput + " - " + nativeError.message);
+        UtilityScriptLibrary.debugLog('promptForCutoffDate', 'ERROR', 'Native Date constructor failed',
+          userInput, nativeError.message);
         cutoffDate = null;
       }
     }
@@ -2542,29 +2546,31 @@ function promptForCutoffDate() {
     if (!cutoffDate) {
       var errorMsg = '❌ Invalid date format. Please use MM/DD/YYYY format (example: 01/31/2024).';
       ui.alert(errorMsg);
-      UtilityScriptLibrary.debugLog("promptForCutoffDate - ERROR: Date parsing completely failed for input: " + userInput);
+      UtilityScriptLibrary.debugLog('promptForCutoffDate', 'ERROR', 'Date parsing completely failed', userInput, '');
       return null;
     }
     
-    UtilityScriptLibrary.debugLog("promptForCutoffDate - Successfully parsed cutoff date - Input: " + userInput + ", Result: " + cutoffDate.toDateString());
+    UtilityScriptLibrary.debugLog('promptForCutoffDate', 'INFO', 'Successfully parsed cutoff date',
+      'Input: ' + userInput + ', Result: ' + cutoffDate.toDateString(), '');
     
     return cutoffDate;
     
   } catch (error) {
-    UtilityScriptLibrary.debugLog("promptForCutoffDate - ERROR: Unexpected error - " + error.message);
+    UtilityScriptLibrary.debugLog('promptForCutoffDate', 'ERROR', 'Unexpected error', '', error.message);
     return null;
   }
 }
 
 function promptForInvoiceDate() {
   try {
-    UtilityScriptLibrary.debugLog("promptForInvoiceDate - Starting invoice date prompt");
+    UtilityScriptLibrary.debugLog('promptForInvoiceDate', 'INFO', 'Starting invoice date prompt', '', '');
     
     var ui = SpreadsheetApp.getUi();
     var today = new Date();
     var defaultDateStr = formatDateForInput(today);
     
-    UtilityScriptLibrary.debugLog("promptForInvoiceDate - Default date calculated - Today: " + today.toDateString() + ", Formatted: " + defaultDateStr);
+    UtilityScriptLibrary.debugLog('promptForInvoiceDate', 'INFO', 'Default date calculated',
+      'Today: ' + today.toDateString() + ', Formatted: ' + defaultDateStr, '');
     
     var response = ui.prompt(
       'Invoice Date',
@@ -2575,10 +2581,11 @@ function promptForInvoiceDate() {
       ui.ButtonSet.OK_CANCEL
     );
     
-    UtilityScriptLibrary.debugLog("promptForInvoiceDate - User response: Button: " + response.getSelectedButton() + ', Text: "' + response.getResponseText() + '"');
+    UtilityScriptLibrary.debugLog('promptForInvoiceDate', 'INFO', 'User response received',
+      'Button: ' + response.getSelectedButton() + ', Text: "' + response.getResponseText() + '"', '');
     
     if (response.getSelectedButton() !== ui.Button.OK) {
-      UtilityScriptLibrary.debugLog("promptForInvoiceDate - User cancelled invoice date prompt");
+      UtilityScriptLibrary.debugLog('promptForInvoiceDate', 'INFO', 'User cancelled invoice date prompt', '', '');
       return null;
     }
     
@@ -2588,17 +2595,18 @@ function promptForInvoiceDate() {
     var invoiceDate;
     if (!userInput) {
       invoiceDate = today;
-      UtilityScriptLibrary.debugLog("promptForInvoiceDate - Using default date (today): " + invoiceDate.toDateString());
+      UtilityScriptLibrary.debugLog('promptForInvoiceDate', 'INFO', 'Using default date (today)', today.toDateString(), '');
     } else {
-      // Parse user input
-      UtilityScriptLibrary.debugLog("promptForInvoiceDate - Parsing user input: " + userInput);
+      UtilityScriptLibrary.debugLog('promptForInvoiceDate', 'INFO', 'Parsing user input', userInput, '');
       
       // Try UtilityScriptLibrary first
       try {
         invoiceDate = UtilityScriptLibrary.parseDateFromString(userInput);
-        UtilityScriptLibrary.debugLog("promptForInvoiceDate - UtilityScriptLibrary.parseDateFromString result: " + (invoiceDate ? invoiceDate.toDateString() : 'null'));
+        UtilityScriptLibrary.debugLog('promptForInvoiceDate', 'INFO', 'parseDateFromString result',
+          invoiceDate ? invoiceDate.toDateString() : 'null', '');
       } catch (utilityError) {
-        UtilityScriptLibrary.debugLog("promptForInvoiceDate - WARNING: UtilityScriptLibrary.parseDateFromString failed for input: " + userInput + " - " + utilityError.message);
+        UtilityScriptLibrary.debugLog('promptForInvoiceDate', 'WARNING', 'parseDateFromString failed',
+          userInput, utilityError.message);
         invoiceDate = null;
       }
       
@@ -2609,9 +2617,11 @@ function promptForInvoiceDate() {
           if (isNaN(invoiceDate.getTime())) {
             invoiceDate = null;
           }
-          UtilityScriptLibrary.debugLog("promptForInvoiceDate - Native Date constructor result: " + (invoiceDate ? invoiceDate.toDateString() : 'null'));
+          UtilityScriptLibrary.debugLog('promptForInvoiceDate', 'INFO', 'Native Date constructor result',
+            invoiceDate ? invoiceDate.toDateString() : 'null', '');
         } catch (nativeError) {
-          UtilityScriptLibrary.debugLog("promptForInvoiceDate - ERROR: Native Date constructor failed for input: " + userInput + " - " + nativeError.message);
+          UtilityScriptLibrary.debugLog('promptForInvoiceDate', 'ERROR', 'Native Date constructor failed',
+            userInput, nativeError.message);
           invoiceDate = null;
         }
       }
@@ -2619,31 +2629,33 @@ function promptForInvoiceDate() {
       if (!invoiceDate) {
         var errorMsg = '❌ Invalid date format. Please use MM/DD/YYYY format (example: 01/31/2024).';
         ui.alert(errorMsg);
-        UtilityScriptLibrary.debugLog("promptForInvoiceDate - ERROR: Date parsing failed for input: " + userInput);
+        UtilityScriptLibrary.debugLog('promptForInvoiceDate', 'ERROR', 'Date parsing failed', userInput, '');
         return null;
       }
     }
     
-    UtilityScriptLibrary.debugLog("promptForInvoiceDate - Successfully determined invoice date: " + invoiceDate.toDateString());
+    UtilityScriptLibrary.debugLog('promptForInvoiceDate', 'INFO', 'Successfully determined invoice date',
+      invoiceDate.toDateString(), '');
     
     return invoiceDate;
     
   } catch (error) {
-    UtilityScriptLibrary.debugLog("promptForInvoiceDate - ERROR: Unexpected error - " + error.message);
+    UtilityScriptLibrary.debugLog('promptForInvoiceDate', 'ERROR', 'Unexpected error', '', error.message);
     return null;
   }
 }
 
 function promptForInvoicePeriod(cutoffDate) {
   try {
-    UtilityScriptLibrary.debugLog("promptForInvoicePeriod - Starting invoice period prompt");
+    UtilityScriptLibrary.debugLog('promptForInvoicePeriod', 'INFO', 'Starting invoice period prompt', '', '');
     
     var ui = SpreadsheetApp.getUi();
     
     // Generate default period from cutoff date (month/year)
     var defaultPeriod = generateDefaultInvoicePeriod(cutoffDate);
     
-    UtilityScriptLibrary.debugLog("promptForInvoicePeriod - Default period calculated - Cutoff date: " + cutoffDate.toDateString() + ", Default period: " + defaultPeriod);
+    UtilityScriptLibrary.debugLog('promptForInvoicePeriod', 'INFO', 'Default period calculated',
+      'Cutoff: ' + cutoffDate.toDateString() + ', Default period: ' + defaultPeriod, '');
     
     var response = ui.prompt(
       'Invoice Period',
@@ -2657,10 +2669,11 @@ function promptForInvoicePeriod(cutoffDate) {
       ui.ButtonSet.OK_CANCEL
     );
     
-    UtilityScriptLibrary.debugLog("promptForInvoicePeriod - User response: Button: " + response.getSelectedButton() + ', Text: "' + response.getResponseText() + '"');
+    UtilityScriptLibrary.debugLog('promptForInvoicePeriod', 'INFO', 'User response received',
+      'Button: ' + response.getSelectedButton() + ', Text: "' + response.getResponseText() + '"', '');
     
     if (response.getSelectedButton() !== ui.Button.OK) {
-      UtilityScriptLibrary.debugLog("promptForInvoicePeriod - User cancelled invoice period prompt");
+      UtilityScriptLibrary.debugLog('promptForInvoicePeriod', 'INFO', 'User cancelled invoice period prompt', '', '');
       return null;
     }
     
@@ -2669,12 +2682,13 @@ function promptForInvoicePeriod(cutoffDate) {
     // Use default if user left it blank, otherwise use their input
     var finalPeriod = userInput || defaultPeriod;
     
-    UtilityScriptLibrary.debugLog("promptForInvoicePeriod - Invoice period determined - User input: " + userInput + ", Final period: " + finalPeriod);
+    UtilityScriptLibrary.debugLog('promptForInvoicePeriod', 'INFO', 'Invoice period determined',
+      'User input: ' + userInput + ', Final period: ' + finalPeriod, '');
     
     return finalPeriod;
     
   } catch (error) {
-    UtilityScriptLibrary.debugLog("promptForInvoicePeriod - ERROR: Unexpected error - " + error.message);
+    UtilityScriptLibrary.debugLog('promptForInvoicePeriod', 'ERROR', 'Unexpected error', '', error.message);
     // Return default as fallback
     return generateDefaultInvoicePeriod(cutoffDate);
   }
@@ -2682,12 +2696,13 @@ function promptForInvoicePeriod(cutoffDate) {
 
 function promptForMonthName(cutoffDate) {
   try {
-    UtilityScriptLibrary.debugLog("promptForMonthName - Starting month name prompt");
+    UtilityScriptLibrary.debugLog('promptForMonthName', 'INFO', 'Starting month name prompt', '', '');
     
     // Generate default month name from cutoff date
     var defaultMonth = generateDefaultMonthName(cutoffDate);
     
-    UtilityScriptLibrary.debugLog("promptForMonthName - Default month calculated - Cutoff date: " + cutoffDate.toDateString() + ", Default month: " + defaultMonth);
+    UtilityScriptLibrary.debugLog('promptForMonthName', 'INFO', 'Default month calculated',
+      'Cutoff: ' + cutoffDate.toDateString() + ', Default month: ' + defaultMonth, '');
     
     var ui = SpreadsheetApp.getUi();
     var response = ui.prompt(
@@ -2702,10 +2717,11 @@ function promptForMonthName(cutoffDate) {
       ui.ButtonSet.OK_CANCEL
     );
     
-    UtilityScriptLibrary.debugLog("promptForMonthName - User response: Button: " + response.getSelectedButton() + ', Text: "' + response.getResponseText() + '"');
+    UtilityScriptLibrary.debugLog('promptForMonthName', 'INFO', 'User response received',
+      'Button: ' + response.getSelectedButton() + ', Text: "' + response.getResponseText() + '"', '');
     
     if (response.getSelectedButton() !== ui.Button.OK) {
-      UtilityScriptLibrary.debugLog("promptForMonthName - User cancelled month name prompt");
+      UtilityScriptLibrary.debugLog('promptForMonthName', 'INFO', 'User cancelled month name prompt', '', '');
       return null;
     }
     
@@ -2715,17 +2731,18 @@ function promptForMonthName(cutoffDate) {
     var finalMonth;
     if (!userInput) {
       finalMonth = defaultMonth;
-      UtilityScriptLibrary.debugLog("promptForMonthName - Using default month: " + finalMonth);
+      UtilityScriptLibrary.debugLog('promptForMonthName', 'INFO', 'Using default month', finalMonth, '');
     } else {
       // Capitalize first letter
       finalMonth = userInput.charAt(0).toUpperCase() + userInput.slice(1).toLowerCase();
-      UtilityScriptLibrary.debugLog("promptForMonthName - Using custom month - Input: " + userInput + ", Final: " + finalMonth);
+      UtilityScriptLibrary.debugLog('promptForMonthName', 'INFO', 'Using custom month',
+        'Input: ' + userInput + ', Final: ' + finalMonth, '');
     }
     
     return finalMonth;
     
   } catch (error) {
-    UtilityScriptLibrary.debugLog("promptForMonthName - ERROR: Unexpected error - " + error.message);
+    UtilityScriptLibrary.debugLog('promptForMonthName', 'ERROR', 'Unexpected error', '', error.message);
     return null;
   }
 }
@@ -2817,7 +2834,7 @@ function showCombinedErrorDetails(lessonResults, invoiceResults) {
     ui.alert('Error Details', detailsMessage, ui.ButtonSet.OK);
     
   } catch (error) {
-    UtilityScriptLibrary.debugLog('❌ Error in showCombinedErrorDetails: ' + error.message);
+    UtilityScriptLibrary.debugLog('showCombinedErrorDetails', 'ERROR', 'Error in showCombinedErrorDetails', '', error.message);
   }
 }
 
@@ -2871,10 +2888,10 @@ function showInvoiceGenerationResults(lessonResults, invoiceResults) {
       }
     }
     
-    UtilityScriptLibrary.debugLog("showInvoiceGenerationResults - Results summary displayed to user");
+    UtilityScriptLibrary.debugLog('showInvoiceGenerationResults', 'INFO', 'Results summary displayed to user', '', '');
     
   } catch (error) {
-    UtilityScriptLibrary.debugLog("showInvoiceGenerationResults - ERROR: Error showing results summary - " + error.message);
+    UtilityScriptLibrary.debugLog('showInvoiceGenerationResults', 'ERROR', 'Error showing results summary', '', error.message);
   }
 }
 
@@ -3111,7 +3128,8 @@ function validateLessonData(groupedLessons) {
     }
   }
   
-  UtilityScriptLibrary.debugLog('🔍 Validation: ' + issues.length + ' issues found');
+  UtilityScriptLibrary.debugLog('validateLessonData', 'INFO', 'Validation complete',
+    issues.length + ' issues found', '');
   
   return {
     issues: issues,
@@ -3237,8 +3255,7 @@ function checkTemplateFormatting() {
       results.push(result);
       
       UtilityScriptLibrary.debugLog("checkTemplateFormatting", "DEBUG", "Column analysis", 
-                                    "Col " + colLetter + ": " + header, 
-                                    "Format: " + format + " | Category: " + category);
+                                    "Col " + colLetter + ": " + header + " | Format: " + format + " | Category: " + category, "");
     }
     
     // Summary counts using ES5-compatible loops
@@ -3272,14 +3289,12 @@ function checkTemplateFormatting() {
     
     if (rateCol) {
       UtilityScriptLibrary.debugLog("checkTemplateFormatting", "INFO", "Rate column analysis", 
-                                    "Column " + rateCol.letter + ": " + rateCol.format, 
-                                    "Category: " + rateCol.category);
+                                    "Column " + rateCol.letter + ": " + rateCol.format + " | Category: " + rateCol.category, "");
     }
     
     if (costCol) {
       UtilityScriptLibrary.debugLog("checkTemplateFormatting", "INFO", "Cost column analysis", 
-                                    "Column " + costCol.letter + ": " + costCol.format, 
-                                    "Category: " + costCol.category);
+                                    "Column " + costCol.letter + ": " + costCol.format + " | Category: " + costCol.category, "");
     }
     
     // Show user-friendly alert
@@ -3317,14 +3332,14 @@ function debugMonthlySheetStructure() {
     var data = sheet.getDataRange().getValues();
     var headerMap = UtilityScriptLibrary.getHeaderMap(sheet);
     
-    UtilityScriptLibrary.debugLog("DEBUG", "INFO", "Sheet analysis starting", "Sheet: " + sheet.getName(), "");
+    UtilityScriptLibrary.debugLog("debugMonthlySheetStructure", "INFO", "Sheet analysis starting", "Sheet: " + sheet.getName(), "");
     
     var teacherCol = headerMap['teacher'];
     var urlCol = headerMap['url'];
     var lastNameCol = headerMap['lastname'];
     var firstNameCol = headerMap['firstname'];
     
-    UtilityScriptLibrary.debugLog("DEBUG", "INFO", "Column mapping", 
+    UtilityScriptLibrary.debugLog("debugMonthlySheetStructure", "INFO", "Column mapping", 
                                   "Teacher col: " + teacherCol + ", URL col: " + urlCol + ", LastName col: " + lastNameCol + ", FirstName col: " + firstNameCol, "");
     
     for (var row = 1; row < Math.min(data.length, 10); row++) {
@@ -3336,12 +3351,12 @@ function debugMonthlySheetStructure() {
       
       var rowType = (!lastName && !firstName) ? "TEACHER HEADER" : "STUDENT ROW";
       
-      UtilityScriptLibrary.debugLog("DEBUG", "INFO", "Row " + (row + 1) + " analysis", 
+      UtilityScriptLibrary.debugLog("debugMonthlySheetStructure", "INFO", "Row " + (row + 1) + " analysis", 
                                     "Type: " + rowType + ", Teacher: '" + teacherName + "', URL: '" + url + "', Student: '" + lastName + ", " + firstName + "'", "");
     }
     
   } catch (error) {
-    UtilityScriptLibrary.debugLog("DEBUG", "ERROR", "Debug function failed", "", error.message);
+    UtilityScriptLibrary.debugLog("debugMonthlySheetStructure", "ERROR", "Debug function failed", "", error.message);
   }
 }
 
@@ -3881,7 +3896,7 @@ function verifyHoursTaught() {
     
   } catch (error) {
     UtilityScriptLibrary.debugLog('verifyHoursTaught', 'ERROR', 
-                                  'Verification failed: ' + error.message, '', error.stack);
+                                  'Verification failed', '', error.message);
     SpreadsheetApp.getUi().alert('❌ Error: ' + error.message);
   }
 }
@@ -4238,7 +4253,7 @@ function verifyAttendanceVsInvoices() {
       
       if (!match) {
         UtilityScriptLibrary.debugLog('verifyAttendanceVsInvoices', 'INFO', 
-                                      'Skipping file', fileName, 'Does not match QAMP pattern');
+                                      'Skipping file — does not match QAMP pattern', fileName, '');
         continue;
       }
       
@@ -4666,7 +4681,9 @@ function normalizeNameForMatching(name) {
     .toLowerCase();
   
   return normalized;
-}function verifyHoursAugustDecember2025() {
+}
+
+function verifyHoursAugustDecember2025() {
   try {
     var env = 'test';
     var billingWorkbookId = UtilityScriptLibrary.CONFIG[env].billingId;
@@ -5004,7 +5021,7 @@ function generate2025AdminReports() {
       
       if (!match) {
         UtilityScriptLibrary.debugLog('generate2025AdminReports', 'INFO', 
-                                      'Skipping file', fileName, 'Does not match QAMP pattern');
+                                      'Skipping file — does not match QAMP pattern', fileName, '');
         continue;
       }
       
@@ -5071,136 +5088,133 @@ function generate2025AdminReports() {
   }
 }
 
-function processAttendanceSheetForAdminReports(sheet, workbookName, sheetName, studentHours, monthNames) {
-  var errors = [];
-  
+function generate2025AdminReports() {
   try {
-    var data = sheet.getDataRange().getValues();
-    if (data.length <= 1) return errors;
+    var ui = SpreadsheetApp.getUi();
+    var year = '2025';
     
-    var headerMap = UtilityScriptLibrary.getHeaderMap(sheet);
+    // Get rosters folder from config
+    var env = 'test';
+    var rosterFolderId = UtilityScriptLibrary.CONFIG[env].rosterFolderId;
     
-    // Check for required columns
-    if (!headerMap['studentid']) {
-      return errors;
+    if (!rosterFolderId) {
+      throw new Error('Roster folder ID not found in config');
     }
     
-    var studentIdCol = headerMap['studentid'] - 1;
-    var lengthCol = headerMap['length'] ? headerMap['length'] - 1 : -1;
-    var statusCol = headerMap['status'] ? headerMap['status'] - 1 : -1;
-    var adminReviewCol = headerMap['adminreviewdate'] ? headerMap['adminreviewdate'] - 1 : -1;
-    var invoiceDateCol = headerMap['invoicedate'] ? headerMap['invoicedate'] - 1 : -1;
+    var rostersFolder = DriveApp.getFolderById(rosterFolderId);
     
-    for (var i = 1; i < data.length; i++) {
-      var row = data[i];
+    // Find year subfolder
+    var yearFolderName = year + ' Rosters';
+    var yearFolder = null;
+    var subfolders = rostersFolder.getFolders();
+    
+    while (subfolders.hasNext()) {
+      var folder = subfolders.next();
+      if (folder.getName() === yearFolderName) {
+        yearFolder = folder;
+        break;
+      }
+    }
+    
+    if (!yearFolder) {
+      throw new Error('Year folder not found: ' + yearFolderName);
+    }
+    
+    UtilityScriptLibrary.debugLog('generate2025AdminReports', 'INFO', 
+                                  'Found year folder', yearFolderName, '');
+    
+    // Get Teacher Invoices workbook (current)
+    var teacherInvoicesWB = SpreadsheetApp.getActiveSpreadsheet();
+    
+    // Data structures
+    var summaryData = {}; // workbookName -> errorCount
+    var detailErrors = []; // Array of error objects
+    var studentHours = {}; // studentId -> {months: {}, missingAdminDates: {}}
+    
+    var monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 
+                      'July', 'August', 'September', 'October', 'November', 'December'];
+    
+    // Process each teacher roster file in the year folder
+    var files = yearFolder.getFilesByType(MimeType.GOOGLE_SHEETS);
+    var fileCount = 0;
+    var processedCount = 0;
+    
+    while (files.hasNext()) {
+      var file = files.next();
+      var fileName = file.getName();
+      fileCount++;
       
-      var studentId = row[studentIdCol] ? row[studentIdCol].toString().trim() : '';
-      if (!studentId) continue;
+      // Check if filename matches pattern: "QAMP yyyy LastName"
+      var pattern = new RegExp('^QAMP ' + year + ' (.+)$');
+      var match = fileName.match(pattern);
       
-      var length = lengthCol !== -1 ? row[lengthCol] : '';
-      var status = statusCol !== -1 ? (row[statusCol] ? row[statusCol].toString().trim() : '') : '';
-      var adminReview = adminReviewCol !== -1 ? row[adminReviewCol] : '';
-      var invoiceDate = invoiceDateCol !== -1 ? row[invoiceDateCol] : '';
-      
-      // Determine what should be present
-      var hasStatus = (status !== '');
-      var hasAdminReview = (adminReview !== '' && adminReview !== null);
-      var hasInvoiceDate = (invoiceDate !== '' && invoiceDate !== null);
-      
-      var isLesson = (status === 'Lesson');
-      var isNoShow = (status === 'No Show');
-      var isNoLesson = (status === 'No Lesson');
-      
-      var hasError = false;
-      var missingStatus = '';
-      var missingAdmin = '';
-      var missingInvoice = '';
-      
-      // Validation logic based on status
-      if (isLesson || isNoShow) {
-        // Must have all three: Status, Admin Review, Invoice
-        if (!hasStatus || !hasAdminReview || !hasInvoiceDate) {
-          hasError = true;
-          missingStatus = hasStatus ? '' : 'X';
-          missingAdmin = hasAdminReview ? '' : 'X';
-          missingInvoice = hasInvoiceDate ? '' : 'X';
-        }
-      } else if (isNoLesson) {
-        // Must have Status + Admin Review, Invoice should be blank
-        if (!hasStatus || !hasAdminReview || hasInvoiceDate) {
-          hasError = true;
-          missingStatus = hasStatus ? '' : 'X';
-          missingAdmin = hasAdminReview ? '' : 'X';
-          missingInvoice = hasInvoiceDate ? 'X' : ''; // X means it shouldn't be there
-        }
-      } else {
-        // No recognized status - check if anything is present that shouldn't be
-        if (hasAdminReview || hasInvoiceDate) {
-          hasError = true;
-          missingStatus = 'X'; // Missing proper status
-          missingAdmin = hasAdminReview ? '' : 'X';
-          missingInvoice = hasInvoiceDate ? '' : 'X';
-        }
+      if (!match) {
+        UtilityScriptLibrary.debugLog('generate2025AdminReports', 'INFO', 
+                                      'Skipping file — does not match QAMP pattern', fileName, '');
+        continue;
       }
       
-      if (hasError) {
-        errors.push({
-          workbookName: workbookName,
-          sheetName: sheetName,
-          studentId: studentId,
-          missingStatus: missingStatus,
-          missingAdmin: missingAdmin,
-          missingInvoice: missingInvoice
-        });
+      processedCount++;
+      
+      if (processedCount % 5 === 0) {
+        UtilityScriptLibrary.debugLog('generate2025AdminReports', 'INFO', 
+                                      'Processing files', 
+                                      processedCount + ' of ' + fileCount, '');
       }
       
-      // For Report 2: Count hours if Status = Lesson or No Show
-      if ((isLesson || isNoShow) && length) {
-        var hours = parseFloat(length) / 60 || 0; // Convert minutes to hours
+      try {
+        var teacherWB = SpreadsheetApp.openById(file.getId());
+        var sheets = teacherWB.getSheets();
         
-        if (hours > 0) {
-          // Initialize student if needed
-          if (!studentHours[studentId]) {
-            studentHours[studentId] = {
-              months: {},
-              missingAdminDates: {}
-            };
+        var workbookErrorCount = 0;
+        
+        // Process each month sheet
+        for (var i = 0; i < sheets.length; i++) {
+          var sheet = sheets[i];
+          var sheetName = sheet.getName();
+          
+          // Check if this is a month sheet
+          if (monthNames.indexOf(sheetName) === -1) {
+            continue; // Skip non-month sheets
           }
           
-          // Determine which month to count this in
-          var targetMonth = '';
+          var errors = processAttendanceSheetForAdminReports(
+            sheet, fileName, sheetName, studentHours, monthNames
+          );
           
-          if (hasAdminReview) {
-            // Use Admin Review Date month
-            var adminDate = new Date(adminReview);
-            targetMonth = monthNames[adminDate.getMonth()];
-          } else {
-            // Use sheet name as month
-            targetMonth = sheetName;
-            
-            // Track that this student has missing admin dates in this month
-            if (!studentHours[studentId].missingAdminDates[targetMonth]) {
-              studentHours[studentId].missingAdminDates[targetMonth] = 0;
-            }
-            studentHours[studentId].missingAdminDates[targetMonth]++;
-          }
-          
-          // Add hours to the appropriate month
-          if (!studentHours[studentId].months[targetMonth]) {
-            studentHours[studentId].months[targetMonth] = 0;
-          }
-          studentHours[studentId].months[targetMonth] += hours;
+          workbookErrorCount += errors.length;
+          detailErrors = detailErrors.concat(errors);
         }
+        
+        summaryData[fileName] = workbookErrorCount;
+        
+      } catch (error) {
+        UtilityScriptLibrary.debugLog('generate2025AdminReports', 'ERROR', 
+                                      'Failed to process file', 
+                                      fileName, error.message);
+        summaryData[fileName] = -1; // Mark as error
       }
     }
+    
+    UtilityScriptLibrary.debugLog('generate2025AdminReports', 'INFO', 
+                                  'Processed roster files', 
+                                  processedCount + ' files processed', '');
+    
+    // Create the three report sheets
+    createAdminSummaryReport(teacherInvoicesWB, summaryData);
+    createAdminDetailReport(teacherInvoicesWB, detailErrors);
+    createStudentHoursByAdminMonthReport(teacherInvoicesWB, studentHours, monthNames);
+    
+    ui.alert('✅ 2025 Admin Reports complete!\n\n' +
+             'Files processed: ' + processedCount + '\n' +
+             'Total errors: ' + detailErrors.length + '\n\n' +
+             'Check:\n- Admin Summary\n- Admin Detail\n- 2025 Hours by Admin Month');
     
   } catch (error) {
-    UtilityScriptLibrary.debugLog('processAttendanceSheetForAdminReports', 'ERROR', 
-                                  'Error processing sheet', 
-                                  workbookName + ' - ' + sheetName, error.message);
+    UtilityScriptLibrary.debugLog('generate2025AdminReports', 'ERROR', 
+                                  'Report generation failed', '', error.message);
+    SpreadsheetApp.getUi().alert('❌ Error: ' + error.message);
   }
-  
-  return errors;
 }
 
 function createAdminSummaryReport(workbook, summaryData) {

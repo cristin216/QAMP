@@ -551,7 +551,7 @@ function findInstrumentRow(sheet, firstName, lastName, instrument) {
   }
   
   if (instrumentCol === -1 || firstNameCol === -1 || lastNameCol === -1) {
-    UtilityScriptLibrary.debugLog("❌ Required columns not found in instrument sheet");
+    UtilityScriptLibrary.debugLog('findInstrumentRow', 'ERROR', 'Required columns not found in instrument sheet', '', '');
     return -1;
   }
   
@@ -604,7 +604,6 @@ function updateInstrumentAvailability(sheet, row, instrumentData, getCol) {
 }
 
 function updateTeacherFields(sheet, row, fieldMap, get, getCol) {
-  // Update fields that might have changed using field mapping
   var fieldsToUpdate = [
     {internal: "Email", sheet: "Email"},
     {internal: "E-mail 2", sheet: "E-mail 2"},
@@ -622,7 +621,7 @@ function updateTeacherFields(sheet, row, fieldMap, get, getCol) {
         value = UtilityScriptLibrary.formatPhoneNumber(value);
       }
       sheet.getRange(row, col).setValue(value);
-      UtilityScriptLibrary.debugLog("Updated " + field.sheet + " with: " + value);
+      UtilityScriptLibrary.debugLog('updateTeacherFields', 'INFO', 'Field updated', field.sheet + ': ' + value, '');
     }
   }
   
@@ -634,7 +633,7 @@ function updateTeacherFields(sheet, row, fieldMap, get, getCol) {
     var zip = get("Zip");
     var address = UtilityScriptLibrary.formatAddress(street, city, zip);
     sheet.getRange(row, addressCol).setValue(address);
-    UtilityScriptLibrary.debugLog("Updated Address with: " + address);
+    UtilityScriptLibrary.debugLog('updateTeacherFields', 'INFO', 'Field updated', 'Address: ' + address, '');
   }
 }
 
