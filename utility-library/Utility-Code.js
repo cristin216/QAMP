@@ -2,7 +2,7 @@
 ================================================================================
 UTILITY LIBRARY CODE
 ================================================================================
-Version: 88
+Version: 89
 Total Functions: 128 (126 standard + 2 EnvironmentManager methods)
 Documentation: See Utility-Functions.md
 ================================================================================
@@ -1387,7 +1387,7 @@ function extractRosterData(rosterSheet) {
     }
   }
   
-  debugLog('extractRosterData - Extracted data for ' + students.length + ' active students');
+  debugLog('extractRosterData', 'INFO', 'Extracted data for active students', students.length + ' students', '');
   return students;
 }
 
@@ -1928,7 +1928,7 @@ function getAttendanceSheetForDate(ss, targetDate) {
     return null;
     
   } catch (error) {
-    debugLog('getAttendanceSheetForDate - Error: ' + error.message);
+    debugLog('getAttendanceSheetForDate', 'ERROR', 'Error getting attendance sheet', 'Target date: ' + targetDate, error.message);
     return null;
   }
 }
@@ -3016,7 +3016,7 @@ function parseRosterData(row, headerMap, fieldMap, studentIdOverride) {
     ];
     
   } catch (error) {
-    debugLog('ERROR in parseRosterData: ' + error.message);
+    debugLog('parseRosterData', 'ERROR', 'Error parsing roster data', '', error.message);
     return ['', '', '', '30', '', '', '', '', '', '', '', '', '', '']; // Default with '30' as length
   }
 }
@@ -3401,10 +3401,10 @@ function setupRosterTemplateProtection(sheet) {
       .build();
     statusRange.setDataValidation(statusRule);
     
-    debugLog("✅ Roster protection, date validation, and status dropdown applied");
+    debugLog('setupRosterTemplateProtection', 'INFO', 'Roster protection, date validation, and status dropdown applied', '', '');
     
   } catch (error) {
-    debugLog("⚠️ Error in roster protection: " + error.message);
+    debugLog('setupRosterTemplateProtection', 'ERROR', 'Error in roster protection', '', error.message);
   }
 }
 
