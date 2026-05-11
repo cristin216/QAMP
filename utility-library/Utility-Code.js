@@ -1,3 +1,13 @@
+/*
+================================================================================
+UTILITY LIBRARY CODE
+================================================================================
+Version: 88
+Total Functions: 128 (126 standard + 2 EnvironmentManager methods)
+Documentation: See Utility-Functions.md
+================================================================================
+*/
+
 var _executionCache = {};
 
 var EnvironmentManager = (function () {

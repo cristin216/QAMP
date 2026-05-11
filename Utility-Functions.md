@@ -1,8 +1,8 @@
 ================================================================================
 UTILITY LIBRARY FUNCTION DIRECTORY
 ================================================================================
-    Total Functions: 121 (119 standard functions + 2 EnvironmentManager methods)
-     Most Recent version: 87
+    Total Functions: 128 (126 standard functions + 2 EnvironmentManager methods)
+     Most Recent version: 88
 
     This directory provides a quick reference for all functions in Utility script.
     Parameters marked with ? are optional. 'options' parameters are optional 
@@ -21,7 +21,9 @@ UTILITY LIBRARY FUNCTION DIRECTORY
     buildAcademicYearVariables
     buildRateMapFromSheet
     buildRateVariables
+    calculateGraduationYear
     bulkUpdateStudentStatus
+    cascadeFormerStatus
     cleanName
     clearCache
     clearEmptyRows
@@ -34,7 +36,6 @@ UTILITY LIBRARY FUNCTION DIRECTORY
     copySheetWithProtections
     copyTextAttributes
     createColumnFinder
-    createDisplayName
     createGroupSections
     createLessonRows
     createMonthlyAttendanceSheet
@@ -54,6 +55,7 @@ UTILITY LIBRARY FUNCTION DIRECTORY
     extractTeacherNameFromWorkbook
     extractTotalLessonsFromPackages
     findColumnByPartialName
+    findTeacherInRosterLookup
     findParentRow
     findStudentInContacts
     findStudentRow
@@ -75,7 +77,6 @@ UTILITY LIBRARY FUNCTION DIRECTORY
     getCached
     getColumnHeaders
     getColumnIndices
-    getConfig
     getCurrentAcademicYearInfo
     getCurrentSemesterMonth
     getCurrentSemesterName
@@ -83,6 +84,7 @@ UTILITY LIBRARY FUNCTION DIRECTORY
     getFieldMappingFromSheet
     getGeneratedDocumentsFolder
     getHeaderMap
+    getInstrumentFamily
     getLessonLengthFromPackages
     getMonthNameFromDate
     getMonthNames
@@ -96,6 +98,8 @@ UTILITY LIBRARY FUNCTION DIRECTORY
     getSheet
     getStudentIdFromRow
     getTeacherGroupAssignments
+    getTeacherIdByDisplayName
+    getTeacherNameById
     getTemplate
     getTemplateFolder
     getWeekdayName
@@ -112,11 +116,14 @@ UTILITY LIBRARY FUNCTION DIRECTORY
     logAllSheetHeaders
     normalizeHeader
     parseAllPackageQuantities
+    parseGridInstruments
     parseAndFormatAddress
     parseCityZipMessy
     parseDateFromString
     parseRosterData
     prefillAttendanceDatesForStudent
+    promptForCustomToday
+    promptForDate
     promptForHistoricalId
     promptForNameWithDefault
     protectSheetRanges
@@ -151,7 +158,7 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Use: var env = EnvironmentManager.get()
         Category: CONFIGURATION
         Dependencies: None
-        Called by: (internal: getConfig, getGeneratedDocumentsFolder, getRosterFolder, getSheet, getTemplateFolder, getWorkbook, prefillAttendanceDatesForStudent)
+        Called by: (internal: getGeneratedDocumentsFolder, getRosterFolder, getSheet, getTemplateFolder, getWorkbook, prefillAttendanceDatesForStudent)
 
   ================================================================================
   FUNCTION REFERENCE (Alphabetical)
@@ -163,7 +170,7 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         preventing hours columns from being formatted as currency.
         Category: UTILITIES
         Dependencies: debugLog(), shouldBeCurrency()
-        Called by: 
+        Called by: Billing
 
     appendToMetadataWithVerification(metadataSheet, rowData, verificationSteps, options?) -> Object
         Appends a row to metadata sheet with multi-step user verification process.
@@ -179,14 +186,14 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Returns: {CurrentAcademicYear, AcademicYearStart, AcademicYearEnd}
         Category: VARIABLE_BUILDING
         Dependencies: None
-        Called by: 
+        Called by: (internal: getRosterFolder)
 
     buildRateMapFromSheet(sheet, headers, yearColIndex) -> Object
         Internal helper that builds a key-value map of rates from a sheet column.
         Maps first column (titles) to specified year column values.
         Category: VARIABLE_BUILDING
         Dependencies: None
-        Called by: (internal: buildRateVariables)
+        Called by: Billing, TeacherInvoice (internal: buildRateVariables)
 
     buildRateVariables() -> Object
         Builds template variables for lesson rates from the Rates sheet.
@@ -194,7 +201,16 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Returns: {HourlyRate, HalfHourRate, LateFee, LateFeeGracePeriod}
         Category: VARIABLE_BUILDING
         Dependencies: buildRateMapFromSheet(), formatCurrency()
-        Called by: 
+        Called by: Billing (internal: getRateSummary)
+
+
+    calculateGraduationYear(grade) -> String|Number
+        Calculates a student's expected graduation year from their current grade.
+        Returns "Adult" for adult/college students, adds 13 years for Kindergarten,
+        or computes (currentYear + 12 - gradeNum). Returns empty string if grade is falsy.
+        Category: DATA_MANIPULATION
+        Dependencies: debugLog()
+        Called by: Billing, Responses
 
     bulkUpdateStudentStatus(studentsSheet, statusColumn, newValue, options?) -> Object
         Updates a status column for multiple students based on conditions.
@@ -202,14 +218,21 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Returns: {success, updatedCount, changedRows, error?}
         Category: BULK_OPERATIONS
         Dependencies: normalizeHeader()
-        Called by: 
+        Called by: Billing
+
+    cascadeFormerStatus(teacherId) -> void
+        Marks all instrument rows for the given teacher ID as "Former" in the Instrument
+        List sheet, and updates the teacher's status in the Teacher Roster Lookup sheet.
+        Category: SHEET_OPERATIONS
+        Dependencies: getSheet(), getHeaderMap(), normalizeHeader(), debugLog()
+        Called by: Contacts, TeacherResponses
 
     cleanName(name) -> String
         Cleans and standardizes a name by removing extra whitespace and 
         standardizing capitalization.
         Category: DATA_MANIPULATION
         Dependencies: None
-        Called by: 
+        Called by: Billing
 
     clearCache() -> void
         Clears the execution cache (_executionCache object).
@@ -240,27 +263,27 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Converts a column number to its letter representation (e.g., 1 -> 'A', 27 -> 'AA').
         Category: UTILITIES
         Dependencies: None
-        Called by: (internal: insertCountFormula)
+        Called by: Billing, TeacherInvoice
 
     combineDocumentsIntoPDF(documents, fileName, destinationFolder) -> Object
         Combines multiple Google Docs into a single PDF file in specified folder.
         Returns: {success, pdfFile, pdfUrl, error?}
         Category: DOCUMENT_GENERATION
         Dependencies: None
-        Called by: 
+        Called by: Billing
 
     convertYesNoToBoolean(value) -> Boolean
         Converts "Yes"/"No" strings to boolean values. Returns false for anything else.
         Category: DATA_MANIPULATION
         Dependencies: None
-        Called by: 
+        Called by: Billing
 
     copyPreviousColumnToNew(newRow, prevRow, currMap, prevMap, mapping) -> Boolean
         Copies a value from a previous row into a new row using header map lookups.
         Returns true if copy succeeded, false if columns not found.
         Category: DATA_MANIPULATION
         Dependencies: normalizeHeader()
-        Called by:
+        Called by: Billing
 
     copySheetWithProtections(sourceSheet, targetWorkbook, newName, options?) -> Object
         Copies a sheet to another workbook while preserving protections and formatting.
@@ -268,35 +291,28 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Returns: {success, sheet, sheetName, error?}
         Category: SHEET_OPERATIONS
         Dependencies: debugLog()
-        Called by: 
+        Called by: Billing
 
     copyTextAttributes(sourcePara, targetPara) -> void
         Copies text formatting attributes from source paragraph to target paragraph
         in Google Docs.
         Category: SHEET_OPERATIONS
         Dependencies: None
-        Called by: 
+        Called by: (internal: generateDocumentFromTemplate)
 
     createColumnFinder(sheet) -> Function
         Returns a closure function that finds column indices by header name.
         Usage: var findCol = createColumnFinder(sheet); var nameCol = findCol('Name');
         Category: SHEET_OPERATIONS
         Dependencies: normalizeHeader()
-        Called by: Responses, TeacherResponses, (internal: getTeacherGroupAssignments)
-
-    createDisplayName(lastName) -> String
-        Creates a display name from a last name by removing all non-alphanumeric 
-        characters and trimming whitespace. Returns empty string for invalid input.
-        Category: DATA_MANIPULATION
-        Dependencies: None
-        Called by: 
+        Called by: Billing, Responses, TeacherResponses (internal: findTeacherInRosterLookup, getTeacherGroupAssignments, getTeacherIdByDisplayName)
 
     createGroupSections(sheet, groupEntries) -> void
         Creates formatted group sections in a roster sheet with headers and student rows.
         Used for group lesson rosters.
         Category: SHEET_OPERATIONS
         Dependencies: None
-        Called by: Responses, (internal: createMonthlyAttendanceSheet)
+        Called by: Responses (internal: createMonthlyAttendanceSheet)
 
     createLessonRows(sheet, student, startRow, numRows) -> Number
         Creates formatted lesson tracking rows for a student in a roster sheet.
@@ -310,7 +326,7 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Returns the newly created sheet.
         Category: SHEET_OPERATIONS
         Dependencies: createGroupSections(), createStudentSections(), debugLog(), extractTeacherNameFromWorkbook(), formatAttendanceSheet(), setupAttendanceHeaders(), styleHeaderRow()
-        Called by: 
+        Called by: Billing, Responses
 
     createStudentHeader(sheet, student, row) -> Number
         Creates a formatted header row for a student in a roster sheet.
@@ -323,7 +339,7 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Creates all student sections in a roster sheet based on roster data array.
         Category: SHEET_OPERATIONS
         Dependencies: createLessonRows(), createStudentHeader(), debugLog()
-        Called by: (internal: createMonthlyAttendanceSheet)
+        Called by: Billing, Responses (internal: createMonthlyAttendanceSheet)
 
     createUtilityDebugSheet() -> Sheet
         Creates and formats the "Debug" sheet for logging with standard headers.
@@ -338,7 +354,7 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Handles backward compatibility for single-parameter legacy calls.
         Category: DEBUG
         Dependencies: clearOldDebugEntries(), createUtilityDebugSheet(), formatLogValue(), truncateString()
-        Called by: Billing, Responses, TeacherInvoice, TeacherResponses, (internal: addToCurrencyCols, clearUtilityDebugLog, createGroupSections, createMonthlyAttendanceSheet, createStudentSections, extractRosterData, extractSeasonFromSemester, extractTeacherNameFromWorkbook, formatAttendanceSheet, getAttendanceSheetForDate, getTeacherGroupAssignments, parseRosterData, setupAttendanceHeaders, setupRosterTemplateProtection, setupStatusValidation)
+        Called by: Billing, Responses, Contacts, TeacherResponses, TeacherInvoice, Payments (internal: addToCurrencyCols, calculateGraduationYear, cascadeFormerStatus, copySheetWithProtections, createMonthlyAttendanceSheet, createStudentSections, executeWithErrorHandling, findTeacherInRosterLookup, generateDocumentFromTemplate, getAttendanceSheetForDate, getCurrentSemesterName, getSemesterForDate, getTeacherGroupAssignments, getTeacherIdByDisplayName, getTeacherNameById, parseRosterData, promptForDate, updateParentContactFields)
 
     deleteExtraColumns(sheet, keepColumns) -> void
         Deletes all columns after the specified keepColumns count to clean up sheets.
@@ -351,17 +367,14 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Returns true if age is 18+, "Adult", or "Parent".
         Category: VALIDATION
         Dependencies: None
-        Called by: 
-
-    determineLessonLengthFromPackages() -> DELETED
-        DEPRECATED: Use getLessonLengthFromPackages() instead.
+        Called by: Billing
 
     documentAlreadyExists(fileName, folder) -> File | Boolean
         Checks if a document with the given name exists in folder.
         Returns the File object if found, false otherwise.
         Category: UTILITIES
         Dependencies: None
-        Called by: TeacherInvoice
+        Called by: Billing, TeacherInvoice
 
     enableDatePickerForColumn(sheet, columnIndex, startRow) -> void
         Enables date picker data validation for a column starting at specified row.
@@ -375,34 +388,34 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Returns: {success, data?, error?}
         Category: ERROR_HANDLING
         Dependencies: debugLog()
-        Called by: 
+        Called by: Billing
 
     extractLessonQuantityFromPackage(packageText) -> Number
         Extracts the numeric quantity from package text (e.g., "5x 30min" -> 5).
         Returns 0 if no quantity found.
         Category: DATA_EXTRACTION
         Dependencies: None
-        Called by: (internal: getLessonLengthFromPackages, parseAllPackageQuantities, parseRosterData)
+        Called by: Billing, Responses (internal: extractTotalLessonsFromPackages, parseAllPackageQuantities, parseRosterData)
 
     extractNumericLessonLength(lessonLengthValue) -> Number
         Extracts numeric lesson length in minutes from various formats.
         Handles "30", "30 min", "30min", "0.5 hour" formats.
         Category: DATA_EXTRACTION
         Dependencies: None
-        Called by: (internal: createLessonRows, createStudentHeader)
+        Called by: Billing, Responses
 
     extractRosterData(rosterSheet) -> Array
         Extracts all roster data from a teacher's roster sheet.
         Returns array of student objects with lesson details.
         Category: DATA_EXTRACTION
         Dependencies: None
-        Called by: 
+        Called by: Responses
 
     extractSeasonFromSemester(semesterName) -> String
         Extracts season from semester name (e.g., "Fall 2024" -> "Fall").
         Category: DATA_EXTRACTION
         Dependencies: None
-        Called by: 
+        Called by: Billing, Responses (internal: getSemesterDates)
 
     extractTeacherNameFromWorkbook(workbook) -> String
         Extracts teacher name from workbook title by removing " Roster" suffix.
@@ -416,42 +429,49 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Returns total number of lessons across all packages.
         Category: DATA_EXTRACTION
         Dependencies: extractLessonQuantityFromPackage()
-        Called by: Responses
+        Called by: 
         
     findColumnByPartialName(headers, searchTerm) -> Number
         Finds column index by partial header name match (case-insensitive).
         Returns -1 if not found.
         Category: DATA_RETRIEVAL
         Dependencies: None
-        Called by: 
+        Called by: (internal: updateFieldMappings)
 
     findParentRow(parentsSheet, parentId, fallbackKey?) -> Number
         Finds the row number for a parent by Parent ID or fallback lookup key.
         Returns -1 if not found.
         Category: DATA_RETRIEVAL
         Dependencies: normalizeHeader()
-        Called by: 
+        Called by: Billing, Responses
 
     findStudentInContacts(contactsData, studentIdCol, targetStudentId) -> Number
         Searches a contacts data array for a student by ID.
         Returns 0-based row index, or -1 if not found.
         Category: DATA_RETRIEVAL
         Dependencies: None
-        Called by:
+        Called by: Billing
 
     findStudentRow(studentSheet, studentKey) -> Number
         Finds the row number for a student using various lookup strategies
         (Student ID, first/last name combinations). Returns -1 if not found.
         Category: DATA_RETRIEVAL
         Dependencies: normalizeHeader()
-        Called by: 
+        Called by: Responses
+
+    findTeacherInRosterLookup(lookupSheet, teacherId) -> Number
+        Searches the Teacher Roster Lookup sheet for a teacher by Teacher ID.
+        Returns the 1-based row number, or -1 if not found.
+        Category: DATA_RETRIEVAL
+        Dependencies: createColumnFinder(), debugLog()
+        Called by: Responses, TeacherResponses
 
     formatAddress(street, city, zip) -> String
         Formats address components into a single line address string.
         Handles missing components gracefully.
         Category: FORMATTING
         Dependencies: None
-        Called by: TeacherResponses, (internal: parseRosterData)
+        Called by: Billing, Responses, TeacherResponses (internal: parseAndFormatAddress, parseRosterData)
 
     formatAttendanceColumns(sheet, studentCount) -> void
         Formats date columns in attendance sheet with proper widths and styling.
@@ -470,20 +490,20 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Formats a number as USD currency string (e.g., 45.5 -> "$45.50").
         Category: FORMATTING
         Dependencies: None
-        Called by: TeacherInvoice, (internal: buildRateVariables)
+        Called by: Billing, TeacherInvoice (internal: buildRateVariables)
 
     formatDateFlexible(date, format?) -> String
         Formats a date object with flexible format string support.
         Default format: "MM/dd/yyyy"
         Category: FORMATTING
         Dependencies: None
-        Called by: TeacherInvoice
+        Called by: Billing, TeacherInvoice (internal: promptForDate)
 
     formatLessonLengthWithMinutes(lessonLengthValue) -> String
         Formats lesson length to include "min" suffix (e.g., "30" -> "30 min").
         Category: FORMATTING
         Dependencies: None
-        Called by: (internal: createStudentHeader)
+        Called by: 
 
     formatLogValue(value) -> String
         Formats various data types for logging (handles objects, arrays, nulls).
@@ -496,7 +516,7 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Formats phone number to (XXX) XXX-XXXX format. Returns original if invalid.
         Category: FORMATTING
         Dependencies: None
-        Called by: TeacherResponses, (internal: parseRosterData)
+        Called by: Responses, TeacherResponses (internal: parseRosterData)
 
     formatRosterColumns(sheet) -> void
         Applies standard column width formatting to roster sheets.
@@ -511,28 +531,25 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Dependencies: None
         Called by: 
 
-    generateAutoId() -> DELETED
-        DEPRECATED: Use generateNextId() instead.
-
     generateDocumentFromTemplate(templateKey, variableData, fileName, destinationFolder) -> Object
         Generates a Google Doc from template with variable substitution.
         Returns: {success, document, documentId, documentUrl, error?}
         Category: DOCUMENT_GENERATION
         Dependencies: copyTextAttributes(), debugLog(), getTemplate()
-        Called by: TeacherInvoice
+        Called by: Billing, TeacherInvoice
 
     generateKey() -> String
         Generates a random alphanumeric key (8 characters) for lookups.
         Category: ID_GENERATION
         Dependencies: None
-        Called by: TeacherResponses
+        Called by: Billing, Responses, TeacherResponses
 
     generateNextId(sheet, columnName, prefix, recordName?) -> String
         Generates the next sequential ID in format PREFIX#### (e.g., "S0042").
         Scans column for highest ID and increments.
         Category: ID_GENERATION
         Dependencies: isHistoricalDataInputEnabled(), normalizeHeader(), promptForHistoricalId()
-        Called by: TeacherResponses, (internal: promptForHistoricalId)
+        Called by: Responses, TeacherResponses
 
     generateNextIdDirect(sheet, columnName, prefix) -> String
         Generates next sequential ID without checking historical mode.
@@ -566,13 +583,6 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Dependencies: getCached(), normalizeHeader(), setCached()
         Called by: 
 
-    getConfig() -> Object
-        Returns configuration object for current environment (test/prod).
-        Access via: getConfig().paymentsId, etc.
-        Category: CONFIGURATION
-        Dependencies: None
-        Called by: 
-
     getCurrentAcademicYearInfo() -> Object
         Gets current academic year info from most recent semester metadata.
         Returns: {year, startYear, endYear, semester, dates: {start, end}}
@@ -580,54 +590,58 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Dependencies: getSemesterDates(), getYearFromSemesterName()
         Called by: 
 
-    getCurrentMonthName() -> DELETED
-        DEPRECATED: Use getMonthNameFromDate(date, capitalize?) instead.
-
     getCurrentSemesterMonth(semesterName) -> String
         Returns the starting month name for a semester (e.g., "Fall 2024" -> "September").
         Category: DATE_TIME
         Dependencies: None
-        Called by: 
+        Called by: Responses
 
     getCurrentSemesterName() -> String|null
         Returns the current semester name from the last row of Semester Metadata.
         Returns null if sheet not found or empty.
         Category: CONFIGURATION
         Dependencies: debugLog(), getSheet()
-        Called by:
+        Called by: Billing, Responses, TeacherInvoice
 
     getDateForWeekday(weekStartDate, weekdayName) -> Date
         Calculates date for a specific weekday within a week starting at weekStartDate.
         Category: DATE_TIME
         Dependencies: getWeekdayNumber()
-        Called by: (internal: prefillAttendanceDatesForStudent)
+        Called by: (internal: getWeekdayName, prefillAttendanceDatesForStudent)
 
     getFieldMappingFromSheet(fieldMapSheet) -> Object
         Reads field mapping configuration from FieldMap sheet.
         Returns object mapping form fields to internal field names.
         Category: FIELD_MAPPING
         Dependencies: None
-        Called by: TeacherResponses
+        Called by: Billing, Responses, TeacherResponses
 
     getGeneratedDocumentsFolder() -> Folder
         Returns the Google Drive folder for generated documents based on environment.
         Category: CONFIGURATION
-        Dependencies: getConfig()
-        Called by: TeacherInvoice
+        Dependencies: EnvironmentManager.get()
+        Called by: Billing, TeacherInvoice
 
     getHeaderMap(sheet) -> Object
         Creates object mapping normalized header names to column indices.
         Used for flexible column lookups.
         Category: DATA_RETRIEVAL
         Dependencies: normalizeHeader()
-        Called by: Billing, Responses, TeacherInvoice, (internal: prefillAttendanceDatesForStudent)
+        Called by: Billing, Responses, Contacts, TeacherResponses, TeacherInvoice, Payments (internal: cascadeFormerStatus, getTeacherNameById)
+
+    getInstrumentFamily(instrument) -> String
+        Looks up an instrument in the INSTRUMENT_FAMILIES constant map and returns its
+        family name (e.g., "violin" -> "Strings"). Returns empty string if not found.
+        Category: DATA_RETRIEVAL
+        Dependencies: None
+        Called by: TeacherResponses
 
     getLessonLengthFromPackages(qty30Package, qty45Package, qty60Package) -> Number
         Determines lesson length (30, 45, or 60) from package quantities.
         Returns 30 if no packages have quantity.
         Category: DATA_MANIPULATION
         Dependencies: None
-        Called by: 
+        Called by: Billing
 
     getMonthNameFromDate(date, capitalize?) -> String
         Returns month name from date object. Optionally capitalizes first letter.
@@ -639,59 +653,59 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Returns array of all month names: ["January", "February", ...]
         Category: DATE_TIME
         Dependencies: None
-        Called by: TeacherInvoice, (internal: getMonthNameFromDate, isMonthSheet, setupStatusValidation)
+        Called by: Billing, Responses, TeacherInvoice (internal: isCurrentOrFutureMonth, isMonthSheet)
 
     getMonthSheets(ss) -> Array
         Returns array of all month-based attendance sheets from spreadsheet.
         Category: DATA_RETRIEVAL
         Dependencies: getCached(), getSheet(), isMonthSheet(), setCached()
-        Called by: 
+        Called by: Billing
 
     getMostRecentRateColumn(headers) -> Number
         Finds the most recent year column in Rates sheet headers.
         Currently returns 1 (column B) as fixed implementation.
         Category: RATES
         Dependencies: None
-        Called by: (internal: getRateSummary)
+        Called by: Billing
 
     getRateSummary() -> String
         Returns formatted summary of current rates for user display/verification.
         Category: CONFIGURATION
         Dependencies: buildRateVariables()
-        Called by: 
+        Called by: Billing
 
     getRosterFolder() -> Folder
         Returns the Google Drive folder containing roster files for current academic year.
         Category: CONFIGURATION
         Dependencies: buildAcademicYearVariables(), getConfig(), getRosterFolderUrlForYear()
-        Called by: 
+        Called by: Billing, Responses
 
     getRosterFolderUrlForYear(year) -> String
         Returns the Drive URL for the roster folder of a specific year.
         Category: CONFIGURATION
-        Dependencies: getConfig()
-        Called by: 
+        Dependencies: EnvironmentManager.get()
+        Called by: (internal: getRosterFolder)
 
     getSemesterDates(semesterName) -> Object
         Parses semester name and returns start/end dates based on semester type.
         Returns: {start: Date, end: Date}
         Category: DATE_TIME
         Dependencies: extractSeasonFromSemester(), getYearFromSemesterName()
-        Called by: 
+        Called by: (internal: getCurrentAcademicYearInfo)
 
     getSemesterForDate(targetDate) -> String|null
         Finds and returns the semester name whose date range contains the given date.
         Returns null if no matching semester found.
         Category: DATE_TIME
         Dependencies: debugLog(), getSheet(), normalizeHeader()
-        Called by:
+        Called by: Billing
 
     getSheet(sheetKey) -> Sheet
         Returns a sheet object by its SHEET_MAP key (e.g., 'students', 'parents').
         Automatically infers which workbook to use.
         Category: CONFIGURATION
         Dependencies: getWorkbook(), inferWorkbookKey()
-        Called by: TeacherInvoice, TeacherResponses, (internal: getCurrentSemesterMonth, getCurrentSemesterName, getMonthSheets, getSemesterDates, getTeacherGroupAssignments)
+        Called by: Billing, Responses, Contacts, TeacherResponses, TeacherInvoice (internal: cascadeFormerStatus, getCurrentSemesterName, getMonthSheets, getSemesterForDate, getTeacherGroupAssignments, getTeacherIdByDisplayName, getTeacherNameById)
 
     getStudentIdFromRow(row, headerMap) -> String|null
         Extracts student ID from a data row using flexible column name matching.
@@ -699,13 +713,28 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Returns null if student ID not found.
         Category: DATA_EXTRACTION
         Dependencies: normalizeHeader()
-        Called by: Billing (buildBillingRowFromPrevious)
+        Called by: Billing
 
     getTeacherGroupAssignments(teacherName) -> Array
         Returns array of group lesson assignments for a teacher from lookup sheet.
         Category: ROSTER
         Dependencies: createColumnFinder(), debugLog(), getSheet(), getWorkbook()
-        Called by: (internal: createMonthlyAttendanceSheet)
+        Called by: Responses
+
+    getTeacherIdByDisplayName(displayName) -> String
+        Looks up a Teacher ID from the Teacher Roster Lookup sheet by display name.
+        If the input already matches /^T\d+$/, returns it as-is.
+        Returns empty string if not found or on error.
+        Category: DATA_RETRIEVAL
+        Dependencies: getSheet(), createColumnFinder(), debugLog()
+        Called by: Billing, Responses, Contacts
+
+    getTeacherNameById(teacherId) -> String
+        Looks up a teacher's full name ("First Last") from the Teachers and Admin sheet
+        by Teacher ID. Returns empty string if not found or on error.
+        Category: DATA_RETRIEVAL
+        Dependencies: getSheet(), getHeaderMap(), normalizeHeader(), debugLog()
+        Called by: Billing
 
     getTemplate(templateKey) -> File
         Returns Google Doc template file by TEMPLATE_MAP key.
@@ -716,7 +745,7 @@ UTILITY LIBRARY FUNCTION DIRECTORY
     getTemplateFolder() -> Folder
         Returns the Google Drive folder containing document templates.
         Category: CONFIGURATION
-        Dependencies: getConfig()
+        Dependencies: EnvironmentManager.get()
         Called by: (internal: getTemplate)
 
     getWeekdayName(startDate, weekdayName) -> String
@@ -729,19 +758,19 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Converts weekday name to number (0=Sunday, 6=Saturday).
         Category: DATE_TIME
         Dependencies: None
-        Called by: (internal: getWeekdayName)
+        Called by: (internal: getDateForWeekday)
 
     getWorkbook(workbookKey) -> Spreadsheet
         Returns a spreadsheet by CONFIG key (e.g., 'paymentsId', 'contactsId').
         Category: CONFIGURATION
-        Dependencies: getConfig()
-        Called by: TeacherInvoice, TeacherResponses, (internal: getTeacherGroupAssignments)
+        Dependencies: EnvironmentManager.get()
+        Called by: Billing, TeacherInvoice (internal: getSheet, getTeacherGroupAssignments)
 
     getYearFromSemesterName(semesterName) -> String
         Extracts 4-digit year from semester name (e.g., "Fall 2024" -> "2024").
         Category: DATE_TIME
         Dependencies: None
-        Called by: 
+        Called by: Billing, Responses (internal: getCurrentAcademicYearInfo, getSemesterDates)
 
     inferWorkbookKey(sheetKey) -> String
         Determines which CONFIG workbook key to use based on SHEET_MAP sheet key.
@@ -762,20 +791,17 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Dependencies: None
         Called by: 
 
-    isAttendanceSheet() -> DELETED
-        DEPRECATED: Use isMonthSheet(sheetName) instead.
-
     isCurrentOrFutureMonth(sheetName, targetDate) -> Boolean
         Returns true if sheet represents current or future month relative to targetDate.
         Category: VALIDATION
         Dependencies: getMonthNames(), parseDateFromString()
-        Called by: 
+        Called by: Billing
 
     isHistoricalDataInputEnabled() -> Boolean
         Returns value of HISTORICAL_DATA_MODE flag.
         Category: VALIDATION
         Dependencies: None
-        Called by: (internal: generateNextId)
+        Called by: (internal: generateNextId, promptForCustomToday)
 
     isIdAlreadyUsed(sheet, columnName, idToCheck) -> Boolean
         Checks if an ID already exists in a column. Returns true if found.
@@ -787,27 +813,36 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Returns true if sheet name exactly matches a month name.
         Category: VALIDATION
         Dependencies: getCached(), getMonthNames(), setCached()
-        Called by: (internal: getAttendanceSheetForDate, getMonthSheets)
+        Called by: Billing (internal: getAttendanceSheetForDate, getMonthSheets)
 
     logAllSheetHeaders() -> void
         Logs all sheet names and their header rows to the Apps Script logger.
         Used for diagnostics.
         Category: DEBUG
         Dependencies: None
-        Called by: Contacts (runLogHeaders)
+        Called by: Responses
 
     normalizeHeader(header) -> String
         Normalizes header string for comparison (lowercase, no spaces/punctuation).
         Category: DATA_MANIPULATION
         Dependencies: None
-        Called by: Responses, TeacherInvoice, TeacherResponses, (internal: bulkUpdateStudentStatus, createColumnFinder, findParentRow, findStudentRow, generateNextId, getColumnIndices, getCurrentSemesterMonth, getFieldMappingFromSheet, getHeaderMap, getSemesterDates, getSemesterForDate, isIdAlreadyUsed, parseRosterData, shouldBeCurrency, updateFieldMappings)
+        Called by: Billing, Responses, Contacts, TeacherResponses, TeacherInvoice (internal: bulkUpdateStudentStatus, cascadeFormerStatus, copyPreviousColumnToNew, createColumnFinder, findParentRow, findStudentRow, generateNextId, getColumnIndices, getHeaderMap, getSemesterForDate, getStudentIdFromRow, getTeacherNameById, isIdAlreadyUsed, parseRosterData, updateFieldMappings, updateParentContactFields)
 
     parseAllPackageQuantities(qty30Package, qty45Package, qty60Package) -> Object
         Parses all package quantity strings and returns structured object.
         Returns: {qty30, qty45, qty60, totalLessons}
         Category: DATA_MANIPULATION
         Dependencies: extractLessonQuantityFromPackage()
-        Called by: 
+        Called by: Billing
+
+    parseGridInstruments(headers, rowValues) -> Array
+        Parses grid-style instrument checkboxes from a teacher interest form submission.
+        Identifies columns matching the grid question prefix, extracts instrument name
+        from bracket notation, and maps level responses to beg/int/adv abbreviations.
+        Returns array of {instrument, levels} objects.
+        Category: DATA_EXTRACTION
+        Dependencies: None
+        Called by: TeacherResponses
 
     parseAndFormatAddress(rawAddress) -> String
         Parses messy address input and returns formatted single-line address.
@@ -820,13 +855,13 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Returns: {city, state, zip}
         Category: DATA_MANIPULATION
         Dependencies: None
-        Called by: 
+        Called by: Billing, Responses (internal: parseAndFormatAddress)
 
     parseDateFromString(str) -> Date | null
         Attempts to parse a date from string in various formats. Returns null if fails.
         Category: DATA_MANIPULATION
         Dependencies: None
-        Called by: TeacherInvoice
+        Called by: TeacherInvoice (internal: isCurrentOrFutureMonth)
 
     parseRosterData(row, headerMap, fieldMap, studentIdOverride?) -> Object
         Parses a roster data row into structured student object using header and field maps.
@@ -840,6 +875,22 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Dependencies: getDateForWeekday()
         Called by: 
 
+    promptForCustomToday() -> Date
+        Returns the current date if historical data mode is disabled. Otherwise calls
+        promptForDate() with a "Historical Data Entry" title and cancel message.
+        Category: UI_INTERACTION
+        Dependencies: isHistoricalDataInputEnabled(), promptForDate()
+        Called by: Billing
+        Note: Internal caller of promptForDate().
+
+    promptForDate(config) -> Date|null
+        Generic date prompt UI. Accepts config object with title, message, optional
+        defaultDate, and optional cancelMessage. Returns parsed Date or null if cancelled.
+        Appends default date hint to message when defaultDate is provided.
+        Category: UI_INTERACTION
+        Dependencies: formatDateFlexible(), debugLog()
+        Called by: Billing (internal: promptForCustomToday)
+
     promptForHistoricalId(sheet, columnName, prefix, recordName?) -> String
         Shows UI prompt for user to manually enter a historical ID.
         Used when HISTORICAL_DATA_MODE is enabled.
@@ -852,7 +903,7 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Config: {title, message, defaultValue}
         Category: UI_INTERACTION
         Dependencies: None
-        Called by: 
+        Called by: Billing
 
     protectSheetRanges(sheet, options?) -> Object
         Protects specified column ranges in a sheet with optional settings.
@@ -860,7 +911,7 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Returns: {success, protectedRanges?, error?}
         Category: SHEET_OPERATIONS
         Dependencies: None
-        Called by: (internal: setupRosterTemplateProtection)
+        Called by: Billing
 
     safeGet(row, index) -> Any
         Safely retrieves value from array at index. Returns empty string if out of bounds.
@@ -875,7 +926,7 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         and minus sign before parsing.
         Category: DATA_MANIPULATION
         Dependencies: None
-        Called by: Billing (applyPastDataToRow, multiple locations)
+        Called by: Billing
 
     setCached(key, value) -> void
         Stores value in execution cache for duration of script execution.
@@ -894,13 +945,13 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         (date picker for First Lesson Date, dropdown for Status).
         Category: SHEET_OPERATIONS
         Dependencies: None
-        Called by: 
+        Called by: Responses
 
     setupStatusValidation(sheet, lastRow) -> void
         Adds data validation dropdown for student status column.
         Category: SHEET_OPERATIONS
         Dependencies: None
-        Called by: 
+        Called by: Responses
 
     shouldBeCurrency(columnName) -> Boolean
         Returns true if column should be formatted as currency.
@@ -915,19 +966,19 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Returns true if confirmed, false/throws error otherwise.
         Category: UI_INTERACTION
         Dependencies: None
-        Called by: (internal: appendToMetadataWithVerification)
+        Called by: (internal: appendToMetadataWithVerification, verifyConfigurationWithUser)
 
     styleHeaderRow(sheet, headers) -> void
         Applies standard STYLES.HEADER formatting to first row of sheet.
         Category: UTILITIES
         Dependencies: None
-        Called by: Responses
+        Called by: Responses (internal: createMonthlyAttendanceSheet)
 
     truncateString(str, maxLength) -> String
         Truncates string to maxLength, adding "..." if truncated.
         Category: UTILITIES
         Dependencies: None
-        Called by: (internal: debugLog)
+        Called by: (internal: debugLog, formatLogValue)
 
     updateFieldMappings(fieldMapSheet, newHeaders, sourceSheetName, options?) -> Object
         Updates field mapping sheet with new form headers, checking for duplicates.
@@ -946,7 +997,7 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Returns: {changesMade}
         Category: SHEET_OPERATIONS
         Dependencies: debugLog(), normalizeHeader()
-        Called by: Responses (processParent), Billing (submitReregistration)
+        Called by: Billing, Responses
 
     validateProgramConfiguration(programSheet, options?) -> Object
         Validates program configuration in Program List sheet.
@@ -987,18 +1038,19 @@ ATTENDANCE (1 function):
   CONFIGURATION (12 functions):
     EnvironmentManager.get
     EnvironmentManager.set
-    getConfig
     getCurrentSemesterName
     getGeneratedDocumentsFolder
     getRateSummary
     getRosterFolder
     getRosterFolderUrlForYear
     getSheet
+    getTeacherIdByDisplayName
+    getTeacherNameById
     getTemplate
     getTemplateFolder
     getWorkbook
 
-  DATA_EXTRACTION (7 functions):
+  DATA_EXTRACTION (8 functions):
     extractLessonQuantityFromPackage
     extractNumericLessonLength
     extractRosterData
@@ -1006,16 +1058,18 @@ ATTENDANCE (1 function):
     extractTeacherNameFromWorkbook
     extractTotalLessonsFromPackages
     getStudentIdFromRow
+    parseGridInstruments
 
   DATA_MANIPULATION (14 functions):
+    cascadeFormerStatus
     cleanName
     convertYesNoToBoolean
     copyPreviousColumnToNew
-    createDisplayName
     getLessonLengthFromPackages
     interpretAgeField
     normalizeHeader
     parseAllPackageQuantities
+    parseGridInstruments
     parseAndFormatAddress
     parseCityZipMessy
     parseDateFromString
@@ -1025,12 +1079,14 @@ ATTENDANCE (1 function):
 
   DATA_RETRIEVAL (8 functions):
     findColumnByPartialName
+    findTeacherInRosterLookup
     findParentRow
     findStudentInContacts
     findStudentRow
     getColumnHeaders
     getColumnIndices
     getHeaderMap
+    getInstrumentFamily
     getMonthSheets
 
   DATE_TIME (10 functions):
@@ -1085,7 +1141,8 @@ ATTENDANCE (1 function):
   ROSTER (1 function):
     getTeacherGroupAssignments
 
-  SHEET_OPERATIONS (20 functions):
+  SHEET_OPERATIONS (21 functions):
+    cascadeFormerStatus
     clearEmptyRows
     clearOldDebugEntries
     clearUtilityDebugLog
@@ -1108,6 +1165,8 @@ ATTENDANCE (1 function):
     updateParentContactFields
 
   UI_INTERACTION (3 functions):
+    promptForCustomToday
+    promptForDate
     promptForHistoricalId
     promptForNameWithDefault
     showConfirmationDialog
@@ -1137,6 +1196,7 @@ ATTENDANCE (1 function):
     buildAcademicYearVariables
     buildRateMapFromSheet
     buildRateVariables
+    calculateGraduationYear
 
 ================================================================================
 END OF FUNCTION DIRECTORY
