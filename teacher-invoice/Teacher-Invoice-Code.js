@@ -743,8 +743,9 @@ function convertFolderDocsToPdfUI() {
     var pdfBlob = doc.getAs('application/pdf');
     pdfBlob.setName(pdfName);
     
-    // Save PDF to the PDFs folder
+    // Save PDF to the PDFs folder and set view-only sharing for anyone with the link
     var pdfFile = pdfFolder.createFile(pdfBlob);
+    pdfFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
     convertedCount++;
     
     // Match PDF to teacher data and update records
