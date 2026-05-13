@@ -482,111 +482,128 @@
     }
   }
 
-  function buildStudentCard(student, packages, index) {
-    var card = document.createElement('div');
-    card.className = 'student-card';
-    card.id = 'student-card-' + index;
+function buildStudentCard(student, packages, index) {
+  var card = document.createElement('div');
+  card.className = 'student-card';
+  card.id = 'student-card-' + index;
 
-    // Header
-    var header = document.createElement('div');
-    header.className = 'student-card-header';
-    header.textContent = student.firstName + ' ' + student.lastName;
-    card.appendChild(header);
+  // Header
+  var header = document.createElement('div');
+  header.className = 'student-card-header';
+  header.textContent = student.firstName + ' ' + student.lastName;
+  card.appendChild(header);
 
-    // Body
-    var body = document.createElement('div');
-    body.className = 'student-card-body';
+  // Body
+  var body = document.createElement('div');
+  body.className = 'student-card-body';
 
-    // Read-only info row + lesson length dropdown
-    body.innerHTML +=
-      '<div class="field-row" style="margin-bottom:12px;">' +
-        '<div><div class="info-label">Instrument</div><div class="info-value">' + esc(student.instrument) + '</div></div>' +
-        '<div><div class="info-label">Teacher</div><div class="info-value">' + esc(student.teacher) + '</div></div>' +
-        '<div><label style="margin-top:0;">Lesson Length</label>' +
-          '<select id="lessonLength-' + index + '">' +
-            '<option value="30"' + (student.lessonLength === 30 ? ' selected' : '') + '>30 minutes</option>' +
-            '<option value="45"' + (student.lessonLength === 45 ? ' selected' : '') + '>45 minutes</option>' +
-            '<option value="60"' + (student.lessonLength === 60 ? ' selected' : '') + '>60 minutes</option>' +
-          '</select>' +
-        '</div>' +
-      '</div>';
+  // Read-only info row + lesson length dropdown
+  body.innerHTML +=
+    '<div class="field-row" style="margin-bottom:12px;">' +
+      '<div><div class="info-label">Instrument</div><div class="info-value">' + esc(student.instrument) + '</div></div>' +
+      '<div><div class="info-label">Teacher</div><div class="info-value">' + esc(student.teacher) + '</div></div>' +
+      '<div><label style="margin-top:0;">Lesson Length</label>' +
+        '<select id="lessonLength-' + index + '">' +
+          '<option value="30"' + (student.lessonLength === 30 ? ' selected' : '') + '>30 minutes</option>' +
+          '<option value="45"' + (student.lessonLength === 45 ? ' selected' : '') + '>45 minutes</option>' +
+          '<option value="60"' + (student.lessonLength === 60 ? ' selected' : '') + '>60 minutes</option>' +
+        '</select>' +
+      '</div>' +
+    '</div>';
 
-    // Divider
-    body.innerHTML += '<hr class="section-divider">';
-
-    // Editable student info
-    body.innerHTML +=
-      '<div class="field-row">' +
-        '<div><label>Grade</label>' +
-          '<input type="text" id="grade-' + index + '" value="' + esc(student.grade) + '" placeholder="e.g. 5, Adult"></div>' +
-        '<div><label>School District</label>' +
-          '<input type="text" id="school-' + index + '" value="' + esc(student.school) + '"></div>' +
-        '<div><label>School Music Teacher</label>' +
-          '<input type="text" id="schoolTeacher-' + index + '" value="' + esc(student.schoolTeacher) + '"></div>' +
-      '</div>';
-
-    body.innerHTML += '<hr class="section-divider"><label style="margin-bottom:8px;">Lesson Package</label>';
-
-    // Package options
-    var pkgDiv = document.createElement('div');
-    pkgDiv.className = 'package-options';
-    pkgDiv.id = 'packages-' + index;
-
-    var pkgList = packages.packages;
-
-    for (var p = 0; p < pkgList.length; p++) {
-      var pkg = pkgList[p];
-      var price = pkg.prices[student.lessonLength] || pkg.prices[30];
-      var opt = document.createElement('label');
-      opt.className = 'package-option';
-      opt.innerHTML =
-        '<input type="radio" name="package-' + index + '" value="' + esc(pkg.name) + '" data-count="' + pkg.lessonCount + '">' +
-        '<div><div class="package-label">' + esc(pkg.name) + ' — ' + pkg.lessonCount + ' lessons</div>' +
-        '<div class="package-price" id="pkg-price-' + index + '-' + p + '">$' + price.toFixed(2) + '</div></div>';
-      opt.querySelector('input').addEventListener('change', function(idx) {
-        return function() { highlightPackages(idx); };
-      }(index));
-      pkgDiv.appendChild(opt);
+  // Lessons remaining notice — only show if we have reconciliation data
+  if (student.lastRecon && student.lessonsRemaining !== null && student.lessonsRemaining !== undefined) {
+    var balanceText;
+    if (student.lessonsRemaining > 0) {
+      balanceText = student.lessonsRemaining + ' lesson(s) remaining';
+    } else if (student.lessonsRemaining === 0) {
+      balanceText = 'has used all paid lessons';
+    } else {
+      balanceText = 'has used ' + Math.abs(student.lessonsRemaining) + ' lesson(s) beyond the paid balance';
     }
 
-    // Not enrolling option
-    var notOpt = document.createElement('label');
-    notOpt.className = 'package-option not-enrolling';
-    notOpt.innerHTML =
-      '<input type="radio" name="package-' + index + '" value="Not Enrolled" data-count="0">' +
-      '<div><div class="package-label">Not enrolling this semester</div></div>';
-    notOpt.querySelector('input').addEventListener('change', function(idx) {
+    body.innerHTML +=
+      '<div style="background:#f0f7f0; border:1px solid #b2d8b2; border-radius:6px; ' +
+      'padding:10px 14px; margin-bottom:14px; font-size:13px; color:#2a5c2a;">' +
+      'As of ' + esc(student.lastRecon) + ', <strong>' + esc(student.firstName) + '</strong> ' +
+      balanceText + '.' +
+      '</div>';
+  }
+
+  // Divider
+  body.innerHTML += '<hr class="section-divider">';
+
+  // Editable student info
+  body.innerHTML +=
+    '<div class="field-row">' +
+      '<div><label>Grade</label>' +
+        '<input type="text" id="grade-' + index + '" value="' + esc(student.grade) + '" placeholder="e.g. 5, Adult"></div>' +
+      '<div><label>School District</label>' +
+        '<input type="text" id="school-' + index + '" value="' + esc(student.school) + '"></div>' +
+      '<div><label>School Music Teacher</label>' +
+        '<input type="text" id="schoolTeacher-' + index + '" value="' + esc(student.schoolTeacher) + '"></div>' +
+    '</div>';
+
+  body.innerHTML += '<hr class="section-divider"><label style="margin-bottom:8px;">Lesson Package</label>';
+
+  // Package options
+  var pkgDiv = document.createElement('div');
+  pkgDiv.className = 'package-options';
+  pkgDiv.id = 'packages-' + index;
+
+  var pkgList = packages.packages;
+  for (var p = 0; p < pkgList.length; p++) {
+    var pkg   = pkgList[p];
+    var price = pkg.prices[student.lessonLength] || pkg.prices[30];
+    var opt   = document.createElement('label');
+    opt.className = 'package-option';
+    opt.innerHTML =
+      '<input type="radio" name="package-' + index + '" value="' + esc(pkg.name) + '" data-count="' + pkg.lessonCount + '">' +
+      '<div><div class="package-label">' + esc(pkg.name) + ' — ' + pkg.lessonCount + ' lessons</div>' +
+      '<div class="package-price" id="pkg-price-' + index + '-' + p + '">$' + price.toFixed(2) + '</div></div>';
+    opt.querySelector('input').addEventListener('change', function(idx) {
       return function() { highlightPackages(idx); };
     }(index));
-    pkgDiv.appendChild(notOpt);
-
-    body.appendChild(pkgDiv);
-
-    // Validation warning placeholder
-    var warn = document.createElement('div');
-    warn.className = 'warning-note';
-    warn.id = 'pkg-warn-' + index;
-    warn.style.display = 'none';
-    warn.textContent = 'Please select a package or indicate not enrolling.';
-    body.appendChild(warn);
-
-      card.appendChild(body);
-
-      // Store student data on card for retrieval
-      card.dataset.studentId    = student.studentId;
-      card.dataset.studentIndex = index;
-
-      // Wire up lesson length change → update prices
-      (function(idx, pkgs) {
-        var select = card.querySelector('#lessonLength-' + idx);
-        select.addEventListener('change', function() {
-          updatePackagePrices(idx, pkgs);
-        });
-      })(index, packages);
-
-      return card;
-    
+    pkgDiv.appendChild(opt);
   }
+
+  // Not enrolling option
+  var notOpt = document.createElement('label');
+  notOpt.className = 'package-option not-enrolling';
+  notOpt.innerHTML =
+    '<input type="radio" name="package-' + index + '" value="Not Enrolled" data-count="0">' +
+    '<div><div class="package-label">Not enrolling this semester</div></div>';
+  notOpt.querySelector('input').addEventListener('change', function(idx) {
+    return function() { highlightPackages(idx); };
+  }(index));
+  pkgDiv.appendChild(notOpt);
+
+  body.appendChild(pkgDiv);
+
+  // Validation warning placeholder
+  var warn = document.createElement('div');
+  warn.className = 'warning-note';
+  warn.id = 'pkg-warn-' + index;
+  warn.style.display = 'none';
+  warn.textContent = 'Please select a package or indicate not enrolling.';
+  body.appendChild(warn);
+
+  card.appendChild(body);
+
+  // Store student data on card for retrieval
+  card.dataset.studentId    = student.studentId;
+  card.dataset.studentIndex = index;
+
+  // Wire up lesson length change → update prices
+  (function(idx, pkgs) {
+    var select = card.querySelector('#lessonLength-' + idx);
+    select.addEventListener('change', function() {
+      updatePackagePrices(idx, pkgs);
+    });
+  })(index, packages);
+
+  return card;
+}
 
 function updatePackagePrices(index, packages) {
     var select = document.getElementById('lessonLength-' + index);
