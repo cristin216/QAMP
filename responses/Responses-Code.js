@@ -507,51 +507,39 @@ function addRosterTemplateBorders(sheet) {
 }
 
 function addStudentToAttendanceSheet(attendanceSheet, studentData) {
-  //only one student
   try {
-    UtilityScriptLibrary.debugLog("📅 Adding single student to attendance sheet: " + attendanceSheet.getName());
-    
-    // Log current sheet state BEFORE adding
+    UtilityScriptLibrary.debugLog('addStudentToAttendanceSheet', 'INFO', 'Adding single student', attendanceSheet.getName(), '');
+
     var lastRowBefore = attendanceSheet.getLastRow();
-    UtilityScriptLibrary.debugLog("📊 Sheet state BEFORE: lastRow=" + lastRowBefore);
-    
-    // CRITICAL FIX: Update date validation to allow empty cells
+    UtilityScriptLibrary.debugLog('addStudentToAttendanceSheet', 'INFO', 'Sheet state before', 'lastRow=' + lastRowBefore, '');
+
+    // Update date validation starting at row 3 to preserve sign-off row
     var maxRows = attendanceSheet.getMaxRows();
-    var dateColumn = attendanceSheet.getRange(1, 3, maxRows, 1); // Column C (Date column)
-    
+    var dateColumn = attendanceSheet.getRange(3, 3, maxRows - 2, 1);
     var dateRule = SpreadsheetApp.newDataValidation()
       .requireDate()
       .setAllowInvalid(true)
       .build();
     dateColumn.setDataValidation(dateRule);
-    
-    UtilityScriptLibrary.debugLog("✅ Updated date validation to allow empty cells in column C");
-    
-    // Convert studentData array to student object
+
     var student = createStudentObjectForAttendance(studentData);
-    UtilityScriptLibrary.debugLog("👤 Student object created: " + JSON.stringify(student));
-    
-    // Use Utility's createStudentSections with single-student array
+    UtilityScriptLibrary.debugLog('addStudentToAttendanceSheet', 'INFO', 'Student object created', JSON.stringify(student), '');
+
     UtilityScriptLibrary.createStudentSections(attendanceSheet, [student]);
-    
-    // Log current sheet state AFTER adding
+
     var lastRowAfter = attendanceSheet.getLastRow();
-    UtilityScriptLibrary.debugLog("📊 Sheet state AFTER: lastRow=" + lastRowAfter);
-    UtilityScriptLibrary.debugLog("📍 Expected to write starting at row: " + (lastRowBefore <= 1 ? 2 : lastRowBefore + 2));
-    
-    // Apply status dropdown validation to all rows in the sheet
+    UtilityScriptLibrary.debugLog('addStudentToAttendanceSheet', 'INFO', 'Sheet state after', 'lastRow=' + lastRowAfter, '');
+
     UtilityScriptLibrary.setupStatusValidation(attendanceSheet, lastRowAfter);
-    UtilityScriptLibrary.debugLog("✅ Applied status dropdown validation");
-    
-    // Verify data was actually written
+
     if (lastRowAfter > lastRowBefore) {
-      UtilityScriptLibrary.debugLog("✅ Successfully added student " + student.firstName + " " + student.lastName + " to " + attendanceSheet.getName());
+      UtilityScriptLibrary.debugLog('addStudentToAttendanceSheet', 'SUCCESS', 'Student added', student.firstName + ' ' + student.lastName, '');
     } else {
-      UtilityScriptLibrary.debugLog("⚠️ WARNING: lastRow did not increase - data may not have been written!");
+      UtilityScriptLibrary.debugLog('addStudentToAttendanceSheet', 'WARNING', 'lastRow did not increase - data may not have been written', '', '');
     }
-    
+
   } catch (error) {
-    UtilityScriptLibrary.debugLog("❌ ERROR in addStudentToAttendanceSheet: " + error.message);
+    UtilityScriptLibrary.debugLog('addStudentToAttendanceSheet', 'ERROR', 'Failed to add student', attendanceSheet.getName(), error.message);
     throw error;
   }
 }
