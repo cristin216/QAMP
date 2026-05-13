@@ -85,6 +85,9 @@ var SHEET_MAP = {
   reregistration: {
     name: 'Reregistration'
   },
+  reregistrationQueue: {
+    name: 'Reregistration Queue'
+  },
   // Form Responses Workbook
   calendar: {
     name: 'Calendar'
@@ -2714,6 +2717,7 @@ function inferWorkbookKey(sheetKey) {
     packages: 'billing',
     billingTemplate: 'billing',
     reregistration: 'billing',
+    reregistrationQueue: 'billing',
     calendar: 'formResponses',
     fieldMap: 'formResponses',
     teacherRosterLookup: 'formResponses',
