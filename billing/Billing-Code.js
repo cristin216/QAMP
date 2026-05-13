@@ -25,6 +25,7 @@ function onOpen() {
         .addItem('Print Documents', 'convertFolderDocsToPdfUI')
         .addItem('Create New Attendance Sheets', 'createNewAttendanceSheets')
         .addItem('Verify Payments (Detailed)', 'verifyPaymentsDetailed')
+        .addItem('Build Re-Registration Queue', 'buildReregistrationQueue')
         .addItem('Send Re-Registration Links', 'sendReregistrationLinks')
         .addToUi();
     }
@@ -359,108 +360,170 @@ function runPaymentReconciliationUI() {
 }
 
 function sendReregistrationLinks() {
-      var ui = SpreadsheetApp.getUi();
-      var norm = UtilityScriptLibrary.normalizeHeader;
+  var ui   = SpreadsheetApp.getUi();
+  var norm = UtilityScriptLibrary.normalizeHeader;
 
-      var webAppUrl = ScriptApp.getService().getUrl();
-      if (!webAppUrl) {
-        ui.alert('❌ Web app URL not available. Make sure this script is deployed as a web app.');
-        return;
+  var webAppUrl = ScriptApp.getService().getUrl();
+  if (!webAppUrl) {
+    ui.alert('❌ Web app URL not available. Make sure this script is deployed as a web app.');
+    return;
+  }
+
+  var billingSS  = UtilityScriptLibrary.getWorkbook('billing');
+  var queueSheet = UtilityScriptLibrary.getSheet('reregistrationQueue');
+  if (!queueSheet || queueSheet.getLastRow() < 2) {
+    ui.alert('❌ Reregistration Queue is empty. Run "Build Re-Registration Queue" first.');
+    return;
+  }
+
+  var queueHeaderMap = UtilityScriptLibrary.getHeaderMap(queueSheet);
+  var queueData      = queueSheet.getDataRange().getValues();
+
+  var qParentIdCol    = queueHeaderMap[norm('Parent ID')];
+  var qParentFirstCol = queueHeaderMap[norm('Parent First Name')];
+  var qEmailCol       = queueHeaderMap[norm('Parent Email')];
+  var qSendCol        = queueHeaderMap[norm('Send?')];
+  var qSentCol        = queueHeaderMap[norm('Sent')];
+
+  if (!qParentIdCol || !qSendCol || !qSentCol) {
+    ui.alert('❌ Required columns not found in Reregistration Queue. Please rebuild the queue.');
+    return;
+  }
+
+  // Build sibling lookup from current billing sheet
+  var billingSheet = getCurrentBillingSheet();
+  if (!billingSheet) {
+    ui.alert('❌ No active billing sheet found.');
+    return;
+  }
+
+  var billingHeaderMap     = UtilityScriptLibrary.getHeaderMap(billingSheet);
+  var billingData          = billingSheet.getDataRange().getValues();
+  var bStudentIdCol        = billingHeaderMap[norm('Student ID')];
+  var bFirstNameCol        = billingHeaderMap[norm('Student First Name')];
+  var bParentIdCol         = billingHeaderMap[norm('Parent ID')];
+  var bEnrollmentCol       = billingHeaderMap[norm('Enrollment')];
+  var bLessonsRemainingCol = billingHeaderMap[norm('Lessons Remaining')];
+  var bLastReconCol        = billingHeaderMap[norm('Last Reconciliation Date')];
+
+  // parentId -> array of active, enrolled students with lesson data
+  var parentStudentsMap = {};
+  for (var i = 1; i < billingData.length; i++) {
+    var row        = billingData[i];
+    var studentId  = String(row[bStudentIdCol - 1] || '').trim();
+    var enrollment = String(row[bEnrollmentCol - 1] || '').trim();
+    var parentId   = String(row[bParentIdCol - 1] || '').trim();
+
+    if (!studentId || !parentId || enrollment === 'Not enrolled') continue;
+
+    var lessonsLeft = parseFloat(row[bLessonsRemainingCol - 1]);
+    var lastRecon   = bLastReconCol ? row[bLastReconCol - 1] : '';
+    var lastReconFormatted = (lastRecon instanceof Date)
+      ? Utilities.formatDate(lastRecon, Session.getScriptTimeZone(), 'MMMM d, yyyy')
+      : (lastRecon ? String(lastRecon) : 'an unknown date');
+
+    if (!parentStudentsMap[parentId]) parentStudentsMap[parentId] = [];
+    parentStudentsMap[parentId].push({
+      firstName:   String(row[bFirstNameCol - 1] || '').trim(),
+      lessonsLeft: isNaN(lessonsLeft) ? null : lessonsLeft,
+      lastRecon:   lastReconFormatted
+    });
+  }
+
+  // Find checked, unsent queue rows; group by parent
+  var checkedParents = {};
+  for (var r = 1; r < queueData.length; r++) {
+    var sendFlag    = queueData[r][qSendCol - 1];
+    var alreadySent = queueData[r][qSentCol - 1];
+    if (!sendFlag || alreadySent) continue;
+
+    var parentId    = String(queueData[r][qParentIdCol - 1] || '').trim();
+    var parentFirst = String(queueData[r][qParentFirstCol - 1] || '').trim();
+    var email       = String(queueData[r][qEmailCol - 1] || '').trim();
+
+    if (!parentId || !email) continue;
+
+    if (!checkedParents[parentId]) {
+      checkedParents[parentId] = { firstName: parentFirst, email: email, queueRows: [] };
+    }
+    checkedParents[parentId].queueRows.push(r + 1); // 1-based sheet row
+  }
+
+  var parentIds = Object.keys(checkedParents);
+  if (parentIds.length === 0) {
+    ui.alert('No checked, unsent rows found in the queue.');
+    return;
+  }
+
+  var confirm = ui.alert(
+    'Send Re-Registration Links',
+    'This will send re-registration emails to ' + parentIds.length + ' parent(s). Continue?',
+    ui.ButtonSet.YES_NO
+  );
+  if (confirm !== ui.Button.YES) return;
+
+  var sent      = 0;
+  var failed    = 0;
+  var timestamp = new Date();
+
+  for (var p = 0; p < parentIds.length; p++) {
+    var parentId = parentIds[p];
+    var parent   = checkedParents[parentId];
+    var students = parentStudentsMap[parentId] || [];
+
+    if (students.length === 0) {
+      UtilityScriptLibrary.debugLog('sendReregistrationLinks', 'WARNING',
+        'No active students found for parent', parentId, '');
+      failed++;
+      continue;
+    }
+
+    // Build per-student summary lines
+    var studentLines = '';
+    for (var s = 0; s < students.length; s++) {
+      var stu         = students[s];
+      var lessonsText = stu.lessonsLeft !== null
+        ? String(parseFloat(stu.lessonsLeft.toFixed(2)).toString().replace(/\.?0+$/, '')) + ' lesson(s)'
+        : 'an unknown number of lessons';
+      studentLines += '  - ' + stu.firstName + ': ' + lessonsText +
+        ' remaining as of ' + stu.lastRecon + '\n';
+    }
+
+    var link    = webAppUrl + '?pid=' + parentId;
+    var subject = 'QAMP Lesson Re-Registration';
+    var body    =
+      'Dear ' + parent.firstName + ',\n\n' +
+      'It\'s time to register for your next block of lessons! ' +
+      'Here\'s where things currently stand:\n\n' +
+      studentLines + '\n' +
+      'Please use the link below to submit your lesson request. ' +
+      'You can register all of your students at once if you\'d like.\n\n' +
+      link + '\n\n' +
+      'You\'ll be asked to verify your identity with the last 4 digits of your phone number on file.\n\n' +
+      'If you have any questions, please contact us at admin@quakermusic.org.\n\n' +
+      'Thank you,\nCristin Kalinowski\nQuaker Arts Music Program';
+
+    try {
+      GmailApp.sendEmail(parent.email, subject, body);
+      sent++;
+
+      // Mark queue rows as sent
+      for (var qr = 0; qr < parent.queueRows.length; qr++) {
+        queueSheet.getRange(parent.queueRows[qr], qSentCol).setValue(timestamp);
       }
 
-      // Get active student IDs from current billing sheet
-      var billingSheet = getCurrentBillingSheet();
-      if (!billingSheet) {
-        ui.alert('❌ Could not find current billing sheet.');
-        return;
-      }
+      UtilityScriptLibrary.debugLog('sendReregistrationLinks', 'INFO',
+        'Email sent', parentId + ' - ' + parent.email, '');
+    } catch (emailError) {
+      failed++;
+      UtilityScriptLibrary.debugLog('sendReregistrationLinks', 'ERROR',
+        'Email failed', parentId + ' - ' + parent.email, emailError.message);
+    }
+  }
 
-      var billingHeaderMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
-      var billingData = billingSheet.getDataRange().getValues();
-      var billingStudentIdCol = billingHeaderMap[norm('Student ID')];
+  if (failed > 0) SpreadsheetApp.flush();
 
-      var activeStudentIds = {};
-      for (var i = 1; i < billingData.length; i++) {
-        var sId = String(billingData[i][billingStudentIdCol - 1] || '').trim();
-        if (sId) activeStudentIds[sId] = true;
-      }
-
-      // Load parents and filter to those with active students
-      var parentsSheet = UtilityScriptLibrary.getSheet('parents');
-      var parentHeaderMap = UtilityScriptLibrary.getHeaderMap(parentsSheet);
-      var parentsData = parentsSheet.getDataRange().getValues();
-
-      var parentIdCol = parentHeaderMap[norm('Parent ID')];
-      var firstNameCol = parentHeaderMap[norm('Parent First Name')];
-      var emailCol = parentHeaderMap[norm('Email')];
-      var studentIdsCol = parentHeaderMap[norm('Student IDs')];
-
-      if (!parentIdCol || !emailCol || !studentIdsCol) {
-        ui.alert('❌ Required columns not found in Parents sheet.');
-        return;
-      }
-
-      var eligibleParents = [];
-      for (var r = 1; r < parentsData.length; r++) {
-        var row = parentsData[r];
-        var parentId = String(row[parentIdCol - 1] || '').trim();
-        var email = String(row[emailCol - 1] || '').trim();
-        var studentIds = String(row[studentIdsCol - 1] || '').trim();
-
-        if (!parentId || !email || !studentIds) continue;
-
-        var idList = studentIds.split(',').map(function(id) { return id.trim(); });
-        var hasActiveStudent = false;
-        for (var s = 0; s < idList.length; s++) {
-          if (activeStudentIds[idList[s]]) { hasActiveStudent = true; break; }
-        }
-        if (!hasActiveStudent) continue;
-
-        eligibleParents.push({
-          parentId: parentId,
-          firstName: String(row[firstNameCol - 1] || '').trim(),
-          email: email
-        });
-      }
-
-      if (eligibleParents.length === 0) {
-        ui.alert('No eligible parents found with active students in the current billing cycle.');
-        return;
-      }
-
-      var confirm = ui.alert(
-        'Send Re-Registration Links',
-        'This will email a unique re-registration link to ' + eligibleParents.length + ' parent(s). Continue?',
-        ui.ButtonSet.YES_NO
-      );
-      if (confirm !== ui.Button.YES) return;
-
-      var sent = 0;
-      var failed = 0;
-
-      for (var p = 0; p < eligibleParents.length; p++) {
-        var parent = eligibleParents[p];
-        var link = webAppUrl + '?pid=' + parent.parentId;
-        var subject = 'QAMP Lesson Re-Registration';
-        var body = 'Dear ' + parent.firstName + ',\n\n' +
-          'It\'s time to register for your next block of lessons! Please use the link below to confirm ' +
-          'your information and submit your lesson request.\n\n' +
-          link + '\n\n' +
-          'You\'ll be asked to verify your identity with the last 4 digits of your phone number on file.\n\n' +
-          'If you have any questions, please contact us at admin@quakermusic.org.\n\n' +
-          'Thank you,\nCristin Kalinowski\nQuaker Arts Music Program';
-
-        try {
-          GmailApp.sendEmail(parent.email, subject, body);
-          sent++;
-          UtilityScriptLibrary.debugLog('sendReregistrationLinks', 'INFO', 'Email sent', parent.parentId + ' - ' + parent.email, '');
-        } catch (e) {
-          failed++;
-          UtilityScriptLibrary.debugLog('sendReregistrationLinks', 'ERROR', 'Email failed', parent.parentId + ' - ' + parent.email, e.message);
-        }
-      }
-
-      ui.alert('✅ Done. Sent: ' + sent + (failed > 0 ? ', Failed: ' + failed + ' (check Debug log)' : ''));
+  ui.alert('✅ Done. Sent: ' + sent + (failed > 0 ? ', Failed: ' + failed : '') + '.');
 }
 
 function setupNewSemester() {
@@ -1966,6 +2029,129 @@ function buildProgramDescription(programTotals, lessonLength) {
   }
   
   return descriptions.join(', ');
+}
+
+function buildReregistrationQueue() {
+  var ui   = SpreadsheetApp.getUi();
+  var norm = UtilityScriptLibrary.normalizeHeader;
+
+  // Load threshold from Rates
+  var billingSS  = UtilityScriptLibrary.getWorkbook('billing');
+  var ratesSheet = billingSS.getSheetByName('Rates');
+  var rateHeaders = ratesSheet.getRange(1, 1, 1, ratesSheet.getLastColumn()).getValues()[0];
+  var rateYearCol = UtilityScriptLibrary.getMostRecentRateColumn(rateHeaders);
+  var rateMap     = UtilityScriptLibrary.buildRateMapFromSheet(ratesSheet, rateHeaders, rateYearCol);
+  var threshold   = parseFloat(rateMap['Reregistration Threshold']) || 4;
+
+  var billingSheet = getCurrentBillingSheet();
+  if (!billingSheet) {
+    ui.alert('❌ No active billing sheet found.');
+    return;
+  }
+
+  var queueSheet = UtilityScriptLibrary.getSheet('reregistrationQueue');
+  if (!queueSheet) {
+    ui.alert('❌ Reregistration Queue sheet not found in billing workbook.');
+    return;
+  }
+
+  // Warn if existing entries
+  if (queueSheet.getLastRow() > 1) {
+    var response = ui.alert(
+      'Rebuild Queue',
+      'The Reregistration Queue already has entries. Rebuild from current data? This will clear all existing entries.',
+      ui.ButtonSet.YES_NO
+    );
+    if (response !== ui.Button.YES) return;
+  }
+
+  // Read billing sheet
+  var billingHeaderMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
+  var billingData      = billingSheet.getDataRange().getValues();
+
+  var bStudentIdCol        = billingHeaderMap[norm('Student ID')];
+  var bFirstNameCol        = billingHeaderMap[norm('Student First Name')];
+  var bLastNameCol         = billingHeaderMap[norm('Student Last Name')];
+  var bTeacherIdCol        = billingHeaderMap[norm('Teacher ID')];
+  var bEnrollmentCol       = billingHeaderMap[norm('Enrollment')];
+  var bLessonsRemainingCol = billingHeaderMap[norm('Lessons Remaining')];
+  var bLastReconCol        = billingHeaderMap[norm('Last Reconciliation Date')];
+  var bParentIdCol         = billingHeaderMap[norm('Parent ID')];
+  var bParentFirstCol      = billingHeaderMap[norm('Parent First Name')];
+  var bParentLastCol       = billingHeaderMap[norm('Parent Last Name')];
+
+  if (!bStudentIdCol || !bEnrollmentCol || !bLessonsRemainingCol || !bParentIdCol) {
+    ui.alert('❌ Required columns not found in billing sheet.');
+    return;
+  }
+
+  // Build parent email lookup
+  var parentsSheet    = UtilityScriptLibrary.getSheet('parents');
+  var parentHeaderMap = UtilityScriptLibrary.getHeaderMap(parentsSheet);
+  var parentsData     = parentsSheet.getDataRange().getValues();
+  var pIdCol          = parentHeaderMap[norm('Parent ID')];
+  var pEmailCol       = parentHeaderMap[norm('Email')];
+  var parentEmailMap  = {};
+  for (var p = 1; p < parentsData.length; p++) {
+    var pid   = String(parentsData[p][pIdCol - 1] || '').trim();
+    var email = String(parentsData[p][pEmailCol - 1] || '').trim();
+    if (pid) parentEmailMap[pid] = email;
+  }
+
+  // Find qualifying students
+  var queueRows = [];
+  for (var i = 1; i < billingData.length; i++) {
+    var row        = billingData[i];
+    var studentId  = String(row[bStudentIdCol - 1] || '').trim();
+    var enrollment = String(row[bEnrollmentCol - 1] || '').trim();
+    var lessonsLeft = parseFloat(row[bLessonsRemainingCol - 1]);
+
+    if (!studentId) continue;
+    if (enrollment === 'Not enrolled') continue;
+    if (isNaN(lessonsLeft) || lessonsLeft > threshold) continue;
+
+    var parentId  = String(row[bParentIdCol - 1] || '').trim();
+    var lastRecon = bLastReconCol ? row[bLastReconCol - 1] : '';
+
+    queueRows.push([
+      row[bLastNameCol - 1],          // Student Last Name
+      row[bFirstNameCol - 1],         // Student First Name
+      studentId,                       // Student ID
+      row[bTeacherIdCol - 1],         // Teacher ID
+      enrollment,                      // Enrollment
+      lessonsLeft,                     // Lessons Remaining
+      lastRecon,                       // Last Reconciliation Date
+      parentId,                        // Parent ID
+      row[bParentFirstCol - 1],       // Parent First Name
+      row[bParentLastCol - 1],        // Parent Last Name
+      parentEmailMap[parentId] || '', // Parent Email
+      false,                           // Send?
+      ''                               // Sent
+    ]);
+  }
+
+  // Write queue sheet
+  queueSheet.clearContents();
+
+  var headers = [
+    'Student Last Name', 'Student First Name', 'Student ID', 'Teacher ID', 'Enrollment',
+    'Lessons Remaining', 'Last Reconciliation Date', 'Parent ID', 'Parent First Name',
+    'Parent Last Name', 'Parent Email', 'Send?', 'Sent'
+  ];
+
+  queueSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  queueSheet.setFrozenRows(1);
+
+  if (queueRows.length > 0) {
+    queueSheet.getRange(2, 1, queueRows.length, headers.length).setValues(queueRows);
+    queueSheet.getRange(2, 12, queueRows.length, 1).insertCheckboxes();
+  }
+
+  UtilityScriptLibrary.debugLog('buildReregistrationQueue', 'SUCCESS',
+    'Queue built', queueRows.length + ' students at or below threshold of ' + threshold, '');
+
+  ui.alert('✅ Reregistration Queue built: ' + queueRows.length +
+    ' student(s) at or below ' + threshold + ' lessons remaining.');
 }
 
 function buildTemplateVariables(studentData, billingData, templateType) {
@@ -6842,81 +7028,82 @@ function populateAllCumulativeColumns() {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var currentSheet = ss.getActiveSheet();
     var headerMap = UtilityScriptLibrary.getHeaderMap(currentSheet);
-    
-    // RANGE VALIDATION: Check if sheet has data
+
     var lastRow = currentSheet.getLastRow();
     if (lastRow < 2) {
       UtilityScriptLibrary.debugLog('No data rows found in sheet - skipping cumulative columns population');
       return;
     }
-    
-    // Find ALL required columns using new names
-    var studentIdCol = headerMap[UtilityScriptLibrary.normalizeHeader("Student ID")];
-    var currentHoursTaughtThisCycleCol = headerMap[UtilityScriptLibrary.normalizeHeader("Current Hours Taught This Billing Cycle")];
-    var lessonHoursCol = headerMap[UtilityScriptLibrary.normalizeHeader("Lesson Hours")];
-    
-    // Past cumulative columns
-    var pastCumTaughtCol = headerMap[UtilityScriptLibrary.normalizeHeader("Past Cumulative Hours Taught")];
-    var pastCumBilledCol = headerMap[UtilityScriptLibrary.normalizeHeader("Past Cumulative Hours Billed")];
-    
-    // Current cumulative columns (these will get formulas)
-    var currentCumTaughtCol = headerMap[UtilityScriptLibrary.normalizeHeader("Current Cumulative Hours Taught")];
-    var currentCumBilledCol = headerMap[UtilityScriptLibrary.normalizeHeader("Current Cumulative Hours Billed")];
-    
-    // Hours Remaining column
-    var hoursRemainingCol = headerMap[UtilityScriptLibrary.normalizeHeader("Hours Remaining")];
-    
+
+    var studentIdCol                   = headerMap[UtilityScriptLibrary.normalizeHeader('Student ID')];
+    var currentHoursTaughtThisCycleCol = headerMap[UtilityScriptLibrary.normalizeHeader('Current Hours Taught This Billing Cycle')];
+    var lessonHoursCol                 = headerMap[UtilityScriptLibrary.normalizeHeader('Lesson Hours')];
+    var pastCumTaughtCol               = headerMap[UtilityScriptLibrary.normalizeHeader('Past Cumulative Hours Taught')];
+    var pastCumBilledCol               = headerMap[UtilityScriptLibrary.normalizeHeader('Past Cumulative Hours Billed')];
+    var currentCumTaughtCol            = headerMap[UtilityScriptLibrary.normalizeHeader('Current Cumulative Hours Taught')];
+    var currentCumBilledCol            = headerMap[UtilityScriptLibrary.normalizeHeader('Current Cumulative Hours Billed')];
+    var hoursRemainingCol              = headerMap[UtilityScriptLibrary.normalizeHeader('Hours Remaining')];
+    var lessonLengthCol                = headerMap[UtilityScriptLibrary.normalizeHeader('Lesson Length')];
+    var lessonsRemainingCol            = headerMap[UtilityScriptLibrary.normalizeHeader('Lessons Remaining')];
+
     if (!studentIdCol || !currentHoursTaughtThisCycleCol || !lessonHoursCol ||
-        !pastCumTaughtCol || !pastCumBilledCol || !currentCumTaughtCol || 
+        !pastCumTaughtCol || !pastCumBilledCol || !currentCumTaughtCol ||
         !currentCumBilledCol || !hoursRemainingCol) {
       UtilityScriptLibrary.debugLog('Required columns not found for cumulative hours calculations');
       return;
     }
-    
-    // RANGE VALIDATION: Ensure we have data rows to process
+
     var numDataRows = lastRow - 1;
     if (numDataRows <= 0) {
       UtilityScriptLibrary.debugLog('No data rows to process in cumulative columns population');
       return;
     }
-    
+
     var dataRange = currentSheet.getRange(2, 1, numDataRows, currentSheet.getLastColumn());
     var data = dataRange.getValues();
-    
-    // Process each student row
+
     for (var i = 0; i < data.length; i++) {
       var row = data[i];
-      var rowIndex = i + 2; // Row numbers are 1-indexed, data starts at row 2
+      var rowIndex = i + 2;
       var studentId = row[studentIdCol - 1];
-      
+
       if (!studentId) continue;
-      
-      // Generate formulas for cumulative columns
-      var pastTaughtCell = UtilityScriptLibrary.columnToLetter(pastCumTaughtCol) + rowIndex;
+
+      var pastTaughtCell   = UtilityScriptLibrary.columnToLetter(pastCumTaughtCol) + rowIndex;
       var currentTaughtCell = UtilityScriptLibrary.columnToLetter(currentHoursTaughtThisCycleCol) + rowIndex;
-      var pastBilledCell = UtilityScriptLibrary.columnToLetter(pastCumBilledCol) + rowIndex;
-      var lessonHoursCell = UtilityScriptLibrary.columnToLetter(lessonHoursCol) + rowIndex;
-      
+      var pastBilledCell   = UtilityScriptLibrary.columnToLetter(pastCumBilledCol) + rowIndex;
+      var lessonHoursCell  = UtilityScriptLibrary.columnToLetter(lessonHoursCol) + rowIndex;
+
       // Current Cumulative Hours Taught = Past + Current This Cycle
-      var currentCumTaughtFormula = "=" + pastTaughtCell + " + " + currentTaughtCell;
+      var currentCumTaughtFormula = '=' + pastTaughtCell + ' + ' + currentTaughtCell;
       currentSheet.getRange(rowIndex, currentCumTaughtCol).setFormula(currentCumTaughtFormula);
-      currentSheet.getRange(rowIndex, currentCumTaughtCol).setNumberFormat("0.00");
-      
+      currentSheet.getRange(rowIndex, currentCumTaughtCol).setNumberFormat('0.00');
+
       // Current Cumulative Hours Billed = Past + Lesson Hours
-      var currentCumBilledFormula = "=" + pastBilledCell + " + " + lessonHoursCell;
+      var currentCumBilledFormula = '=' + pastBilledCell + ' + ' + lessonHoursCell;
       currentSheet.getRange(rowIndex, currentCumBilledCol).setFormula(currentCumBilledFormula);
-      currentSheet.getRange(rowIndex, currentCumBilledCol).setNumberFormat("0.00");
-      
-      // Hours Remaining = Current Cumulative Taught - Current Cumulative Billed
+      currentSheet.getRange(rowIndex, currentCumBilledCol).setNumberFormat('0.00');
+
+      // Hours Remaining = Current Cumulative Billed - Current Cumulative Taught
       var currentCumTaughtCell = UtilityScriptLibrary.columnToLetter(currentCumTaughtCol) + rowIndex;
       var currentCumBilledCell = UtilityScriptLibrary.columnToLetter(currentCumBilledCol) + rowIndex;
-      var hoursRemainingFormula = "=" + currentCumBilledCell + " - " + currentCumTaughtCell;
+      var hoursRemainingFormula = '=' + currentCumBilledCell + ' - ' + currentCumTaughtCell;
       currentSheet.getRange(rowIndex, hoursRemainingCol).setFormula(hoursRemainingFormula);
-      currentSheet.getRange(rowIndex, hoursRemainingCol).setNumberFormat("0.00");
+      currentSheet.getRange(rowIndex, hoursRemainingCol).setNumberFormat('0.00');
+
+      // Lessons Remaining = Hours Remaining / (Lesson Length / 60)
+      if (lessonsRemainingCol && lessonLengthCol) {
+        var hoursRemainingCell = UtilityScriptLibrary.columnToLetter(hoursRemainingCol) + rowIndex;
+        var lessonLengthCell   = UtilityScriptLibrary.columnToLetter(lessonLengthCol) + rowIndex;
+        var lessonsRemainingFormula = '=IF(' + lessonLengthCell + '>0,' +
+          hoursRemainingCell + '/(' + lessonLengthCell + '/60),"")';
+        currentSheet.getRange(rowIndex, lessonsRemainingCol).setFormula(lessonsRemainingFormula);
+        currentSheet.getRange(rowIndex, lessonsRemainingCol).setNumberFormat('0.00');
+      }
     }
-    
+
     UtilityScriptLibrary.debugLog('Successfully populated cumulative columns for ' + data.length + ' students');
-    
+
   } catch (error) {
     UtilityScriptLibrary.debugLog('Error populating cumulative columns: ' + error.message);
     throw error;
@@ -7812,6 +7999,7 @@ function processSemesterEndCredits(currentSemesterName) {
 
 function processTeacherAttendanceForBilling(teacherSS, targetDate) {
   var studentHoursByMonth = {};
+  var studentDataCurrentThrough = {};
   var stats = { lessonsMarked: 0, lessonsCounted: 0 };
   var monthNames = UtilityScriptLibrary.getMonthNames();
   var sheets = teacherSS.getSheets();
@@ -7823,7 +8011,19 @@ function processTeacherAttendanceForBilling(teacherSS, targetDate) {
     if (!UtilityScriptLibrary.isMonthSheet(sheetName)) continue;
 
     var data = sheet.getDataRange().getValues();
-    if (data.length < 2) continue;
+    if (data.length < 3) continue; // header + sign-off + at least one lesson row
+
+    // Read sign-off initials from C2 (data[1][2])
+    var signOff = String(data[1][2] || '').trim();
+    var sheetConfirmedDate = null;
+    if (signOff !== '') {
+      var parts = sheetName.split(' ');
+      var sheetMonthIdx = monthNames.indexOf(parts[0]);
+      var sheetYear = parseInt(parts[1]);
+      if (sheetMonthIdx !== -1 && !isNaN(sheetYear)) {
+        sheetConfirmedDate = new Date(sheetYear, sheetMonthIdx + 1, 0); // last day of month
+      }
+    }
 
     var headers = data[0];
     var studentIdCol = -1, dateCol = -1, lengthCol = -1, statusCol = -1,
@@ -7846,7 +8046,7 @@ function processTeacherAttendanceForBilling(teacherSS, targetDate) {
       continue;
     }
 
-    for (var rowIdx = 1; rowIdx < data.length; rowIdx++) {
+    for (var rowIdx = 2; rowIdx < data.length; rowIdx++) { // start at 2 to skip sign-off row
       var row = data[rowIdx];
       var studentId       = row[studentIdCol];
       var lessonDate      = row[dateCol];
@@ -7890,6 +8090,14 @@ function processTeacherAttendanceForBilling(teacherSS, targetDate) {
         studentHoursByMonth[billingMonthName][studentId] += length / 60;
         stats.lessonsCounted++;
       }
+
+      // Track last reconciliation date from signed-off sheets
+      if (sheetConfirmedDate) {
+        if (!studentDataCurrentThrough[studentId] ||
+            sheetConfirmedDate > studentDataCurrentThrough[studentId]) {
+          studentDataCurrentThrough[studentId] = sheetConfirmedDate;
+        }
+      }
     }
   }
 
@@ -7897,7 +8105,11 @@ function processTeacherAttendanceForBilling(teacherSS, targetDate) {
     'Processed attendance',
     'Marked: ' + stats.lessonsMarked + ', Counted: ' + stats.lessonsCounted, '');
 
-  return { studentHoursByMonth: studentHoursByMonth, stats: stats };
+  return {
+    studentHoursByMonth: studentHoursByMonth,
+    studentDataCurrentThrough: studentDataCurrentThrough,
+    stats: stats
+  };
 }
 
 function processTeacherForNewAttendance(teacherId, rosterUrl, targetMonthName) {
@@ -8607,8 +8819,9 @@ function runWeeklyLessonReconciliation(customDate) {
       activeTeachers.push({ teacherId: teacherId, rosterUrl: rosterUrl, fileId: fileIdMatch[1] });
     }
 
-    // PASS 1 — Mark attendance and aggregate hours across all teachers
+    // PASS 1 — Mark attendance and aggregate hours and reconciliation dates across all teachers
     var aggregatedHoursByMonth = {};
+    var aggregatedDataCurrentThrough = {};
 
     for (var j = 0; j < activeTeachers.length; j++) {
       var teacher = activeTeachers[j];
@@ -8633,6 +8846,15 @@ function runWeeklyLessonReconciliation(customDate) {
           }
         }
 
+        // Most recent signed-off date wins per student across all teachers
+        for (var studentId in attendanceResult.studentDataCurrentThrough) {
+          var candidateDate = attendanceResult.studentDataCurrentThrough[studentId];
+          if (!aggregatedDataCurrentThrough[studentId] ||
+              candidateDate > aggregatedDataCurrentThrough[studentId]) {
+            aggregatedDataCurrentThrough[studentId] = candidateDate;
+          }
+        }
+
         stats.totalLessons += attendanceResult.stats.lessonsMarked;
 
       } catch (teacherError) {
@@ -8644,7 +8866,7 @@ function runWeeklyLessonReconciliation(customDate) {
       }
     }
 
-    // PASS 2 — Write aggregated hours to billing; one write per student per month, no teacher filter
+    // PASS 2 — Write aggregated hours to billing; one write per student per month
     var billingSS = UtilityScriptLibrary.getWorkbook('billing');
     for (var monthName in aggregatedHoursByMonth) {
       var monthBillingSheet = billingSS.getSheetByName(monthName);
@@ -8658,6 +8880,9 @@ function runWeeklyLessonReconciliation(customDate) {
       UtilityScriptLibrary.debugLog('runWeeklyLessonReconciliation', 'INFO',
         'Wrote aggregated hours to billing sheet', monthName + ' - ' + updatedCount + ' students', '');
     }
+
+    // Write last reconciliation dates to current billing sheet
+    updateLastReconciliationDate(currentBillingSheet, aggregatedDataCurrentThrough);
 
     // PASS 3 — Update rosters and warnings per teacher
     for (var k = 0; k < activeTeachers.length; k++) {
@@ -9589,6 +9814,47 @@ function updateInvoiceUrlInBillingSheet(billingSheet, rowNumber, headerMap, url)
   if (urlCol && url) {
     billingSheet.getRange(rowNumber, urlCol).setValue(url);
   }
+}
+
+function updateLastReconciliationDate(billingSheet, studentDataCurrentThrough) {
+  var headerMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
+  var norm = UtilityScriptLibrary.normalizeHeader;
+
+  var studentIdCol  = headerMap[norm('Student ID')];
+  var lastReconCol  = headerMap[norm('Last Reconciliation Date')];
+
+  if (!studentIdCol || !lastReconCol) {
+    UtilityScriptLibrary.debugLog('updateLastReconciliationDate', 'WARNING',
+      'Required columns not found in billing sheet', billingSheet.getName(), '');
+    return;
+  }
+
+  var lastRow = billingSheet.getLastRow();
+  if (lastRow < 2) return;
+
+  var numDataRows  = lastRow - 1;
+  var studentIds   = billingSheet.getRange(2, studentIdCol, numDataRows, 1).getValues();
+  var existingDates = billingSheet.getRange(2, lastReconCol, numDataRows, 1).getValues();
+
+  var updatedCount = 0;
+  for (var i = 0; i < numDataRows; i++) {
+    var rowStudentId = studentIds[i][0];
+    if (!rowStudentId || studentDataCurrentThrough[rowStudentId] === undefined) continue;
+
+    var newDate = studentDataCurrentThrough[rowStudentId];
+    var existing = existingDates[i][0];
+
+    // Only update if new date is more recent than what's already there
+    if (!existing || !(existing instanceof Date) || newDate > existing) {
+      billingSheet.getRange(i + 2, lastReconCol).setValue(newDate);
+      updatedCount++;
+    }
+  }
+
+  if (updatedCount > 0) SpreadsheetApp.flush();
+
+  UtilityScriptLibrary.debugLog('updateLastReconciliationDate', 'INFO',
+    'Updated last reconciliation dates', updatedCount + ' students updated', '');
 }
 
 function updateSheetStudentWarnings(sheet, warningStudentMap, formattedDate) {
