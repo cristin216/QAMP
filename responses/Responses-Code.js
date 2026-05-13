@@ -4193,7 +4193,7 @@ function updateTeacherRosterLookup(teacherId, fileUrl) {
     var lastUpdatedCol = getCol('Last Updated');
 
     if (rosterUrlCol) lookupSheet.getRange(existingRow, rosterUrlCol).setValue(fileUrl);
-    if (statusCol) lookupSheet.getRange(existingRow, statusCol).setValue('Active');
+    if (statusCol) lookupSheet.getRange(existingRow, statusCol).setValue('active');
     if (lastUpdatedCol) lookupSheet.getRange(existingRow, lastUpdatedCol).setValue(new Date());
 
     UtilityScriptLibrary.debugLog('updateTeacherRosterLookup', 'INFO', 'Updated teacher roster lookup', teacherId, '');
