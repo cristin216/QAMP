@@ -44,15 +44,11 @@ function runBillingCycleAutomation() {
   try {
     UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "INFO", "Starting billing cycle automation", "", "");
 
-    var ss               = SpreadsheetApp.getActiveSpreadsheet();
-    var ui               = SpreadsheetApp.getUi();
-    var customToday = UtilityScriptLibrary.promptForCustomToday();
-    if (!customToday) return;
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ui = SpreadsheetApp.getUi();
+    var customToday = promptForCustomToday();
     var billingCycleName = promptForBillingCycleName(customToday);
     if (!billingCycleName) return;
-
-    UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "DEBUG", "User inputs confirmed",
-      "Date: " + customToday.toLocaleDateString() + ", Cycle: " + billingCycleName, "");
 
     var semesterSheet = ss.getSheetByName('Semester Metadata');
     if (!semesterSheet) throw new Error('Semester Metadata sheet not found.');
@@ -68,8 +64,6 @@ function runBillingCycleAutomation() {
       return;
     }
 
-    UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "DEBUG", "All validations passed", "", "");
-
     var programConfig = loadProgramConfig(ss);
 
     createBillingSheet(billingCycleName, programConfig);
@@ -79,20 +73,14 @@ function runBillingCycleAutomation() {
     protectPreviousBillingCycle();
 
     var billingMetaSheet = ss.getSheetByName('Billing Metadata');
-    var billingMetaData  = billingMetaSheet.getDataRange().getValues();
-    var metaHeaderMap    = UtilityScriptLibrary.getHeaderMap(billingMetaSheet);
-    var semesterCol      = metaHeaderMap[UtilityScriptLibrary.normalizeHeader("Semester Name")];
-
-    if (!semesterCol) {
-      throw new Error("Semester Name column not found in Billing Metadata sheet");
-    }
+    var billingMetaData = billingMetaSheet.getDataRange().getValues();
+    var metaHeaderMap = UtilityScriptLibrary.getHeaderMap(billingMetaSheet);
+    var semesterCol = metaHeaderMap[UtilityScriptLibrary.normalizeHeader("Semester Name")];
+    if (!semesterCol) throw new Error("Semester Name column not found in Billing Metadata sheet");
 
     var isFirstCycle = !billingMetaData.some(function(row) {
       return row[semesterCol - 1] === semesterName;
     });
-
-    UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "DEBUG", "Billing cycle type determined",
-      "First cycle: " + isFirstCycle, "");
 
     var carryOverData = extractPreviousBillingData({ includeAll: !isFirstCycle });
     if (!carryOverData || !carryOverData.previousSheetName) {
@@ -111,7 +99,6 @@ function runBillingCycleAutomation() {
         'Do you want to carry over Agreement Form and Media Release status from the previous semester?',
         ui.ButtonSet.YES_NO
       );
-
       if (response === ui.Button.YES) {
         carryOverForms = true;
       } else if (response === ui.Button.NO) {
@@ -124,32 +111,54 @@ function runBillingCycleAutomation() {
 
     if (carryOverData.previousSheetName) {
       updateCumulativeTracking(carryOverData.previousSheetName);
-      UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "INFO", "Cumulative tracking updated",
-        "From sheet: " + carryOverData.previousSheetName, "");
     }
 
     var reregResult = loadReregistrationData();
-    UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "INFO", "Re-registration data loaded",
-      "Entries: " + Object.keys(reregResult.map).length, "");
 
     ss.setActiveSheet(newBillingSheet);
     var context = buildBillingContext(customToday, semesterName, billingCycleName, programConfig);
-    context.prevHeaderMap    = carryOverData.previousSheetName
+    var prevHeaderMap = carryOverData.previousSheetName
       ? UtilityScriptLibrary.getHeaderMap(ss.getSheetByName(carryOverData.previousSheetName))
       : {};
+    context.prevHeaderMap = prevHeaderMap;
     context.previousSheetName = carryOverData.previousSheetName || null;
-    context.carryOverForms   = carryOverForms;
-    context.reregMap         = reregResult.map;
-    context.reregSheet       = reregResult.sheet;
-
-    UtilityScriptLibrary.debugLog("runBillingCycleAutomation", "DEBUG", "Context built",
-      "Previous sheet: " + (carryOverData.previousSheetName || "None"), "");
+    context.carryOverForms = carryOverForms;
+    context.reregMap = reregResult.map;
+    context.reregSheet = reregResult.sheet;
 
     if (isFirstCycle) {
       populateBillingSheet(context, carryOverData);
     } else {
       var existingStudentIds = [];
       populateBillingSheetContinuingSemester(context, newBillingSheet, existingStudentIds, carryOverData.rowsToCarry, null);
+    }
+
+    // Append any students from future semester form sheet
+    var futureSemesterName = getFutureSemesterName(semesterName);
+    if (futureSemesterName) {
+      var futureContext = buildFutureSemesterContext(
+        futureSemesterName, customToday, billingCycleName, programConfig, prevHeaderMap
+      );
+      if (futureContext) {
+        // Build existingIds from the now-populated billing sheet
+        var billingSheetData = newBillingSheet.getDataRange().getValues();
+        var billingHdrMap = UtilityScriptLibrary.getHeaderMap(newBillingSheet);
+        var sIdCol = billingHdrMap[UtilityScriptLibrary.normalizeHeader('Student ID')];
+        var existingIds = {};
+        for (var i = 1; i < billingSheetData.length; i++) {
+          var id = String(billingSheetData[i][sIdCol - 1] || '').trim();
+          if (id) existingIds[id] = true;
+        }
+
+        var futureAdded = appendStudentsFromContext(newBillingSheet, futureContext, existingIds);
+        if (futureAdded > 0) {
+          UtilityScriptLibrary.debugLog('runBillingCycleAutomation', 'INFO',
+            'Appended future semester students', 'Count: ' + futureAdded, '');
+          applyMultiStudentDiscount(newBillingSheet);
+          populateAllCumulativeColumns();
+          applyBillingConditionalFormatting(newBillingSheet);
+        }
+      }
     }
 
     applyMultiStudentDiscount(newBillingSheet);
@@ -675,7 +684,7 @@ function addLateRegistrationsToBillingCycle() {
   if (!billingSheet) throw new Error('Could not find current billing sheet.');
   var billingCycleName = billingSheet.getName();
 
-  var semesterName = getCurrentSemesterFromBillingMetadata();
+  var semesterName = getCurrentSemesterFromBillingMetadata(billingCycleName);
   if (!semesterName) throw new Error('Could not determine current semester.');
 
   var confirm = ui.alert(
@@ -685,16 +694,16 @@ function addLateRegistrationsToBillingCycle() {
   );
   if (confirm !== ui.Button.YES) return null;
 
-  var context = buildBillingContext(new Date(), semesterName, billingCycleName);
-
-  // Locate the previous billing cycle sheet for prevHeaderMap (needed for late fee calc),
-  // doing this directly from Billing Metadata to avoid loading full carryover data.
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var programConfig = loadProgramConfig(ss);
+  var context = buildBillingContext(new Date(), semesterName, billingCycleName, programConfig);
+
+  // Locate previous billing cycle for prevHeaderMap
   var metaSheet = ss.getSheetByName('Billing Metadata');
   var metaData = metaSheet.getDataRange().getValues();
   var metaHeaderMap = UtilityScriptLibrary.getHeaderMap(metaSheet);
-  var cycleNameCol = metaHeaderMap[UtilityScriptLibrary.normalizeHeader('Billing Cycle Name')];
-  if (!cycleNameCol) throw new Error('Billing Cycle Name column not found in Billing Metadata.');
+  var cycleNameCol = metaHeaderMap[UtilityScriptLibrary.normalizeHeader('Billing Month')];
+  if (!cycleNameCol) throw new Error('Billing Month column not found in Billing Metadata.');
 
   var previousSheetName = null;
   for (var i = 1; i < metaData.length; i++) {
@@ -703,11 +712,12 @@ function addLateRegistrationsToBillingCycle() {
       break;
     }
   }
-  context.prevHeaderMap = previousSheetName
+  var prevHeaderMap = previousSheetName
     ? UtilityScriptLibrary.getHeaderMap(ss.getSheetByName(previousSheetName))
     : {};
+  context.prevHeaderMap = prevHeaderMap;
 
-  // Collect student IDs already on the billing sheet
+  // Collect existing student IDs from billing sheet
   var billingData = billingSheet.getDataRange().getValues();
   var billingHeaderMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
   var studentIdCol = billingHeaderMap[UtilityScriptLibrary.normalizeHeader('Student ID')];
@@ -719,49 +729,30 @@ function addLateRegistrationsToBillingCycle() {
     if (id) existingIds[id] = true;
   }
 
-  // Scan form sheet; for students not on the sheet, keep only the most recent submission
-  var formSheet = context.formSheet;
-  var formData = formSheet.getDataRange().getValues();
-  var formHeaderMap = UtilityScriptLibrary.getHeaderMap(formSheet);
-  var formStudentIdCol = formHeaderMap[UtilityScriptLibrary.normalizeHeader('Student ID')];
-  var formTimestampCol = formHeaderMap[UtilityScriptLibrary.normalizeHeader('Timestamp')];
-  if (!formStudentIdCol) throw new Error('Student ID column not found in form responses sheet.');
+  // Append from current semester form sheet
+  var added = appendStudentsFromContext(billingSheet, context, existingIds);
 
-  var newStudentMap = {};
-  for (var i = 1; i < formData.length; i++) {
-    var row = formData[i];
-    var studentId = String(row[formStudentIdCol - 1] || '').trim();
-    if (!studentId || existingIds[studentId]) continue;
-    var timestamp = formTimestampCol ? row[formTimestampCol - 1] : new Date(0);
-    if (!newStudentMap[studentId] || timestamp > newStudentMap[studentId].timestamp) {
-      newStudentMap[studentId] = { row: row, timestamp: timestamp };
+  // Append from future semester form sheet if one exists
+  var futureSemesterName = getFutureSemesterName(semesterName);
+  if (futureSemesterName) {
+    var futureContext = buildFutureSemesterContext(
+      futureSemesterName, new Date(), billingCycleName, programConfig, prevHeaderMap
+    );
+    if (futureContext) {
+      added += appendStudentsFromContext(billingSheet, futureContext, existingIds);
     }
   }
 
-  var newStudentIds = Object.keys(newStudentMap);
-  if (newStudentIds.length === 0) return { added: 0 };
-
-  var totalCols = billingSheet.getLastColumn();
-  var nextRow = billingSheet.getLastRow() + 1;
-
-  for (var i = 0; i < newStudentIds.length; i++) {
-    var studentId = newStudentIds[i];
-    var newRow = buildBillingRowFromForm(newStudentMap[studentId].row, null, context, nextRow);
-    billingSheet.getRange(nextRow, 1, 1, totalCols).setValues([newRow]);
-    formatRow(billingSheet, nextRow);
-    UtilityScriptLibrary.debugLog('addLateRegistrationsToBillingCycle', 'INFO',
-      'Appended late registration', 'Student ID: ' + studentId + ', Row: ' + nextRow, '');
-    nextRow++;
+  if (added > 0) {
+    applyMultiStudentDiscount(billingSheet);
+    populateAllCumulativeColumns();
+    applyBillingConditionalFormatting(billingSheet);
   }
 
-  applyMultiStudentDiscount(billingSheet);
-  populateAllCumulativeColumns();
-  applyBillingConditionalFormatting(billingSheet);
-
   UtilityScriptLibrary.debugLog('addLateRegistrationsToBillingCycle', 'INFO',
-    'Late registration complete', 'Added: ' + newStudentIds.length, '');
+    'Late registration complete', 'Added: ' + added, '');
 
-  return { added: newStudentIds.length };
+  return { added: added };
 }
 
 function addLateRegistrationsUI() {
@@ -939,6 +930,50 @@ function appendReregistrationNewStudents(billingSheet, reregMap, overwroteIds, c
     UtilityScriptLibrary.debugLog('appendReregistrationNewStudents', 'ERROR', 'Failed', '', error.message);
     throw error;
   }
+}
+
+function appendStudentsFromContext(billingSheet, context, existingIds) {
+  var norm = UtilityScriptLibrary.normalizeHeader;
+  var formData = context.formSheet.getDataRange().getValues();
+  var formHeaderMap = UtilityScriptLibrary.getHeaderMap(context.formSheet);
+  var formStudentIdCol = formHeaderMap[norm('Student ID')];
+  var formTimestampCol = formHeaderMap[norm('Timestamp')];
+
+  if (!formStudentIdCol) {
+    UtilityScriptLibrary.debugLog('appendStudentsFromContext', 'WARNING',
+      'Student ID column not found', context.semesterName, '');
+    return 0;
+  }
+
+  var newStudentMap = {};
+  for (var i = 1; i < formData.length; i++) {
+    var row = formData[i];
+    var studentId = String(row[formStudentIdCol - 1] || '').trim();
+    if (!studentId || existingIds[studentId]) continue;
+    var timestamp = formTimestampCol ? row[formTimestampCol - 1] : new Date(0);
+    if (!newStudentMap[studentId] || timestamp > newStudentMap[studentId].timestamp) {
+      newStudentMap[studentId] = { row: row, timestamp: timestamp };
+    }
+  }
+
+  var newStudentIds = Object.keys(newStudentMap);
+  if (newStudentIds.length === 0) return 0;
+
+  var nextRow = billingSheet.getLastRow() + 1;
+
+  for (var i = 0; i < newStudentIds.length; i++) {
+    var studentId = newStudentIds[i];
+    var result = buildBillingRowFromForm(newStudentMap[studentId].row, null, context, nextRow);
+    billingSheet.appendRow(result.newRow);
+    formatRow(billingSheet, nextRow, result.quantityCols, result.currencyCols);
+    existingIds[studentId] = true;
+    UtilityScriptLibrary.debugLog('appendStudentsFromContext', 'INFO',
+      'Appended student from ' + context.semesterName,
+      'Student ID: ' + studentId + ', Row: ' + nextRow, '');
+    nextRow++;
+  }
+
+  return newStudentIds.length;
 }
 
 function appendToBillingMetadata(billingCycleName, customToday, semesterName) {
@@ -2009,6 +2044,18 @@ function buildFormStudents(formSheet, filterDate, previousData, context, allStud
   }
   
   return { formStudentIds: formStudentIds, nextRowIndex: currentRowIndex };
+}
+
+function buildFutureSemesterContext(futureSemesterName, customToday, billingCycleName, programConfig, prevHeaderMap) {
+  try {
+    var context = buildBillingContext(customToday, futureSemesterName, billingCycleName, programConfig);
+    context.prevHeaderMap = prevHeaderMap || {};
+    return context;
+  } catch (e) {
+    UtilityScriptLibrary.debugLog('buildFutureSemesterContext', 'INFO',
+      'Future semester form sheet not available', futureSemesterName, e.message);
+    return null;
+  }
 }
 
 function buildInvoiceTotalFormula(headerMap, rowNum) {
@@ -3089,59 +3136,46 @@ function copyStaticFieldsToBillingRow(newRow, sourceRow, context, getFn) {
     newRow[colIndex - 1] = value || '';
   }
 
+  // When building from form, resolve Teacher ID from teacher display name
+  // since the form captures teacher name, not ID
+  if (getFn) {
+    var teacherIdCol = context.headerMap[UtilityScriptLibrary.normalizeHeader("Teacher ID")];
+    if (teacherIdCol) {
+      var teacherNameIdx = getFn("Teacher");
+      var teacherName = teacherNameIdx !== -1 ? String(sourceRow[teacherNameIdx] || '').trim() : '';
+      if (teacherName) {
+        newRow[teacherIdCol - 1] = UtilityScriptLibrary.getTeacherIdByDisplayName(teacherName);
+      }
+    }
+  }
+
   // Handle Parent Address
   var addressCol = context.headerMap[UtilityScriptLibrary.normalizeHeader("Parent Address")];
   if (addressCol) {
     if (getFn) {
-      var street = sourceRow[getFn("Address Street")];
-      var cityZip = sourceRow[getFn("CityZip")];
-      var cityZipParsed = UtilityScriptLibrary.parseCityZipMessy(cityZip);
-      var city = cityZipParsed.city;
-      var zip = cityZipParsed.zip;
+      var street = String(sourceRow[getFn("Address Street")] || '').trim();
+      var city = '';
+      var zip = '';
+
+      var cityIdx = getFn("City");
+      var zipIdx = getFn("Zip");
+      if (cityIdx !== -1 && zipIdx !== -1) {
+        city = String(sourceRow[cityIdx] || '').trim();
+        zip = String(sourceRow[zipIdx] || '').trim();
+      } else {
+        var cityZipIdx = getFn("CityZip");
+        if (cityZipIdx !== -1 && sourceRow[cityZipIdx]) {
+          var cityZipParsed = UtilityScriptLibrary.parseCityZipMessy(sourceRow[cityZipIdx]);
+          city = cityZipParsed.city;
+          zip = cityZipParsed.zip;
+        }
+      }
+
       newRow[addressCol - 1] = street + '\n' + city + ', NY ' + zip;
     } else {
       var prevAddressCol = context.prevHeaderMap[UtilityScriptLibrary.normalizeHeader("Parent Address")];
       newRow[addressCol - 1] = prevAddressCol ? sourceRow[prevAddressCol - 1] : '';
     }
-  }
-
-  // Handle Lesson Length from previous billing cycle
-  var lessonLengthCol = context.headerMap[UtilityScriptLibrary.normalizeHeader("Lesson Length")];
-  if (lessonLengthCol && !getFn) {
-    var prevLessonLengthCol = context.prevHeaderMap[UtilityScriptLibrary.normalizeHeader("Lesson Length")];
-    newRow[lessonLengthCol - 1] = prevLessonLengthCol ? sourceRow[prevLessonLengthCol - 1] : 0;
-  }
-
-  // Handle Lesson Price from previous billing cycle
-  var lessonPriceCol = context.headerMap[UtilityScriptLibrary.normalizeHeader("Lesson Price")];
-  if (lessonPriceCol && !getFn) {
-    var prevLessonPriceCol = context.prevHeaderMap[UtilityScriptLibrary.normalizeHeader("Lesson Price")];
-    newRow[lessonPriceCol - 1] = prevLessonPriceCol ? sourceRow[prevLessonPriceCol - 1] : 0;
-  }
-
-  // Handle Agreement Form and Media Release
-  if (!getFn) {
-    var agreementFormCol = context.headerMap[UtilityScriptLibrary.normalizeHeader("Agreement Form")];
-    var mediaReleaseCol = context.headerMap[UtilityScriptLibrary.normalizeHeader("Media Release")];
-
-    if (agreementFormCol) {
-      var prevAgreementCol = context.prevHeaderMap[UtilityScriptLibrary.normalizeHeader("Agreement Form")];
-      newRow[agreementFormCol - 1] = (prevAgreementCol && context.carryOverForms !== false)
-        ? sourceRow[prevAgreementCol - 1] === true
-        : false;
-    }
-
-    if (mediaReleaseCol) {
-      var prevMediaCol = context.prevHeaderMap[UtilityScriptLibrary.normalizeHeader("Media Release")];
-      newRow[mediaReleaseCol - 1] = (prevMediaCol && context.carryOverForms !== false)
-        ? sourceRow[prevMediaCol - 1] === true
-        : false;
-    }
-  } else {
-    var agreementFormCol = context.headerMap[UtilityScriptLibrary.normalizeHeader("Agreement Form")];
-    var mediaReleaseCol = context.headerMap[UtilityScriptLibrary.normalizeHeader("Media Release")];
-    if (agreementFormCol) newRow[agreementFormCol - 1] = false;
-    if (mediaReleaseCol) newRow[mediaReleaseCol - 1] = false;
   }
 }
 
@@ -6084,6 +6118,20 @@ function getFormSheet(context) {
   }
   
   return formSheet;
+}
+
+function getFutureSemesterName(currentSemesterName) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var metaSheet = ss.getSheetByName('Semester Metadata');
+  if (!metaSheet) return null;
+
+  var data = metaSheet.getDataRange().getValues();
+  for (var i = 1; i < data.length - 1; i++) {
+    if (String(data[i][0]).trim() === currentSemesterName) {
+      return String(data[i + 1][0]).trim() || null;
+    }
+  }
+  return null;
 }
 
 function getInvoiceNumber(billingSheet, billingRowIndex) {
