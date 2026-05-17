@@ -2,7 +2,7 @@
 BILLING FUNCTION DIRECTORY
 ================================================================================
     Total Functions: 194
-    Most Recent version: 165
+    Most Recent version: 166
 
     This directory provides a quick reference for all functions in Billing script.
     Parameters marked with ? are optional.
@@ -44,6 +44,7 @@ BILLING FUNCTION DIRECTORY
     buildMissingDocumentSentence
     buildPastVlookupFormula
     buildProgramDescription
+    buildReregistrationQueue
     buildTemplateVariables
     calculateLessonEquivalents
     calculateTotalCreditsApplied
@@ -350,9 +351,10 @@ BILLING FUNCTION DIRECTORY
       updateSheetStudentWarnings
       updateTeacherRosterBalances
 
-    RE_REGISTRATION (8 functions):
+    RE_REGISTRATION (9 functions):
       appendReregistrationNewStudents
       applyReregistrationOverwrites
+      buildReregistrationQueue
       doGet
       loadReregistrationData
       markReregistrationProcessed
@@ -444,8 +446,10 @@ BILLING FUNCTION DIRECTORY
 
     appendReregistrationNewStudents(billingSheet, reregMap, overwroteIds, context) -> void
         Appends to the billing sheet any re-registered students not already present.
+        Writes Package Quantity, Lesson Length, Lesson Quantity, Lesson Price, and Lesson Hours
+        directly from reregistration entry data.
         Category: RE_REGISTRATION
-        Local functions used: buildBillingRowFromForm()
+        Local functions used: None
         Utility functions used: getHeaderMap(), normalizeHeader(), debugLog()
 
     appendToBillingMetadata(billingCycleName, customToday, semesterName) -> void
@@ -500,7 +504,8 @@ BILLING FUNCTION DIRECTORY
         Utility functions used: normalizeHeader(), getHeaderMap(), debugLog()
 
     applyReregistrationOverwrites(billingSheet, reregMap, formStudentIds) -> void
-        Overwrites lesson quantity, hours, and length for existing students who re-registered.
+        Overwrites Package Quantity, Lesson Quantity, Lesson Hours, Lesson Length, Lesson Price,
+        and Enrollment for existing students who re-registered.
         Category: RE_REGISTRATION
         Local functions used: None
         Utility functions used: getHeaderMap(), normalizeHeader(), debugLog()
@@ -521,23 +526,26 @@ BILLING FUNCTION DIRECTORY
 
     buildBillingRowFromForm(formRow, prevRow, context, rowIndex) -> Array
         Constructs billing row array from a new student's form submission row.
+        Sets Package Quantity from parsed lesson count (qty30/45/60 package text).
         Returns array representing complete billing row.
         Category: BILLING_CYCLE
         Local functions used: copyStaticFieldsToBillingRow(), setDeliveryPreference(),
                               populateInvoiceMetadata(), populateLetterType(), getExpandedPrograms(),
                               buildDynamicProgramColumns(), setPastColumnFormulas(),
                               addInvoiceTotalFormula(), applyCumulativeHistory(), applyLateFeeToRow()
-        Utility functions used: parseAllPackageQuantities(), normalizeHeader(), debugLog()
+        Utility functions used: parseAllPackageQuantities(), getLessonLengthFromPackages(),
+                                normalizeHeader(), debugLog()
 
     buildBillingRowFromPrevious(prevRow, context, rowIndex) -> Array
         Constructs billing row array from a continuing student's previous billing cycle row.
+        Carries over both Lesson Length and Package Quantity from the previous row.
         Returns array representing complete billing row.
         Category: BILLING_CYCLE
         Local functions used: copyStaticFieldsToBillingRow(), setDeliveryPreference(),
                               populateInvoiceMetadata(), populateLetterType(), buildDynamicProgramColumns(),
                               setPastColumnFormulas(), addInvoiceTotalFormula(), applyCumulativeHistory(),
                               applyLateFeeToRow(), setProgramQuantitiesForCarryover()
-        Utility functions used: getStudentIdFromRow(), normalizeHeader(), debugLog()
+        Utility functions used: getStudentIdFromRow(), copyPreviousColumnToNew(), normalizeHeader(), debugLog()
 
     buildCarryoverStudents(previousData, existingStudentIds, context, allStudents, startingRowIndex) -> Number
         Builds billing rows for all carryover students from the previous billing cycle.
@@ -623,6 +631,16 @@ BILLING FUNCTION DIRECTORY
         Category: GENERATE_DOCUMENTS
         Local functions used: None
         Utility functions used: None
+
+    buildReregistrationQueue() -> void
+        Refreshes the Reregistration Queue as a rolling work list. Adds newly qualifying students,
+        updates lesson counts on existing rows, and removes students who have submitted an unprocessed
+        reregistration response. Preserves Send?/Sent state for existing rows. Does not prompt to
+        clear existing data. Threshold is 3 lessons for all packages; 1 lesson for packages with
+        Package Quantity <= 4.
+        Category: RE_REGISTRATION
+        Local functions used: getCurrentBillingSheet()
+        Utility functions used: getSheet(), getHeaderMap(), normalizeHeader(), debugLog()
 
     buildTemplateVariables(studentData, billingData, templateType) -> Object
         Builds complete variable map for all document template types.
@@ -1492,8 +1510,9 @@ BILLING FUNCTION DIRECTORY
         Utility functions used: None
 
     sendReregistrationLinks() -> void
-        Emails a unique re-registration link to all parents with active students in the
-        current billing cycle. Menu-triggered. Confirms count before sending.
+        Sends re-registration emails to parents whose rows are checked (Send? = true) and not yet
+        sent in the Reregistration Queue. Confirms count before sending. Writes sent date as
+        MM/dd/yy to the Sent column on success.
         Category: RE_REGISTRATION
         Local functions used: getCurrentBillingSheet()
         Utility functions used: debugLog(), getHeaderMap(), getSheet(), normalizeHeader()
@@ -1581,8 +1600,8 @@ BILLING FUNCTION DIRECTORY
         Utility functions used: debugLog()
 
     submitReregistration(data) -> Object
-        Processes re-registration form submission. Updates lesson quantity in current billing
-        sheet and updates parent contact info in Contacts if changes were submitted.
+        Processes re-registration form submission. Writes student package selection to the
+        Reregistration sheet and updates parent contact info in Contacts if changes were submitted.
         Returns {success, updatedStudents[], errors[], message}
         Category: RE_REGISTRATION
         Local functions used: getCurrentBillingSheet()
@@ -1712,7 +1731,7 @@ BILLING FUNCTION DIRECTORY
     verifyProgramsForSemester(semesterName, billingSS) -> Boolean
         Verifies all required programs are set up for semester.
         Returns true if verification passed.
-        Category: SETUP_SEMESTER
+        Category: HELPER_FUNCTIONS
         Local functions used: None
         Utility functions used: debugLog()
 
