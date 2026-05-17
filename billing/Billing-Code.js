@@ -373,9 +373,9 @@ function sendReregistrationLinks() {
   var ui   = SpreadsheetApp.getUi();
   var norm = UtilityScriptLibrary.normalizeHeader;
 
-  var webAppUrl = ScriptApp.getService().getUrl();
+  var webAppUrl = UtilityScriptLibrary.getConfig()[UtilityScriptLibrary.getEnvironment()].webAppUrl;
   if (!webAppUrl) {
-    ui.alert('❌ Web app URL not available. Make sure this script is deployed as a web app.');
+    ui.alert('❌ Web app URL not configured. Add WEBAPP_URL to Script Properties.');
     return;
   }
 
@@ -10924,6 +10924,31 @@ function debugBillingSheetColumns() {
   } catch (error) {
     UtilityScriptLibrary.debugLog('ERROR in debugBillingSheetColumns: ' + error.message);
     UtilityScriptLibrary.debugLog('Error stack: ' + error.stack);
+  }
+}
+
+function debugReregistrationSend() {
+  var norm = UtilityScriptLibrary.normalizeHeader;
+  var billingSheet = getCurrentBillingSheet();
+  var billingHeaderMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
+  var billingData = billingSheet.getDataRange().getValues();
+
+  var bStudentIdCol  = billingHeaderMap[norm('Student ID')];
+  var bParentIdCol   = billingHeaderMap[norm('Parent ID')];
+  var bEnrollmentCol = billingHeaderMap[norm('Enrollment')];
+
+  UtilityScriptLibrary.debugLog('debugReregistrationSend', 'INFO', 'Column indices',
+    'StudentID:' + bStudentIdCol + ' ParentID:' + bParentIdCol + ' Enrollment:' + bEnrollmentCol, '');
+
+  for (var i = 1; i < billingData.length; i++) {
+    var row = billingData[i];
+    var studentId  = String(row[bStudentIdCol - 1] || '').trim();
+    var parentId   = String(row[bParentIdCol - 1] || '').trim();
+    var enrollment = String(row[bEnrollmentCol - 1] || '').trim();
+    if (studentId === 'Q0080') {
+      UtilityScriptLibrary.debugLog('debugReregistrationSend', 'INFO', 'Koa row',
+        'studentId:' + studentId + ' parentId:' + parentId + ' enrollment:' + enrollment, '');
+    }
   }
 }
 

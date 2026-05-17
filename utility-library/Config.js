@@ -23,6 +23,7 @@ function setupScriptProperties() {
     'TEST_ROSTER_FOLDER_ID':                'your-id-here',
     'TEST_TEMPLATE_FOLDER_ID':              'your-id-here',
     'TEST_GENERATED_DOCUMENTS_FOLDER_ID':   'your-id-here',
+    'TEST_WEBAPP_URL':                      'your-url-here',
 
     // Prod Environment
     'PROD_RECEIPTS_FOLDER_ID':              'your-id-here',
@@ -34,7 +35,8 @@ function setupScriptProperties() {
     'PROD_PAYMENTS_ID':                     'your-id-here',
     'PROD_ROSTER_FOLDER_ID':                'your-id-here',
     'PROD_TEMPLATE_FOLDER_ID':              'your-id-here',
-    'PROD_GENERATED_DOCUMENTS_FOLDER_ID':   'your-id-here'
+    'PROD_GENERATED_DOCUMENTS_FOLDER_ID':   'your-id-here',
+    'PROD_WEBAPP_URL':                      'your-url-here'
   });
 
   Logger.log('Properties set. Delete the contents of this function now.');
@@ -54,7 +56,8 @@ function getConfig() {
       paymentsId:                 props.getProperty('TEST_PAYMENTS_ID'),
       rosterFolderId:             props.getProperty('TEST_ROSTER_FOLDER_ID'),
       templateFolderId:           props.getProperty('TEST_TEMPLATE_FOLDER_ID'),
-      generatedDocumentsFolderId: props.getProperty('TEST_GENERATED_DOCUMENTS_FOLDER_ID')
+      generatedDocumentsFolderId: props.getProperty('TEST_GENERATED_DOCUMENTS_FOLDER_ID'),
+      webAppUrl:                  props.getProperty('TEST_WEBAPP_URL')
     },
     prod: {
       receiptsFolderId:           props.getProperty('PROD_RECEIPTS_FOLDER_ID'),
@@ -66,7 +69,8 @@ function getConfig() {
       paymentsId:                 props.getProperty('PROD_PAYMENTS_ID'),
       rosterFolderId:             props.getProperty('PROD_ROSTER_FOLDER_ID'),
       templateFolderId:           props.getProperty('PROD_TEMPLATE_FOLDER_ID'),
-      generatedDocumentsFolderId: props.getProperty('PROD_GENERATED_DOCUMENTS_FOLDER_ID')
+      generatedDocumentsFolderId: props.getProperty('PROD_GENERATED_DOCUMENTS_FOLDER_ID'),
+      webAppUrl:                  props.getProperty('PROD_WEBAPP_URL')
     }
   };
 }
