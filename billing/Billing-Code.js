@@ -379,15 +379,14 @@ function sendReregistrationLinks() {
     return;
   }
 
-  var billingSS  = UtilityScriptLibrary.getWorkbook('billing');
   var queueSheet = UtilityScriptLibrary.getSheet('reregistrationQueue');
   if (!queueSheet || queueSheet.getLastRow() < 2) {
     ui.alert('❌ Reregistration Queue is empty. Run "Build Re-Registration Queue" first.');
     return;
   }
 
-  var queueHeaderMap = UtilityScriptLibrary.getHeaderMap(queueSheet);
-  var queueData      = queueSheet.getDataRange().getValues();
+  var queueHeaderMap  = UtilityScriptLibrary.getHeaderMap(queueSheet);
+  var queueData       = queueSheet.getDataRange().getValues();
 
   var qParentIdCol    = queueHeaderMap[norm('Parent ID')];
   var qParentFirstCol = queueHeaderMap[norm('Parent First Name')];
@@ -473,7 +472,7 @@ function sendReregistrationLinks() {
 
   var sent      = 0;
   var failed    = 0;
-  var timestamp = new Date();
+  var timestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'MM/dd/yy');
 
   for (var p = 0; p < parentIds.length; p++) {
     var parentId = parentIds[p];
@@ -903,10 +902,11 @@ function appendReregistrationNewStudents(billingSheet, reregMap, overwroteIds, c
       setCol('Parent Address',    parentRow[parentHdrMap[norm('Address Formatted')] - 1]);
 
       // Registration fields
-      setCol('Lesson Length',   entry.lessonLength);
-      setCol('Lesson Quantity', entry.lessonCount);
-      setCol('Lesson Price',    entry.lessonPrice);
-      setCol('Lesson Hours',    entry.lessonCount * entry.lessonLength / 60);
+      setCol('Package Quantity', entry.lessonCount);
+      setCol('Lesson Length',    entry.lessonLength);
+      setCol('Lesson Quantity',  entry.lessonCount);
+      setCol('Lesson Price',     entry.lessonPrice);
+      setCol('Lesson Hours',     entry.lessonCount * entry.lessonLength / 60);
 
       // Letter type
       setCol('Letter Type', 'returning');
@@ -1399,12 +1399,13 @@ function applyReregistrationOverwrites(billingSheet, reregMap, formStudentIds) {
     var norm = UtilityScriptLibrary.normalizeHeader;
     var headerMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
 
-    var studentIdCol  = headerMap[norm('Student ID')];
-    var lessonQtyCol  = headerMap[norm('Lesson Quantity')];
-    var lessonHrsCol  = headerMap[norm('Lesson Hours')];
-    var lessonLenCol  = headerMap[norm('Lesson Length')];
+    var studentIdCol   = headerMap[norm('Student ID')];
+    var lessonQtyCol   = headerMap[norm('Lesson Quantity')];
+    var lessonHrsCol   = headerMap[norm('Lesson Hours')];
+    var lessonLenCol   = headerMap[norm('Lesson Length')];
     var lessonPriceCol = headerMap[norm('Lesson Price')];
-    var enrollmentCol = headerMap[norm('Enrollment')];
+    var enrollmentCol  = headerMap[norm('Enrollment')];
+    var pkgQtyCol      = headerMap[norm('Package Quantity')];
 
     if (!studentIdCol) throw new Error('Student ID column not found in billing sheet');
 
@@ -1428,6 +1429,7 @@ function applyReregistrationOverwrites(billingSheet, reregMap, formStudentIds) {
       if (lessonLenCol)   billingSheet.getRange(sheetRow, lessonLenCol).setValue(entry.lessonLength);
       if (lessonPriceCol) billingSheet.getRange(sheetRow, lessonPriceCol).setValue(entry.lessonPrice);
       if (enrollmentCol)  billingSheet.getRange(sheetRow, enrollmentCol).setValue(entry.enrollment);
+      if (pkgQtyCol)      billingSheet.getRange(sheetRow, pkgQtyCol).setValue(entry.lessonCount);
       if (lessonHrsCol)   billingSheet.getRange(sheetRow, lessonHrsCol).setValue(
         entry.lessonCount * entry.lessonLength / 60
       );
@@ -1590,6 +1592,9 @@ function buildBillingRowFromForm(formRow, prevRow, context, rowIndex) {
   var lengthCol = context.headerMap[norm("Lesson Length")];
   if (lengthCol) newRow[lengthCol - 1] = lessonLength;
 
+  var pkgQtyCol = context.headerMap[norm("Package Quantity")];
+  if (pkgQtyCol) newRow[pkgQtyCol - 1] = quantities.totalQuantity;
+
   var timestampCol     = context.headerMap[norm("Timestamp")];
   var formTimestampCol = get("Timestamp");
   if (timestampCol && formTimestampCol !== -1) {
@@ -1599,7 +1604,6 @@ function buildBillingRowFromForm(formRow, prevRow, context, rowIndex) {
   var paymentCol = context.headerMap[norm("Payment Received")];
   if (paymentCol) newRow[paymentCol - 1] = 0;
 
-  // Extract past balance for late fee before writing VLOOKUP formulas
   var pastBalanceValue = 0;
   if (prevRow && context.prevHeaderMap) {
     var prevBalanceCol = context.prevHeaderMap[norm("Current Balance")];
@@ -1644,11 +1648,12 @@ function buildBillingRowFromPrevious(prevRow, context, rowIndex) {
 
   UtilityScriptLibrary.copyPreviousColumnToNew(newRow, prevRow, context.headerMap, context.prevHeaderMap,
                           { newCol: "Lesson Length", prevCol: "Lesson Length" });
+  UtilityScriptLibrary.copyPreviousColumnToNew(newRow, prevRow, context.headerMap, context.prevHeaderMap,
+                          { newCol: "Package Quantity", prevCol: "Package Quantity" });
 
   setProgramQuantitiesForCarryover(newRow, context, quantityCols, currencyCols);
   generateProgramFormulas(newRow, context, rowIndex, quantityCols, currencyCols);
 
-  // Extract past balance for late fee before writing VLOOKUP formulas
   var prevBalanceCol   = context.prevHeaderMap[norm("Current Balance")];
   var pastBalanceValue = prevBalanceCol ? (UtilityScriptLibrary.safeParseFloat(prevRow[prevBalanceCol - 1]) || 0) : 0;
 
@@ -2206,14 +2211,6 @@ function buildReregistrationQueue() {
   var ui   = SpreadsheetApp.getUi();
   var norm = UtilityScriptLibrary.normalizeHeader;
 
-  // Load threshold from Rates
-  var billingSS  = UtilityScriptLibrary.getWorkbook('billing');
-  var ratesSheet = billingSS.getSheetByName('Rates');
-  var rateHeaders = ratesSheet.getRange(1, 1, 1, ratesSheet.getLastColumn()).getValues()[0];
-  var rateYearCol = UtilityScriptLibrary.getMostRecentRateColumn(rateHeaders);
-  var rateMap     = UtilityScriptLibrary.buildRateMapFromSheet(ratesSheet, rateHeaders, rateYearCol);
-  var threshold   = parseFloat(rateMap['Reregistration Threshold']) || 4;
-
   var billingSheet = getCurrentBillingSheet();
   if (!billingSheet) {
     ui.alert('❌ No active billing sheet found.');
@@ -2226,19 +2223,9 @@ function buildReregistrationQueue() {
     return;
   }
 
-  // Warn if existing entries
-  if (queueSheet.getLastRow() > 1) {
-    var response = ui.alert(
-      'Rebuild Queue',
-      'The Reregistration Queue already has entries. Rebuild from current data? This will clear all existing entries.',
-      ui.ButtonSet.YES_NO
-    );
-    if (response !== ui.Button.YES) return;
-  }
-
   // Read billing sheet
-  var billingHeaderMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
-  var billingData      = billingSheet.getDataRange().getValues();
+  var billingHeaderMap     = UtilityScriptLibrary.getHeaderMap(billingSheet);
+  var billingData          = billingSheet.getDataRange().getValues();
 
   var bStudentIdCol        = billingHeaderMap[norm('Student ID')];
   var bFirstNameCol        = billingHeaderMap[norm('Student First Name')];
@@ -2250,10 +2237,30 @@ function buildReregistrationQueue() {
   var bParentIdCol         = billingHeaderMap[norm('Parent ID')];
   var bParentFirstCol      = billingHeaderMap[norm('Parent First Name')];
   var bParentLastCol       = billingHeaderMap[norm('Parent Last Name')];
+  var bPkgQtyCol           = billingHeaderMap[norm('Package Quantity')];
 
   if (!bStudentIdCol || !bEnrollmentCol || !bLessonsRemainingCol || !bParentIdCol) {
     ui.alert('❌ Required columns not found in billing sheet.');
     return;
+  }
+
+  // Build set of students who have already responded (unprocessed reregistration entry exists)
+  var respondedStudentIds = {};
+  var reregSheet = UtilityScriptLibrary.getSheet('reregistration');
+  if (reregSheet && reregSheet.getLastRow() > 1) {
+    var reregHeaderMap  = UtilityScriptLibrary.getHeaderMap(reregSheet);
+    var reregData       = reregSheet.getDataRange().getValues();
+    var rStudentIdCol   = reregHeaderMap[norm('Student ID')];
+    var rProcessedCol   = reregHeaderMap[norm('Processed')];
+    if (rStudentIdCol && rProcessedCol) {
+      for (var r = 1; r < reregData.length; r++) {
+        var processed = reregData[r][rProcessedCol - 1];
+        if (!processed) {
+          var sid = String(reregData[r][rStudentIdCol - 1] || '').trim();
+          if (sid) respondedStudentIds[sid] = true;
+        }
+      }
+    }
   }
 
   // Build parent email lookup
@@ -2269,60 +2276,114 @@ function buildReregistrationQueue() {
     if (pid) parentEmailMap[pid] = email;
   }
 
-  // Find qualifying students
-  var queueRows = [];
+  // Build map of qualifying students from billing sheet
+  // key: studentId, value: data object
+  var qualifyingMap = {};
   for (var i = 1; i < billingData.length; i++) {
-    var row        = billingData[i];
-    var studentId  = String(row[bStudentIdCol - 1] || '').trim();
-    var enrollment = String(row[bEnrollmentCol - 1] || '').trim();
+    var row         = billingData[i];
+    var studentId   = String(row[bStudentIdCol - 1] || '').trim();
+    var enrollment  = String(row[bEnrollmentCol - 1] || '').trim();
     var lessonsLeft = parseFloat(row[bLessonsRemainingCol - 1]);
+    var pkgQty      = bPkgQtyCol ? parseFloat(row[bPkgQtyCol - 1]) : NaN;
 
     if (!studentId) continue;
     if (enrollment === 'Not enrolled') continue;
-    if (isNaN(lessonsLeft) || lessonsLeft > threshold) continue;
+    if (isNaN(lessonsLeft)) continue;
+
+    // Per-package threshold: 4-lesson package threshold is 1, all others 3
+    var threshold = (!isNaN(pkgQty) && pkgQty <= 4) ? 1 : 3;
+    if (lessonsLeft > threshold) continue;
+
+    // Skip students who have already submitted a reregistration response
+    if (respondedStudentIds[studentId]) continue;
 
     var parentId  = String(row[bParentIdCol - 1] || '').trim();
     var lastRecon = bLastReconCol ? row[bLastReconCol - 1] : '';
 
-    queueRows.push([
-      row[bLastNameCol - 1],          // Student Last Name
-      row[bFirstNameCol - 1],         // Student First Name
-      studentId,                       // Student ID
-      row[bTeacherIdCol - 1],         // Teacher ID
-      enrollment,                      // Enrollment
-      lessonsLeft,                     // Lessons Remaining
-      lastRecon,                       // Last Reconciliation Date
-      parentId,                        // Parent ID
-      row[bParentFirstCol - 1],       // Parent First Name
-      row[bParentLastCol - 1],        // Parent Last Name
-      parentEmailMap[parentId] || '', // Parent Email
-      false,                           // Send?
-      ''                               // Sent
-    ]);
+    qualifyingMap[studentId] = {
+      lastName:     row[bLastNameCol - 1],
+      firstName:    row[bFirstNameCol - 1],
+      studentId:    studentId,
+      teacherId:    row[bTeacherIdCol - 1],
+      enrollment:   enrollment,
+      lessonsLeft:  lessonsLeft,
+      lastRecon:    lastRecon,
+      parentId:     parentId,
+      parentFirst:  row[bParentFirstCol - 1],
+      parentLast:   row[bParentLastCol - 1],
+      parentEmail:  parentEmailMap[parentId] || ''
+    };
   }
 
-  // Write queue sheet
-  queueSheet.clearContents();
-
+  // Read existing queue to preserve Send?/Sent state
   var headers = [
     'Student Last Name', 'Student First Name', 'Student ID', 'Teacher ID', 'Enrollment',
     'Lessons Remaining', 'Last Reconciliation Date', 'Parent ID', 'Parent First Name',
     'Parent Last Name', 'Parent Email', 'Send?', 'Sent'
   ];
 
+  var existingQueueMap = {};  // studentId -> { sendFlag, sent, rowIndex }
+  if (queueSheet.getLastRow() > 1) {
+    var qHeaderMap  = UtilityScriptLibrary.getHeaderMap(queueSheet);
+    var qData       = queueSheet.getDataRange().getValues();
+    var qStudentCol = qHeaderMap[norm('Student ID')];
+    var qSendCol    = qHeaderMap[norm('Send?')];
+    var qSentCol    = qHeaderMap[norm('Sent')];
+
+    if (qStudentCol) {
+      for (var q = 1; q < qData.length; q++) {
+        var qStudentId = String(qData[q][qStudentCol - 1] || '').trim();
+        if (qStudentId) {
+          existingQueueMap[qStudentId] = {
+            sendFlag: qSendCol ? qData[q][qSendCol - 1] : false,
+            sent:     qSentCol ? qData[q][qSentCol - 1] : ''
+          };
+        }
+      }
+    }
+  }
+
+  // Build new queue rows:
+  // - Keep qualifying students, preserving Send?/Sent if they were already in queue
+  // - Drop students who have responded or no longer qualify
+  // - Update lesson counts for existing rows
+  var newQueueRows = [];
+  for (var studentId in qualifyingMap) {
+    if (!qualifyingMap.hasOwnProperty(studentId)) continue;
+    var s        = qualifyingMap[studentId];
+    var existing = existingQueueMap[studentId] || { sendFlag: false, sent: '' };
+
+    newQueueRows.push([
+      s.lastName,
+      s.firstName,
+      s.studentId,
+      s.teacherId,
+      s.enrollment,
+      s.lessonsLeft,
+      s.lastRecon,
+      s.parentId,
+      s.parentFirst,
+      s.parentLast,
+      s.parentEmail,
+      existing.sendFlag,
+      existing.sent
+    ]);
+  }
+
+  // Rewrite queue sheet
+  queueSheet.clearContents();
   queueSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   queueSheet.setFrozenRows(1);
 
-  if (queueRows.length > 0) {
-    queueSheet.getRange(2, 1, queueRows.length, headers.length).setValues(queueRows);
-    queueSheet.getRange(2, 12, queueRows.length, 1).insertCheckboxes();
+  if (newQueueRows.length > 0) {
+    queueSheet.getRange(2, 1, newQueueRows.length, headers.length).setValues(newQueueRows);
+    queueSheet.getRange(2, 12, newQueueRows.length, 1).insertCheckboxes();
   }
 
   UtilityScriptLibrary.debugLog('buildReregistrationQueue', 'SUCCESS',
-    'Queue built', queueRows.length + ' students at or below threshold of ' + threshold, '');
+    'Queue refreshed', newQueueRows.length + ' student(s) awaiting reregistration', '');
 
-  ui.alert('✅ Reregistration Queue built: ' + queueRows.length +
-    ' student(s) at or below ' + threshold + ' lessons remaining.');
+  ui.alert('✅ Reregistration Queue refreshed: ' + newQueueRows.length + ' student(s) awaiting reregistration.');
 }
 
 function buildTemplateVariables(studentData, billingData, templateType) {
