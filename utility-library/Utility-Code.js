@@ -2,7 +2,7 @@
 ================================================================================
 UTILITY LIBRARY CODE
 ================================================================================
-Version: 89
+Version: 90
 Total Functions: 128 (126 standard + 2 EnvironmentManager methods)
 Documentation: See Utility-Functions.md
 ================================================================================
@@ -960,9 +960,9 @@ function createMonthlyAttendanceSheet(workbook, monthName, rosterData) {
     
     setupAttendanceHeaders(sheet);
     
-    var teacherName = extractTeacherNameFromWorkbook(workbook);
-    if (teacherName) {
-      var groupEntries = getTeacherGroupAssignments(teacherName);
+    var teacherId = extractTeacherIdFromWorkbook(workbook);
+    if (teacherId) {
+      var groupEntries = getTeacherGroupAssignments(teacherId);
       if (groupEntries.length > 0) {
         createGroupSections(sheet, groupEntries);
         debugLog('createMonthlyAttendanceSheet', 'INFO', 'Created group sections', groupEntries.length + ' groups', '');
@@ -1504,51 +1504,45 @@ function findColumnByPartialName(headers, searchTerm) {
 }
 
 function findParentRow(parentsSheet, parentId, fallbackKey) {
-  var data = parentsSheet.getDataRange().getValues();
-  var headers = data[0];
-  var idCol = -1;
-  var lookupCol = -1;
-  
-  // Debug the headers first
-  console.log("findParentRow - Available headers: " + JSON.stringify(headers));
-  
-  for (var i = 0; i < headers.length; i++) {
-    var normalizedHeader = normalizeHeader(headers[i]);
-    if (normalizedHeader === 'parentid') {
-      idCol = i;
-      console.log("Found Parent ID column at index: " + i);
+  try {
+    var data = parentsSheet.getDataRange().getValues();
+    var headers = data[0];
+    var idCol = -1;
+    var lookupCol = -1;
+
+    for (var i = 0; i < headers.length; i++) {
+      var normalizedHeader = normalizeHeader(headers[i]);
+      if (normalizedHeader === 'parentid') idCol = i;
+      if (normalizedHeader === 'parentlookup') lookupCol = i;
     }
-    if (normalizedHeader === 'parentlookup') {
-      lookupCol = i;
-      console.log("Found Parent Lookup column at index: " + i);
+
+    if (idCol === -1 || lookupCol === -1) {
+      debugLog('findParentRow', 'ERROR', 'Missing required columns',
+               'Parent ID col: ' + idCol + ', Parent Lookup col: ' + lookupCol, '');
+      throw new Error("Missing 'Parent ID' or 'Parent Lookup' column in Parents sheet.");
     }
-  }
-  
-  if (idCol === -1 || lookupCol === -1) {
-    console.log("❌ Missing columns - idCol: " + idCol + ", lookupCol: " + lookupCol);
-    throw new Error("Missing 'Parent ID' or 'Parent Lookup' column in Parents sheet.");
-  }
-  
-  // Debug logging
-  console.log("findParentRow - Searching for parentId: '" + parentId + "', fallbackKey: '" + fallbackKey + "'");
-  console.log("Found " + (data.length - 1) + " existing parent rows to check");
-  
-  for (var j = 1; j < data.length; j++) {
-    var row = data[j];
-    var rowId = (row[idCol] || '').toString().trim();
-    var rowKey = (row[lookupCol] || '').toString().toLowerCase().trim();
-    
-    console.log("Row " + j + " - ID: '" + rowId + "', Key: '" + rowKey + "', Comparing to: '" + fallbackKey + "'");
-    console.log("Match check - ID match: " + (rowId === parentId) + ", Key match: " + (rowKey === fallbackKey));
-    
-    if (rowId === parentId || rowKey === fallbackKey) {
-      console.log("✅ Found match at row " + (j + 1));
-      return j + 1;
+
+    debugLog('findParentRow', 'DEBUG', 'Searching for parent',
+             'Parent ID: "' + parentId + '", Key: "' + fallbackKey + '", Rows to check: ' + (data.length - 1), '');
+
+    for (var j = 1; j < data.length; j++) {
+      var rowId = (data[j][idCol] || '').toString().trim();
+      var rowKey = (data[j][lookupCol] || '').toString().toLowerCase().trim();
+
+      if (rowId === parentId || rowKey === fallbackKey) {
+        debugLog('findParentRow', 'DEBUG', 'Found parent match', 'Row: ' + (j + 1) + ', ID: ' + rowId, '');
+        return j + 1;
+      }
     }
+
+    debugLog('findParentRow', 'DEBUG', 'No parent match found',
+             'Parent ID: "' + parentId + '", Key: "' + fallbackKey + '"', '');
+    return -1;
+
+  } catch (error) {
+    debugLog('findParentRow', 'ERROR', 'Failed', '', error.message);
+    throw error;
   }
-  
-  console.log("❌ No parent match found");
-  return -1;
 }
 
 function findStudentInContacts(contactsData, studentIdCol, targetStudentId) {
@@ -2455,54 +2449,48 @@ function getStudentIdFromRow(row, headerMap) {
   return sidCol ? row[sidCol - 1] : (idCol ? row[idCol - 1] : null);
 }
 
-function getTeacherGroupAssignments(teacherName) {
+function getTeacherGroupAssignments(teacherId) {
   try {
-    // Get Teacher Roster Lookup sheet from formResponses workbook
     var teacherLookupSheet = getSheet('teacherRosterLookup');
-    
     if (!teacherLookupSheet) {
       debugLog('getTeacherGroupAssignments', 'ERROR', 'Teacher Roster Lookup sheet not found', '', '');
       return [];
     }
-    
-    // Find teacher's group assignment using createColumnFinder
+
     var getCol = createColumnFinder(teacherLookupSheet);
-    var nameCol = getCol('Teacher Name');
+    var teacherIdCol = getCol('Teacher ID');
     var groupAssignmentCol = getCol('Group Assignment');
-    
-    if (nameCol === 0 || groupAssignmentCol === 0) {
-      debugLog('getTeacherGroupAssignments', 'ERROR', 'Required columns not found', 
-               'Name col: ' + nameCol + ', Group col: ' + groupAssignmentCol, '');
+
+    if (teacherIdCol === 0 || groupAssignmentCol === 0) {
+      debugLog('getTeacherGroupAssignments', 'ERROR', 'Required columns not found',
+               'Teacher ID col: ' + teacherIdCol + ', Group col: ' + groupAssignmentCol, '');
       return [];
     }
-    
+
     var teacherData = teacherLookupSheet.getDataRange().getValues();
     var groupAssignmentRaw = '';
-    
+
     for (var i = 1; i < teacherData.length; i++) {
-      if (teacherData[i][nameCol - 1] === teacherName) {
+      if (String(teacherData[i][teacherIdCol - 1]).trim() === String(teacherId).trim()) {
         groupAssignmentRaw = teacherData[i][groupAssignmentCol - 1] || '';
         break;
       }
     }
-    
+
     if (!groupAssignmentRaw) {
-      debugLog('getTeacherGroupAssignments', 'DEBUG', 'No group assignment found', 'Teacher: ' + teacherName, '');
+      debugLog('getTeacherGroupAssignments', 'DEBUG', 'No group assignment found', 'Teacher ID: ' + teacherId, '');
       return [];
     }
-    
-    // Parse group assignments (comma-separated)
+
     var assignedPrograms = groupAssignmentRaw.toString().split(',').map(function(p) { return p.trim(); }).filter(function(p) { return p; });
-    
-    // Get Programs List to map program names to G-IDs
+
     var billingWorkbook = getWorkbook('billing');
     var programsSheet = billingWorkbook.getSheetByName('Programs List');
-    
     if (!programsSheet) {
       debugLog('getTeacherGroupAssignments', 'ERROR', 'Programs List sheet not found', '', '');
       return [];
     }
-    
+
     var programsData = programsSheet.getDataRange().getValues();
     var getProgCol = createColumnFinder(programsSheet);
     var programNameCol = getProgCol('Program Name');
@@ -2510,19 +2498,17 @@ function getTeacherGroupAssignments(teacherName) {
     var typeCol = getProgCol('Type');
     var aliasCol = getProgCol('Alias For');
     var activeCol = getProgCol('Active');
-    
+
     if (programNameCol === 0 || groupIdCol === 0) {
       debugLog('getTeacherGroupAssignments', 'ERROR', 'Required program columns not found', '', '');
       return [];
     }
-    
+
     var groupEntries = [];
-    
-    // Process each assigned program
+
     for (var j = 0; j < assignedPrograms.length; j++) {
       var programName = assignedPrograms[j];
-      
-      // Find program in Programs List
+
       for (var k = 1; k < programsData.length; k++) {
         var row = programsData[k];
         var rowProgramName = row[programNameCol - 1];
@@ -2530,20 +2516,19 @@ function getTeacherGroupAssignments(teacherName) {
         var type = row[typeCol - 1];
         var groupId = row[groupIdCol - 1];
         var aliasFor = row[aliasCol - 1];
-        
+
         if (!isActive) continue;
-        
+
         if (rowProgramName === programName) {
           if (type === 'Package' && aliasFor) {
-            // Handle packages - expand to component programs
             var components = aliasFor.split(',').map(function(c) { return c.trim(); }).filter(function(c) { return c; });
-            
-            // Find G-IDs for each component
             for (var c = 0; c < components.length; c++) {
               var componentName = components[c];
               for (var m = 1; m < programsData.length; m++) {
                 var componentRow = programsData[m];
-                if (componentRow[programNameCol - 1] === componentName && componentRow[activeCol - 1] === true && componentRow[groupIdCol - 1]) {
+                if (componentRow[programNameCol - 1] === componentName &&
+                    componentRow[activeCol - 1] === true &&
+                    componentRow[groupIdCol - 1]) {
                   groupEntries.push({
                     groupId: componentRow[groupIdCol - 1],
                     groupName: componentName
@@ -2552,7 +2537,6 @@ function getTeacherGroupAssignments(teacherName) {
               }
             }
           } else if (groupId) {
-            // Individual program with G-ID
             groupEntries.push({
               groupId: groupId,
               groupName: programName
@@ -2562,12 +2546,14 @@ function getTeacherGroupAssignments(teacherName) {
         }
       }
     }
-    
-    debugLog('getTeacherGroupAssignments', 'INFO', 'Found group assignments', 'Teacher: ' + teacherName + ', Groups: ' + groupEntries.length, '');
+
+    debugLog('getTeacherGroupAssignments', 'INFO', 'Found group assignments',
+             'Teacher ID: ' + teacherId + ', Groups: ' + groupEntries.length, '');
     return groupEntries;
-    
+
   } catch (error) {
-    debugLog('getTeacherGroupAssignments', 'ERROR', 'Error getting teacher group assignments', 'Teacher: ' + teacherName, error.message);
+    debugLog('getTeacherGroupAssignments', 'ERROR', 'Error getting teacher group assignments',
+             'Teacher ID: ' + teacherId, error.message);
     return [];
   }
 }

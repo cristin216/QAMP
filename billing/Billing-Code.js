@@ -373,7 +373,7 @@ function sendReregistrationLinks() {
   var ui   = SpreadsheetApp.getUi();
   var norm = UtilityScriptLibrary.normalizeHeader;
 
-  var webAppUrl = UtilityScriptLibrary.getConfig()[UtilityScriptLibrary.getEnvironment()].webAppUrl;
+  var webAppUrl = UtilityScriptLibrary.getConfig()[UtilityScriptLibrary.EnvironmentManager.get()].webAppUrl;
   if (!webAppUrl) {
     ui.alert('❌ Web app URL not configured. Add WEBAPP_URL to Script Properties.');
     return;
