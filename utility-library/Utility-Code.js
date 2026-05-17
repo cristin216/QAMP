@@ -1445,6 +1445,22 @@ function extractSeasonFromSemester(semesterName) {
   }
 }
 
+function extractTeacherIdFromWorkbook(workbook) {
+  try {
+    var title = workbook.getName();
+    var match = title.match(/QAMP\s+\d{4}\s+\S+\s+(T\d+)/);
+    if (match && match[1]) {
+      debugLog('extractTeacherIdFromWorkbook', 'DEBUG', 'Extracted teacher ID', 'ID: ' + match[1], '');
+      return match[1];
+    }
+    debugLog('extractTeacherIdFromWorkbook', 'WARNING', 'Could not extract teacher ID from workbook title', 'Title: ' + title, '');
+    return null;
+  } catch (error) {
+    debugLog('extractTeacherIdFromWorkbook', 'ERROR', 'Error extracting teacher ID', '', error.message);
+    return null;
+  }
+}
+
 function extractTeacherNameFromWorkbook(workbook) {
   try {
     // Extract teacher name from workbook title
