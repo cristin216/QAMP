@@ -1120,7 +1120,7 @@ function convertStudentInfoToAttendanceObject(studentInfo) {
 
 function createInvoiceLogSheet(spreadsheet) {
   try {
-    UtilityScriptLibrary.debugLog('Creating Invoice Log sheet');
+    UtilityScriptLibrary.debugLog('createInvoiceLogSheet', 'INFO', 'Starting', spreadsheet.getName(), '');
     
     // Create the sheet
     var sheet = spreadsheet.insertSheet('Invoice Log');
@@ -1131,11 +1131,11 @@ function createInvoiceLogSheet(spreadsheet) {
     // Apply formatting
     formatInvoiceLogSheet(sheet);
     
-    UtilityScriptLibrary.debugLog('✅ Successfully created Invoice Log sheet');
+    UtilityScriptLibrary.debugLog('createInvoiceLogSheet', 'SUCCESS', 'Created', spreadsheet.getName(), '');
     return sheet;
     
   } catch (error) {
-    UtilityScriptLibrary.debugLog('❌ Error creating Invoice Log sheet: ' + error.message);
+    UtilityScriptLibrary.debugLog('createInvoiceLogSheet', 'ERROR', 'Failed', spreadsheet.getName(), error.message);
     throw error;
   }
 }
@@ -1639,7 +1639,7 @@ function getActiveStudentsFromRoster(rosterSheet) {
 
 function getActiveTeachersForDropdown() {
   try {
-    var lookupSheet = getTeacherRosterLookupSheet();
+    var lookupSheet = UtilityScriptLibrary.getSheet('teacherRosterLookup');
 
     if (!lookupSheet || lookupSheet.getLastRow() <= 1) {
       UtilityScriptLibrary.debugLog('getActiveTeachersForDropdown', 'WARNING', 'Teacher Roster Lookup sheet not found or empty', '', '');
@@ -1680,7 +1680,7 @@ function getActiveTeachersForDropdown() {
 
 function getAllTeachersWithGroupAssignments() {
   try {
-    var lookupSheet = getTeacherRosterLookupSheet();
+    var lookupSheet = UtilityScriptLibrary.getSheet('teacherRosterLookup');
 
     if (!lookupSheet) {
       UtilityScriptLibrary.debugLog('getAllTeachersWithGroupAssignments', 'WARNING', 'Teacher Roster Lookup sheet not found', '', '');
@@ -1978,7 +1978,7 @@ function getOrCreateRosterFromTemplate(teacherInfo, rosterFolder, year, semester
 
 function getTeacherInfoByDisplayName(displayName) {
   try {
-    var lookupSheet = getTeacherRosterLookupSheet();
+    var lookupSheet = UtilityScriptLibrary.getSheet('teacherRosterLookup');
 
     if (!lookupSheet || lookupSheet.getLastRow() <= 1) {
       UtilityScriptLibrary.debugLog('getTeacherInfoByDisplayName', 'WARNING', 'Teacher Roster Lookup sheet not found or empty', '', '');
@@ -2024,7 +2024,7 @@ function getTeacherInfoByDisplayName(displayName) {
 
 function getTeacherInfoByFullName(firstName, lastName) {
   try {
-    var lookupSheet = getTeacherRosterLookupSheet();
+    var lookupSheet = UtilityScriptLibrary.getSheet('teacherRosterLookup');
 
     if (!lookupSheet || lookupSheet.getLastRow() <= 1) {
       UtilityScriptLibrary.debugLog('getTeacherInfoByFullName', 'WARNING', 'Teacher Roster Lookup sheet not found or empty', '', '');
@@ -2069,11 +2069,6 @@ function getTeacherInfoByFullName(firstName, lastName) {
     UtilityScriptLibrary.debugLog('getTeacherInfoByFullName', 'ERROR', 'Failed', firstName + ' ' + lastName, error.message);
     return null;
   }
-}
-
-function getTeacherRosterLookupSheet() {
-  var activeSpreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  return activeSpreadsheet.getSheetByName("Teacher Roster Lookup");
 }
 
 function getYearRosterFolders(previousYear, newYear) {
@@ -2165,28 +2160,6 @@ function loadStudentMapFromContacts() {
     Logger.log('❌ Error loading student map: ' + error.message);
     throw error;
   }
-}
-
-function logSheetHeaders() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheets = ss.getSheets();
-  var output = [];
-  
-  for (var i = 0; i < sheets.length; i++) {
-    var sheet = sheets[i];
-    var name = sheet.getName();
-    var lastCol = sheet.getLastColumn();
-    
-    if (lastCol === 0) {
-      output.push(name + ': [empty]');
-      continue;
-    }
-    
-    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-    output.push(name + ': ' + headers.filter(String).join(' | '));
-  }
-  
-  Logger.log(output.join('\n\n'));
 }
 
 function populateRosterWithContinuingStudents(workbook, semesterName, students) {
@@ -2615,7 +2588,7 @@ function processRoster(formData, sheet, editedRow, headerMap, fieldMap, studentI
       return;
     }
 
-    var lookupSheet = getTeacherRosterLookupSheet();
+    var lookupSheet = UtilityScriptLibrary.getSheet('teacherRosterLookup');
     if (!lookupSheet) {
       throw new Error('Teacher Roster Lookup sheet not found');
     }
@@ -3603,7 +3576,7 @@ function updateStudentWithParentId(contactsSheet, studentRow, parentId) {
 
 function updateTeacherRosterLookup(teacherId, fileUrl) {
   try {
-    var lookupSheet = getTeacherRosterLookupSheet();
+    var lookupSheet = UtilityScriptLibrary.getSheet('teacherRosterLookup');
 
     if (!lookupSheet) {
       UtilityScriptLibrary.debugLog('updateTeacherRosterLookup', 'ERROR', 'Teacher Roster Lookup sheet not found', '', '');
