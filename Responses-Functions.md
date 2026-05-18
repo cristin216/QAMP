@@ -3,7 +3,7 @@
 WORKBOOK DOCUMENTATION
 ================================================================================
   Workbook Name: Responses
-  Most Recent version: 116
+  Most Recent version: 117
 
   Primary Purpose:
       Stores all form submissions, teacher and student metadata, semester registration
@@ -142,7 +142,7 @@ WORKBOOK DOCUMENTATION
 ================================================================================
 RESPONSES FUNCTION DIRECTORY
 ================================================================================
-    Total Functions: 76
+    Total Functions: 75
 
     This directory provides a quick reference for all functions in Responses script.
     Parameters marked with ? are optional.
@@ -200,7 +200,6 @@ RESPONSES FUNCTION DIRECTORY
     getTeacherRosterLookupSheet
     getYearRosterFolders
     handleFormEdit
-    handleReturningStudentSubmit
     hasMonthBeenInvoiced
     logSheetHeaders
     loadStudentMapFromContacts
@@ -555,16 +554,6 @@ RESPONSES FUNCTION DIRECTORY
         Local functions used: shouldProcessEdit(), processSingleRow()
         Utility functions used: debugLog(), getHeaderMap(), normalizeHeader()
 
-    handleReturningStudentSubmit(e) -> void
-        Event handler for new submissions to the Returning Student Responses sheet.
-        Acquires a script lock, extracts returning student form data using the returning
-        student field map, matches against the current semester sheet, and calls
-        processSingleRow() to complete student processing.
-        Category: EVENT_HANDLER
-        Local functions used: processSingleRow()
-        Utility functions used: debugLog(), getSheet(), getHeaderMap(), getFieldMappingFromSheet(),
-                                getCurrentSemesterName()
-
     hasMonthBeenInvoiced(sheet) -> Boolean
         Checks if a month attendance sheet has already been invoiced.
         Looks for "Invoiced" status in metadata or specific cells.
@@ -845,9 +834,8 @@ RESPONSES FUNCTION DIRECTORY
       updateStudentWithParentId
       updateTeacherRosterLookup
 
-    EVENT_HANDLER (3 functions):
+    EVENT_HANDLER (2 functions):
       handleFormEdit
-      handleReturningStudentSubmit
       onOpen
 
     ROSTER_OPERATIONS (9 functions):
