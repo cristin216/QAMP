@@ -3,7 +3,7 @@
 RESPONSES CODE
 ================================================================================
 Version: 117
-Total Functions: 75
+Total Functions: 73
 Documentation: See Responses-Functions.md
 ================================================================================
 */
