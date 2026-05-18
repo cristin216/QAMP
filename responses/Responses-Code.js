@@ -2613,11 +2613,11 @@ function processPendingAssignments() {
       try {
         processSingleRow(sheet, pendingRows[i], headerMap);
         successCount++;
-        UtilityScriptLibrary.debugLog('✅ Processed row ' + pendingRows[i]);
+        UtilityScriptLibrary.debugLog('processPendingAssignments', 'INFO', 'Processed row', 'Row: ' + pendingRows[i], '');
       } catch (error) {
         errorCount++;
         errors.push('Row ' + pendingRows[i] + ': ' + error.message);
-        UtilityScriptLibrary.debugLog('❌ Error on row ' + pendingRows[i] + ': ' + error.message);
+        UtilityScriptLibrary.debugLog('processPendingAssignments', 'ERROR', 'Failed to process row', 'Row: ' + pendingRows[i], error.message);
       }
     }
     
@@ -2633,7 +2633,7 @@ function processPendingAssignments() {
     
   } catch (error) {
     SpreadsheetApp.getUi().alert('Error: ' + error.message);
-    UtilityScriptLibrary.debugLog('❌ Batch processing error: ' + error.message);
+    UtilityScriptLibrary.debugLog('processPendingAssignments', 'ERROR', 'Batch processing failed', '', error.message);
   }
 }
 
@@ -2900,6 +2900,36 @@ function processSingleRow(sheet, row, headerMap) {
         UtilityScriptLibrary.debugLog('processSingleRow', 'ERROR', 'Required columns not found in Year Metadata', 'Year col: ' + yearColIndex + ', Folder ID col: ' + folderIdColIndex, '');
         return;
       }
+
+      var yearRow = null;
+      for (var i = 0; i < metadataRows.length; i++) {
+        if (metadataRows[i][yearColIndex] && metadataRows[i][yearColIndex].toString() === year) {
+          yearRow = metadataRows[i];
+          break;
+        }
+      }
+      if (!yearRow) {
+        UtilityScriptLibrary.debugLog('processSingleRow', 'ERROR', 'No roster folder found for year', year, '');
+        return;
+      }
+
+      var rosterFolderId = yearRow[folderIdColIndex];
+      var rosterFolder = DriveApp.getFolderById(rosterFolderId);
+      UtilityScriptLibrary.debugLog('processSingleRow', 'DEBUG', 'Found roster folder', 'Year: ' + year, '');
+
+      processRoster(formData, sheet, row, headerMap, fieldMap, studentId, studentResult.teacherId, rosterFolder, year, semesterName);
+
+    } catch (rosterError) {
+      UtilityScriptLibrary.debugLog('processSingleRow', 'ERROR', 'Roster processing failed', 'Row: ' + row, rosterError.message);
+    }
+
+    UtilityScriptLibrary.debugLog('processSingleRow', 'SUCCESS', 'Completed', 'Student: ' + studentId + ', Row: ' + row, '');
+
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('processSingleRow', 'ERROR', 'Failed', 'Row: ' + row, error.message);
+    throw error;
+  }
+}
 
 function processStudent(formData, contactsSheet, enrollmentTerm) {
   try {
@@ -3283,7 +3313,7 @@ function setupInvoiceLogHeaders(sheet) {
     sheet.setColumnWidth(i + 1, widths[i]);
   }
   
-  UtilityScriptLibrary.debugLog('✅ Invoice Log headers set up with formatting');
+  UtilityScriptLibrary.debugLog('setupInvoiceLogHeaders', 'SUCCESS', 'Headers set up', sheet.getName(), '');
 }
 
 function setupNewRosterTemplate(sheet) {
