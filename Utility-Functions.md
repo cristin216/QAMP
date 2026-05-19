@@ -1,8 +1,8 @@
 ================================================================================
 UTILITY LIBRARY FUNCTION DIRECTORY
 ================================================================================
-    Total Functions: 131 (129 standard functions + 2 EnvironmentManager methods)
-     Most Recent version: 89
+    Total Functions: 132 (130 standard functions + 2 EnvironmentManager methods)
+     Most Recent version: 90
 
     This directory provides a quick reference for all functions in Utility script.
     Parameters marked with ? are optional. 'options' parameters are optional 
@@ -53,6 +53,7 @@ UTILITY LIBRARY FUNCTION DIRECTORY
     extractNumericLessonLength
     extractRosterData
     extractSeasonFromSemester
+    extractTeacherIdFromWorkbook
     extractTeacherNameFromWorkbook
     extractTotalLessonsFromPackages
     findColumnByPartialName
@@ -326,9 +327,10 @@ UTILITY LIBRARY FUNCTION DIRECTORY
 
     createMonthlyAttendanceSheet(workbook, monthName, rosterData) -> Sheet
         Creates a new monthly attendance sheet with student sections and formatting.
+        Extracts Teacher ID from workbook title to look up group assignments.
         Returns the newly created sheet.
         Category: SHEET_OPERATIONS
-        Dependencies: createGroupSections(), createStudentSections(), debugLog(), extractTeacherNameFromWorkbook(), formatAttendanceSheet(), protectAttendanceSheet(), setupAttendanceHeaders()
+        Dependencies: createGroupSections(), createStudentSections(), debugLog(), extractTeacherIdFromWorkbook(), formatAttendanceSheet(), protectAttendanceSheet(), setupAttendanceHeaders()
         Called by: Billing, Responses
 
     createSignOffRow(sheet) -> void
@@ -433,12 +435,19 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Dependencies: debugLog()
         Called by: Billing, Responses
 
+    extractTeacherIdFromWorkbook(workbook) -> String|null
+        Extracts Teacher ID (T####) from workbook title using pattern "QAMP [year] [LastName] [TeacherID]".
+        Returns null if the title does not match the expected pattern.
+        Category: DATA_EXTRACTION
+        Dependencies: debugLog()
+        Called by: (internal: createMonthlyAttendanceSheet)
+
     extractTeacherNameFromWorkbook(workbook) -> String|null
         Extracts teacher name from workbook title using pattern "QAMP [year] [teachername]".
         Returns null if the title does not match the expected pattern.
         Category: DATA_EXTRACTION
         Dependencies: debugLog()
-        Called by: (internal: createMonthlyAttendanceSheet)
+        Called by: 
 
     extractTotalLessonsFromPackages(qty30, qty45, qty60) -> Number
         Sums lesson quantities from all three package fields (30min, 45min, 60min).
@@ -747,9 +756,10 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Dependencies: normalizeHeader()
         Called by: Billing
 
-    getTeacherGroupAssignments(teacherName) -> Array
+    getTeacherGroupAssignments(teacherId) -> Array
         Returns array of group lesson assignments for a teacher from lookup sheet.
-        Resolves packages to component programs. Returns [{groupId, groupName}].
+        Looks up by Teacher ID column. Resolves packages to component programs.
+        Returns [{groupId, groupName}].
         Category: ROSTER
         Dependencies: createColumnFinder(), debugLog(), getSheet(), getWorkbook()
         Called by: Responses (internal: createMonthlyAttendanceSheet)
@@ -1115,11 +1125,12 @@ ATTENDANCE (1 function):
     getTemplateFolder
     getWorkbook
 
-  DATA_EXTRACTION (8 functions):
+  DATA_EXTRACTION (9 functions):
     extractLessonQuantityFromPackage
     extractNumericLessonLength
     extractRosterData
     extractSeasonFromSemester
+    extractTeacherIdFromWorkbook
     extractTeacherNameFromWorkbook
     extractTotalLessonsFromPackages
     getStudentIdFromRow

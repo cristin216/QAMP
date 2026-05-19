@@ -3,7 +3,7 @@
 UTILITY LIBRARY CODE
 ================================================================================
 Version: 90
-Total Functions: 128 (126 standard + 2 EnvironmentManager methods)
+Total Functions: 132 (130 standard + 2 EnvironmentManager methods)
 Documentation: See Utility-Functions.md
 ================================================================================
 */
