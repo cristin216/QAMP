@@ -1503,6 +1503,83 @@ function findColumnByPartialName(headers, searchTerm) {
   return -1;
 }
 
+function findMostRecentRosterSheet(workbook) {
+  try {
+    var allSheets = workbook.getSheets();
+    var rosterSheets = [];
+
+    for (var i = 0; i < allSheets.length; i++) {
+      var sheetName = allSheets[i].getName();
+      if (sheetName.indexOf(' Roster') !== -1) {
+        var season = sheetName.replace(' Roster', '').trim();
+        rosterSheets.push({ sheet: allSheets[i], season: season });
+      }
+    }
+
+    if (rosterSheets.length === 0) {
+      debugLog('findMostRecentRosterSheet', 'INFO', 'No roster sheets found in workbook', '', '');
+      return null;
+    }
+
+    var semesterMetadataSheet = getSheet('semesterMetadata');
+    if (!semesterMetadataSheet) {
+      debugLog('findMostRecentRosterSheet', 'WARNING', 'Semester Metadata sheet not found - using first roster', '', '');
+      return rosterSheets[0].sheet;
+    }
+
+    var data = semesterMetadataSheet.getDataRange().getValues();
+    var headers = data[0];
+
+    var nameCol = -1, startCol = -1;
+    for (var i = 0; i < headers.length; i++) {
+      var header = normalizeHeader(headers[i]);
+      if (header.indexOf('semester') !== -1 || header.indexOf('name') !== -1) {
+        nameCol = i;
+      } else if (header.indexOf('start') !== -1) {
+        startCol = i;
+      }
+    }
+
+    if (nameCol === -1 || startCol === -1) {
+      debugLog('findMostRecentRosterSheet', 'WARNING', 'Required columns not found in Semester Metadata - using first roster', '', '');
+      return rosterSheets[0].sheet;
+    }
+
+    var semesters = [];
+    for (var i = 1; i < data.length; i++) {
+      var row = data[i];
+      if (row[nameCol] && row[startCol]) {
+        var semesterName = row[nameCol].toString().trim();
+        var season = extractSeasonFromSemester(semesterName);
+        if (season) {
+          semesters.push({ season: season, semesterName: semesterName, startDate: new Date(row[startCol]) });
+        }
+      }
+    }
+
+    semesters.sort(function(a, b) { return b.startDate - a.startDate; });
+
+    for (var i = 0; i < semesters.length; i++) {
+      var semester = semesters[i];
+      for (var j = 0; j < rosterSheets.length; j++) {
+        if (rosterSheets[j].season === semester.season) {
+          debugLog('findMostRecentRosterSheet', 'SUCCESS', 'Found most recent roster',
+            semester.season + ' Roster (' + semester.semesterName + ')', '');
+          return rosterSheets[j].sheet;
+        }
+      }
+    }
+
+    debugLog('findMostRecentRosterSheet', 'WARNING', 'No semester match found - using first available roster',
+      rosterSheets[0].season + ' Roster', '');
+    return rosterSheets[0].sheet;
+
+  } catch (error) {
+    debugLog('findMostRecentRosterSheet', 'ERROR', 'Error finding roster sheet', '', error.message);
+    return null;
+  }
+}
+
 function findParentRow(parentsSheet, parentId, fallbackKey) {
   try {
     var data = parentsSheet.getDataRange().getValues();
@@ -2598,6 +2675,100 @@ function getTeacherIdByDisplayName(displayName) {
   }
 }
 
+function getTeacherInfoByDisplayName(displayName) {
+  try {
+    var lookupSheet = getSheet('teacherRosterLookup');
+
+    if (!lookupSheet || lookupSheet.getLastRow() <= 1) {
+      debugLog('getTeacherInfoByDisplayName', 'WARNING', 'Teacher Roster Lookup sheet not found or empty', '', '');
+      return null;
+    }
+
+    var getCol = createColumnFinder(lookupSheet);
+    var firstNameCol   = getCol('First Name');
+    var lastNameCol    = getCol('Last Name');
+    var rosterUrlCol   = getCol('Roster URL');
+    var teacherIdCol   = getCol('Teacher ID');
+    var displayNameCol = getCol('Display Name');
+    var statusCol      = getCol('Status');
+    var lastUpdatedCol = getCol('Last Updated');
+
+    if (!teacherIdCol || !displayNameCol) {
+      debugLog('getTeacherInfoByDisplayName', 'ERROR', 'Required columns not found', '', '');
+      return null;
+    }
+
+    var data = lookupSheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][displayNameCol - 1]).trim() !== displayName) continue;
+
+      return {
+        firstName:   firstNameCol   ? String(data[i][firstNameCol - 1]).trim()  : '',
+        lastName:    lastNameCol     ? String(data[i][lastNameCol - 1]).trim()   : '',
+        rosterUrl:   rosterUrlCol    ? String(data[i][rosterUrlCol - 1]).trim()  : '',
+        teacherId:   String(data[i][teacherIdCol - 1]).trim(),
+        status:      statusCol       ? String(data[i][statusCol - 1]).trim()     : '',
+        lastUpdated: lastUpdatedCol  ? data[i][lastUpdatedCol - 1]               : ''
+      };
+    }
+
+    debugLog('getTeacherInfoByDisplayName', 'WARNING', 'Display name not found', displayName, '');
+    return null;
+
+  } catch (error) {
+    debugLog('getTeacherInfoByDisplayName', 'ERROR', 'Failed', displayName, error.message);
+    return null;
+  }
+}
+
+function getTeacherInfoByFullName(firstName, lastName) {
+  try {
+    var lookupSheet = getSheet('teacherRosterLookup');
+
+    if (!lookupSheet || lookupSheet.getLastRow() <= 1) {
+      debugLog('getTeacherInfoByFullName', 'WARNING', 'Teacher Roster Lookup sheet not found or empty', '', '');
+      return null;
+    }
+
+    var getCol = createColumnFinder(lookupSheet);
+    var firstNameCol   = getCol('First Name');
+    var lastNameCol    = getCol('Last Name');
+    var rosterUrlCol   = getCol('Roster URL');
+    var teacherIdCol   = getCol('Teacher ID');
+    var statusCol      = getCol('Status');
+    var lastUpdatedCol = getCol('Last Updated');
+
+    if (!firstNameCol || !lastNameCol) {
+      debugLog('getTeacherInfoByFullName', 'ERROR', 'Required columns not found', '', '');
+      return null;
+    }
+
+    var data = lookupSheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      var rowFirstName = String(data[i][firstNameCol - 1]).trim();
+      var rowLastName  = String(data[i][lastNameCol - 1]).trim();
+      if (rowFirstName.toLowerCase() !== firstName.trim().toLowerCase()) continue;
+      if (rowLastName.toLowerCase()  !== lastName.trim().toLowerCase())  continue;
+
+      return {
+        firstName:   rowFirstName,
+        lastName:    rowLastName,
+        rosterUrl:   rosterUrlCol   ? String(data[i][rosterUrlCol - 1]).trim() : '',
+        teacherId:   teacherIdCol   ? String(data[i][teacherIdCol - 1]).trim() : '',
+        status:      statusCol      ? String(data[i][statusCol - 1]).trim()    : '',
+        lastUpdated: lastUpdatedCol ? data[i][lastUpdatedCol - 1]              : ''
+      };
+    }
+
+    debugLog('getTeacherInfoByFullName', 'WARNING', 'Teacher not found', firstName + ' ' + lastName, '');
+    return null;
+
+  } catch (error) {
+    debugLog('getTeacherInfoByFullName', 'ERROR', 'Failed', firstName + ' ' + lastName, error.message);
+    return null;
+  }
+}
+
 function getTeacherNameById(teacherId) {
   try {
     if (!teacherId || String(teacherId).trim() === '') {
@@ -3384,31 +3555,38 @@ function setupAttendanceHeaders(sheet) {
 
 function setupRosterTemplateProtection(sheet) {
   try {
-    // Protect admin columns (E through U) with warning
     protectSheetRanges(sheet, {
       columns: ['E:U'],
       warningOnly: true,
       clearExisting: true
     });
-    
-    // Set up date validation for First Lesson Date column (B)
-    var dateRange = sheet.getRange(2, 2, sheet.getMaxRows() - 1, 1);
-    var dateRule = SpreadsheetApp.newDataValidation()
-      .requireDate()
-      .setAllowInvalid(true)
-      .build();
-    dateRange.setDataValidation(dateRule);
-    
-    // Set up dropdown validation for Status column (T)
-    var statusRange = sheet.getRange(2, 20, sheet.getMaxRows() - 1, 1);
-    var statusRule = SpreadsheetApp.newDataValidation()
-      .requireValueInList(['active', 'dropped'], true)
-      .setAllowInvalid(false)
-      .build();
-    statusRange.setDataValidation(statusRule);
-    
-    debugLog('setupRosterTemplateProtection', 'INFO', 'Roster protection, date validation, and status dropdown applied', '', '');
-    
+
+    var headerMap = getHeaderMap(sheet);
+
+    var firstLessonDateCol = headerMap[normalizeHeader('First Lesson Date')];
+    if (!firstLessonDateCol) {
+      debugLog('setupRosterTemplateProtection', 'WARNING', 'First Lesson Date column not found, skipping date validation', '', '');
+    } else {
+      var dateRule = SpreadsheetApp.newDataValidation()
+        .requireDate()
+        .setAllowInvalid(false)
+        .build();
+      sheet.getRange(2, firstLessonDateCol, sheet.getMaxRows() - 1, 1).setDataValidation(dateRule);
+    }
+
+    var statusCol = headerMap[normalizeHeader('Status')];
+    if (!statusCol) {
+      debugLog('setupRosterTemplateProtection', 'WARNING', 'Status column not found, skipping status validation', '', '');
+    } else {
+      var statusRule = SpreadsheetApp.newDataValidation()
+        .requireValueInList(['active', 'dropped'], true)
+        .setAllowInvalid(false)
+        .build();
+      sheet.getRange(2, statusCol, sheet.getMaxRows() - 1, 1).setDataValidation(statusRule);
+    }
+
+    debugLog('setupRosterTemplateProtection', 'SUCCESS', 'Roster protection, date validation, and status dropdown applied', '', '');
+
   } catch (error) {
     debugLog('setupRosterTemplateProtection', 'ERROR', 'Error in roster protection', '', error.message);
   }
