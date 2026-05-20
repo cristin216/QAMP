@@ -3,7 +3,7 @@
 BILLING CODE
 ================================================================================
 Version: 167
-Total Functions: 182
+Total Functions: 180
 Documentation: See FUNCTIONS_Billing.md
 ================================================================================
 */
@@ -359,7 +359,7 @@ function sendReregistrationLinks() {
     var lessonsLeft = parseFloat(row[bLessonsRemainingCol - 1]);
     var lastRecon   = bLastReconCol ? row[bLastReconCol - 1] : '';
     var lastReconFormatted = (lastRecon instanceof Date)
-      ? Utilities.formatDate(lastRecon, Session.getScriptTimeZone(), 'MMMM d, yyyy')
+      ? UtilityScriptLibrary.formatDateFlexible(lastRecon, 'MMMM d, yyyy')
       : (lastRecon ? String(lastRecon) : '');
 
     if (!parentStudentsMap[parentId]) parentStudentsMap[parentId] = [];
@@ -404,7 +404,7 @@ function sendReregistrationLinks() {
 
   var sent      = 0;
   var failed    = 0;
-  var timestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'MM/dd/yy');
+  var timestamp = UtilityScriptLibrary.formatDateFlexible(new Date(), 'MM/dd/yy');
 
   for (var p = 0; p < parentIds.length; p++) {
     var parentId = parentIds[p];
@@ -530,47 +530,6 @@ function setupNewSemester() {
   } catch (error) {
     UtilityScriptLibrary.debugLog('setupNewSemester', 'ERROR', 'Setup failed', semesterName, error.message);
     SpreadsheetApp.getUi().alert('❌ Error: ' + error.message);
-  }
-}
-
-function setupRosterTemplateProtection(sheet) {
-  try {
-    // Protect admin columns (E through U) with warning
-    var adminRange = sheet.getRange(1, 5, sheet.getMaxRows(), 17);
-    var protection = adminRange.protect();
-    protection.setDescription('Admin columns - automated data only');
-    protection.setWarningOnly(true);
-
-    // Set up date validation for First Lesson Date column
-    var firstLessonDateCol = UtilityScriptLibrary.getHeaderMap(sheet)[UtilityScriptLibrary.normalizeHeader('First Lesson Date')];
-    var dateRange = firstLessonDateCol ? sheet.getRange(2, firstLessonDateCol, sheet.getMaxRows() - 1, 1) : null;
-    if (!dateRange) {
-      UtilityScriptLibrary.debugLog('setupRosterTemplateProtection', 'WARNING', 'First Lesson Date column not found, skipping date validation', '', '');
-    } else {
-      var dateRule = SpreadsheetApp.newDataValidation()
-        .requireDate()
-        .setAllowInvalid(false)
-        .build();
-      dateRange.setDataValidation(dateRule);
-    }
-
-    // Set up dropdown validation for Status column
-    var statusCol = UtilityScriptLibrary.getHeaderMap(sheet)[UtilityScriptLibrary.normalizeHeader('Status')];
-    var statusRange = statusCol ? sheet.getRange(2, statusCol, sheet.getMaxRows() - 1, 1) : null;
-    if (!statusRange) {
-      UtilityScriptLibrary.debugLog('setupRosterTemplateProtection', 'WARNING', 'Status column not found, skipping status validation', '', '');
-    } else {
-      var statusRule = SpreadsheetApp.newDataValidation()
-        .requireValueInList(['active', 'dropped'], true)
-        .setAllowInvalid(false)
-        .build();
-      statusRange.setDataValidation(statusRule);
-    }
-
-    UtilityScriptLibrary.debugLog('setupRosterTemplateProtection', 'SUCCESS', 'Roster protection, date validation, and status dropdown applied', '', '');
-
-  } catch (error) {
-    UtilityScriptLibrary.debugLog('setupRosterTemplateProtection', 'ERROR', 'Error in roster protection', '', error.message);
   }
 }
 
@@ -1576,7 +1535,7 @@ function buildDocumentFileName(studentData, billingData, documentType, deliveryM
     invoiceNumber = billingData.invoiceNumber;
   } else {
     // Fallback: create invoice number format using student ID and current date
-    var today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
+    var today = UtilityScriptLibrary.formatDateFlexible(new Date(), 'yyyyMMdd');
     invoiceNumber = studentData.studentId + '-' + today;
   }
   
@@ -3856,7 +3815,7 @@ function expandSheetAttendanceRows(sheet) {
         currentStudent = String(studentId).trim();
         
         // Extract numeric lesson length from header (strips " minutes" suffix)
-        var numericLessonLength = extractNumericLessonLength(lengthValue);
+        var numericLessonLength = UtilityScriptLibrary.extractNumericLessonLength(lengthValue);
         
         var nameParts = String(studentName).split(' - ');
         var fullName = nameParts[0] ? String(nameParts[0]).trim() : '';
@@ -4220,14 +4179,6 @@ function extractDocumentNames(documents) {
   return names;
 }
 
-function extractNumericLessonLength(lengthValue) {
-  if (!lengthValue) return 30; // default
-  var strValue = String(lengthValue).trim();
-  // Extract the number from strings like "30 minutes" or just "30"
-  var match = strValue.match(/^(\d+)/);
-  return match ? parseInt(match[1], 10) : 30;
-}
-
 function extractPreviousBillingData(options) {
   var includeAll = options && options.includeAll !== undefined ? options.includeAll : false;
   
@@ -4530,106 +4481,6 @@ function findBillingRowByStudentId(billingData, studentId, studentIdColIndex) {
   }
 }
 
-function findMostRecentRosterSheet(workbook) {
-  try {
-    // Get all sheets in workbook
-    var allSheets = workbook.getSheets();
-    var rosterSheets = [];
-    
-    // Filter for roster sheets and extract seasons
-    for (var i = 0; i < allSheets.length; i++) {
-      var sheetName = allSheets[i].getName();
-      if (sheetName.indexOf(' Roster') !== -1) {
-        var season = sheetName.replace(' Roster', '').trim();
-        rosterSheets.push({
-          sheet: allSheets[i],
-          season: season
-        });
-      }
-    }
-    
-    if (rosterSheets.length === 0) {
-      UtilityScriptLibrary.debugLog("findMostRecentRosterSheet", "INFO", 
-                                    "No roster sheets found in workbook", "", "");
-      return null;
-    }
-    
-    // Get semester metadata to determine chronological order
-    var semesterMetadataSheet = UtilityScriptLibrary.getSheet('semesterMetadata');
-    if (!semesterMetadataSheet) {
-      UtilityScriptLibrary.debugLog("findMostRecentRosterSheet", "WARNING", 
-                                    "Semester Metadata sheet not found - using first roster", "", "");
-      return rosterSheets[0].sheet;
-    }
-    
-    var data = semesterMetadataSheet.getDataRange().getValues();
-    var headers = data[0];
-    
-    // Find columns
-    var nameCol = -1, startCol = -1;
-    for (var i = 0; i < headers.length; i++) {
-      var header = UtilityScriptLibrary.normalizeHeader(headers[i]);
-      if (header.indexOf('semester') !== -1 || header.indexOf('name') !== -1) {
-        nameCol = i;
-      } else if (header.indexOf('start') !== -1) {
-        startCol = i;
-      }
-    }
-    
-    if (nameCol === -1 || startCol === -1) {
-      UtilityScriptLibrary.debugLog("findMostRecentRosterSheet", "WARNING", 
-                                    "Required columns not found in Semester Metadata - using first roster", "", "");
-      return rosterSheets[0].sheet;
-    }
-    
-    // Build array of semesters with their seasons and start dates
-    var semesters = [];
-    for (var i = 1; i < data.length; i++) {
-      var row = data[i];
-      if (row[nameCol] && row[startCol]) {
-        var semesterName = row[nameCol].toString().trim();
-        var season = UtilityScriptLibrary.extractSeasonFromSemester(semesterName);
-        if (season) {
-          semesters.push({
-            season: season,
-            semesterName: semesterName,
-            startDate: new Date(row[startCol])
-          });
-        }
-      }
-    }
-    
-    // Sort semesters by start date (most recent first)
-    semesters.sort(function(a, b) {
-      return b.startDate - a.startDate;
-    });
-    
-    // Find the most recent semester that has a matching roster sheet
-    for (var i = 0; i < semesters.length; i++) {
-      var semester = semesters[i];
-      for (var j = 0; j < rosterSheets.length; j++) {
-        if (rosterSheets[j].season === semester.season) {
-          UtilityScriptLibrary.debugLog("findMostRecentRosterSheet", "SUCCESS", 
-                                        "Found most recent roster", 
-                                        semester.season + " Roster (" + semester.semesterName + ")", "");
-          return rosterSheets[j].sheet;
-        }
-      }
-    }
-    
-    // Fallback: if no match found, use first roster sheet
-    UtilityScriptLibrary.debugLog("findMostRecentRosterSheet", "WARNING", 
-                                  "No semester match found - using first available roster", 
-                                  rosterSheets[0].season + " Roster", "");
-    return rosterSheets[0].sheet;
-    
-  } catch (error) {
-    UtilityScriptLibrary.debugLog("findMostRecentRosterSheet", "ERROR", 
-                                  "Error finding roster sheet", "", error.message);
-    return null;
-  }
-}
-
 function formatRow(sheet, rowIndex, quantityCols, currencyCols) {
   UtilityScriptLibrary.debugLog('formatRow', 'DEBUG', 'Formatting row ' + rowIndex, 
                                 'Quantity cols: ' + quantityCols.length + ', Currency cols: ' + currencyCols.length, '');
@@ -4730,8 +4581,8 @@ function generateCalendarForSemester(semesterName, startDate, endDate) {
         weekEnd.setTime(endDate.getTime());
       }
       rows.push([
-        Utilities.formatDate(weekStart, Session.getScriptTimeZone(), 'MM/dd/yyyy'),
-        Utilities.formatDate(weekEnd, Session.getScriptTimeZone(), 'MM/dd/yyyy'),
+        UtilityScriptLibrary.formatDateFlexible(weekStart, 'MM/dd/yyyy'),
+        UtilityScriptLibrary.formatDateFlexible(weekEnd, 'MM/dd/yyyy'),
         semesterName
       ]);
       currentDate.setDate(currentDate.getDate() + 7);
@@ -5508,7 +5359,7 @@ function getCurrentSemesterInfo() {
         if (year) {
           var currentYear = parseInt(year[0]);
           var academicYear = `${currentYear}-${currentYear + 1}`;
-          var formattedStartDate = Utilities.formatDate(new Date(startDate), Session.getScriptTimeZone(), 'MMMM d, yyyy');
+          var formattedStartDate = UtilityScriptLibrary.formatDateFlexible(new Date(startDate), 'MMMM d, yyyy');
           
           return {
             academicYear: academicYear,
@@ -7748,7 +7599,7 @@ function processTeacherForNewAttendance(teacherId, rosterUrl, targetMonthName) {
       'Processing teacher', teacherId, '');
 
     var rosterSS = SpreadsheetApp.openByUrl(rosterUrl);
-    var rosterSheet = findMostRecentRosterSheet(rosterSS);
+    var rosterSheet = UtilityScriptLibrary.findMostRecentRosterSheet(rosterSS);
 
     if (!rosterSheet) {
       UtilityScriptLibrary.debugLog('processTeacherForNewAttendance', 'INFO',
@@ -9643,7 +9494,7 @@ function verifyAndGetParentData(parentId, lastFourPhone) {
           if (billingLastReconCol) {
             var bRecon = billingData[b][billingLastReconCol - 1];
             lastReconLookup[bId] = (bRecon instanceof Date)
-              ? Utilities.formatDate(bRecon, Session.getScriptTimeZone(), 'MMMM d, yyyy')
+              ? UtilityScriptLibrary.formatDateFlexible(bRecon, 'MMMM d, yyyy')
               : '';
           }
         }

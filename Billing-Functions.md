@@ -1,7 +1,7 @@
 ================================================================================
 BILLING FUNCTION DIRECTORY
 ================================================================================
-    Total Functions: 182
+    Total Functions: 179
     Most Recent version: 167
 
     This directory provides a quick reference for all functions in Billing script.
@@ -77,14 +77,12 @@ BILLING FUNCTION DIRECTORY
     extractBillingDataFromRow
     extractDeliveryPreference
     extractDocumentNames
-    extractNumericLessonLength
     extractPreviousBillingData
     extractProgramTotals
     extractRosterDataForAttendance
     extractStudentDataFromBillingRow
     finalizeBillingSheet
     findBillingRowByStudentId
-    findMostRecentRosterSheet
     formatRow
     generateCalendarForSemester
     generateDocumentForStudent
@@ -176,7 +174,6 @@ BILLING FUNCTION DIRECTORY
     setPastColumnFormulas
     setProgramQuantitiesForCarryover
     setupNewSemester
-    setupRosterTemplateProtection
     shouldGenerateInvoice
     shouldIncludeAgreement
     shouldIncludeDocument
@@ -203,7 +200,7 @@ BILLING FUNCTION DIRECTORY
   FUNCTION CATEGORIES:
   ================================================================================
 
-    UI_MENU (16 functions):
+    UI_MENU (15 functions):
       addLateRegistrationsUI
       getNextMonthName
       handleMonthYearCancel
@@ -218,7 +215,6 @@ BILLING FUNCTION DIRECTORY
       runRegistrationPacketGenerationUI
       runWeeklyLessonReconciliationUI
       setupNewSemester
-      setupRosterTemplateProtection
       verifyPaymentsDetailed
 
     SETUP_SEMESTER (8 functions):
@@ -352,7 +348,7 @@ BILLING FUNCTION DIRECTORY
       submitReregistration
       verifyAndGetParentData
 
-    HELPER_FUNCTIONS (45 functions):
+    HELPER_FUNCTIONS (43 functions):
       calculateTotalCreditsApplied
       collectBillingDataDetailed
       collectPaymentsDataDetailed
@@ -363,11 +359,9 @@ BILLING FUNCTION DIRECTORY
       expandTeacherAttendanceSheets
       extractBillingDataFromRow
       extractDeliveryPreference
-      extractNumericLessonLength
       extractPreviousBillingData
       extractProgramTotals
       extractStudentDataFromBillingRow
-      findMostRecentRosterSheet
       getActivePrograms
       getCurrentBillingCycleDates
       getCurrentBillingSheet
@@ -836,13 +830,6 @@ BILLING FUNCTION DIRECTORY
         Local functions used: None
         Utility functions used: None
 
-    extractNumericLessonLength(lengthValue) -> Number
-        Extracts a numeric lesson length from a string such as "30 minutes" or "30".
-        Returns numeric lesson length, defaulting to 30 if unparseable.
-        Category: HELPER_FUNCTIONS
-        Local functions used: None
-        Utility functions used: None
-
     extractPreviousBillingData(options?) -> Object
         Extracts student billing data from previous billing cycle sheet.
         Returns object with previous billing data and mappings.
@@ -887,13 +874,6 @@ BILLING FUNCTION DIRECTORY
         Category: RECONCILIATION
         Local functions used: None
         Utility functions used: debugLog()
-
-    findMostRecentRosterSheet(workbook) -> Sheet or null
-        Finds the most recent roster sheet in a teacher workbook based on Semester Metadata ordering.
-        Returns null if no roster sheets exist.
-        Category: HELPER_FUNCTIONS
-        Local functions used: None
-        Utility functions used: getSheet(), normalizeHeader(), extractSeasonFromSemester(), debugLog()
 
     formatRow(sheet, rowIndex, quantityCols, currencyCols) -> void
         Applies number formatting to a specific billing row, including currency and quantity columns.
@@ -1527,12 +1507,6 @@ BILLING FUNCTION DIRECTORY
         Local functions used: promptForSemesterName(), promptForSemesterDates(),
                               appendToSemesterMetadata()
         Utility functions used: debugLog()
-
-    setupRosterTemplateProtection(sheet) -> void
-        Sets up protection, date validation, and status dropdown on a roster template sheet.
-        Category: UI_MENU
-        Local functions used: None
-        Utility functions used: protectSheetRanges()
 
     shouldGenerateInvoice(billingData) -> Boolean
         Determines if invoice should be generated for student based on billing data.
