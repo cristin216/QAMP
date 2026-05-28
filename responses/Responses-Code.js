@@ -2095,6 +2095,60 @@ function getYearRosterFolders(previousYear, newYear) {
   return { previous: previousFolder, next: nextFolder };
 }
 
+function handleNewStudentFormSubmit(e) {
+  if (!e || !e.range) return;
+
+  var sheet = e.range.getSheet();
+  var currentSemester = UtilityScriptLibrary.getCurrentSemesterName();
+  if (!currentSemester || sheet.getName() !== String(currentSemester).trim()) return;
+
+  try {
+    var row = e.range.getRow();
+    var headerMap = UtilityScriptLibrary.getHeaderMap(sheet);
+    var fieldMapSheet = UtilityScriptLibrary.getSheet('fieldMap');
+    if (!fieldMapSheet) throw new Error('FieldMap sheet not found');
+    var fieldMap = UtilityScriptLibrary.getFieldMappingFromSheet(fieldMapSheet);
+    var formData = extractFormData(sheet, row, headerMap, fieldMap);
+
+    var email = String(formData['Email'] || '').trim();
+    if (!email) {
+      UtilityScriptLibrary.debugLog('handleNewStudentFormSubmit', 'WARNING', 'No email address found — skipping confirmation', '', '');
+      return;
+    }
+
+    var studentFirst = String(formData['Student First Name'] || '').trim();
+    var instrument   = String(formData['Instrument'] || '').trim();
+    var isAdult      = String(formData['Age'] || '').toLowerCase().indexOf('yes') === 0;
+
+    var title      = String(formData['Salutation'] || '').trim();
+    var firstName  = String(formData['Parent First Name'] || '').trim();
+    var lastName   = String(formData['Parent Last Name'] || '').trim();
+    var greeting   = (title && lastName) ? 'Dear ' + title + ' ' + lastName : 'Dear ' + (firstName || 'Music Family');
+
+    var registrationRef = isAdult
+      ? 'your registration for ' + instrument + ' lessons'
+      : 'We\'ve received ' + studentFirst + '\'s registration for ' + instrument + ' lessons';
+
+    var subject = 'Quaker Arts Summer Music Lessons \u2014 Registration Received';
+    var body = greeting + ',\n\n'
+      + (isAdult ? 'Thank you for registering! We\'ve received ' + registrationRef + '.'
+                 : 'Thank you for registering! ' + registrationRef + '.') + '\n\n'
+      + 'Here\'s what happens next:\n'
+      + '- You\'ll hear from your teacher by mid-June to arrange a lesson time and location\n'
+      + '- Once scheduling is confirmed, you\'ll receive a billing statement\n\n'
+      + 'If you have any questions in the meantime, don\'t hesitate to reach out.\n\n'
+      + 'We look forward to a great summer!\n\n'
+      + 'Warm regards,\n'
+      + 'Cristin';
+
+    UtilityScriptLibrary.sendEmail(email, subject, body);
+    UtilityScriptLibrary.debugLog('handleNewStudentFormSubmit', 'SUCCESS', 'Confirmation email sent', email, '');
+
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('handleNewStudentFormSubmit', 'ERROR', 'Failed', '', error.message);
+  }
+}
+
 function hasMonthBeenInvoiced(sheet) {
   try {
     var headerMap = UtilityScriptLibrary.getHeaderMap(sheet);

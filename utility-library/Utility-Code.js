@@ -3512,6 +3512,24 @@ function safeParseFloat(value) {
   return 0;
 }
 
+function sendEmail(to, subject, body, options) {
+  try {
+    options = options || {};
+    var params = {
+      name: 'Quaker Arts Music Program'
+    };
+    if (options.cc)       params.cc       = options.cc;
+    if (options.bcc)      params.bcc      = options.bcc;
+    if (options.htmlBody) params.htmlBody = options.htmlBody;
+
+    GmailApp.sendEmail(to, subject, body, params);
+    debugLog('sendEmail', 'SUCCESS', 'Email sent', to, '');
+  } catch (error) {
+    debugLog('sendEmail', 'ERROR', 'Failed to send email', to, error.message);
+    throw error;
+  }
+}
+
 function setCached(key, value) {
   _executionCache[key] = value;
   return value;
