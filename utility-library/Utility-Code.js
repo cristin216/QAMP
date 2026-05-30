@@ -132,7 +132,8 @@ var TEMPLATE_MAP = {
   
   // Administrative
   paymentReminder: 'Payment Reminder Letter',
-  revisedInvoice: 'Revised Invoice Letter'
+  revisedInvoice: 'Revised Invoice Letter',
+  paymentReceipt: 'Receipt',
 };
 
 /**
@@ -1919,7 +1920,7 @@ function generateDocumentFromTemplate(templateKey, variableData, fileName, desti
     };
     
   } catch (error) {
-    Logger.log('Error generating document from template: ' + error.message);
+    debugLog('generateDocumentFromTemplate', 'ERROR', 'Failed to generate document', '', error.message);
     return {
       success: false,
       error: error.message,

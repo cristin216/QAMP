@@ -52,23 +52,5 @@ function onEditContacts(e) {
 }
 
 function logSheetHeaders() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheets = ss.getSheets();
-  var output = [];
-  
-  for (var i = 0; i < sheets.length; i++) {
-    var sheet = sheets[i];
-    var name = sheet.getName();
-    var lastCol = sheet.getLastColumn();
-    
-    if (lastCol === 0) {
-      output.push(name + ': [empty]');
-      continue;
-    }
-    
-    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-    output.push(name + ': ' + headers.filter(String).join(' | '));
-  }
-  
-  Logger.log(output.join('\n\n'));
+  UtilityScriptLibrary.logAllSheetHeaders();
 }

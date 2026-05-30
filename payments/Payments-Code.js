@@ -37,7 +37,7 @@ function onEditInstallable(e) {
   try {
     receiptsFolder = DriveApp.getFolderById(config[env].receiptsFolderId);
   } catch (err) {
-    UtilityScriptLibrary.debugLog('onEditInstallable', 'ERROR', 'Cannot access receipts folder', config.receiptsFolderId, err.message);
+    UtilityScriptLibrary.debugLog('onEditInstallable', 'ERROR', 'Cannot access receipts folder', config[env].receiptsFolderId, err.message);
     return;
   }
 
@@ -88,107 +88,47 @@ function createPaymentReceiptDocument(paymentData, receiptsFolder) {
     var paymentDate = paymentData.date instanceof Date ?
                       paymentData.date :
                       new Date(paymentData.date);
-    var formattedDate = Utilities.formatDate(paymentDate, Session.getScriptTimeZone(), 'MMMM d, yyyy');
-    var dateForFilename = Utilities.formatDate(paymentDate, Session.getScriptTimeZone(), 'yyyyMMdd');
+    var formattedDate = UtilityScriptLibrary.formatDateFlexible(paymentDate, 'MMMM d, yyyy');
+    var dateForFilename = UtilityScriptLibrary.formatDateFlexible(paymentDate, 'yyyyMMdd');
 
     var amount = parseFloat(String(paymentData.amountPaid).replace(/[^0-9.-]/g, ''));
     var formattedAmount = '$' + amount.toFixed(2);
+    var paymentMethod = /cash/i.test(paymentData.comments) ? 'Cash' : 'Check';
 
     var lastName = paymentData.studentLastName || 'Payment';
     var baseFileName = 'Receipt - ' + lastName + ' - ' + dateForFilename;
 
     // Handle duplicate filenames
-    var existingFiles = receiptsFolder.getFilesByName(baseFileName + '.pdf');
-    var sequenceNumber = 1;
     var fileName = baseFileName;
-
-    if (existingFiles.hasNext()) {
+    if (receiptsFolder.getFilesByName(baseFileName + '.pdf').hasNext()) {
+      var sequenceNumber = 2;
       while (true) {
-        sequenceNumber++;
         fileName = baseFileName + ' - ' + sequenceNumber;
-        var testFiles = receiptsFolder.getFilesByName(fileName + '.pdf');
-        if (!testFiles.hasNext()) break;
+        if (!receiptsFolder.getFilesByName(fileName + '.pdf').hasNext()) break;
+        sequenceNumber++;
       }
     }
 
-    // Create Google Doc
-    var doc = DocumentApp.create(fileName);
-    var body = doc.getBody();
-    body.clear();
+    var variables = {
+      PaymentDate:   formattedDate,
+      AmountPaid:    formattedAmount,
+      PaymentMethod: paymentMethod,
+      InvoiceNumber: paymentData.invoiceNumber || '',
+      StudentId:     paymentData.studentId || '',
+      StudentName:   ((paymentData.studentFirstName || '') + ' ' + (paymentData.studentLastName || '')).trim()
+    };
 
-    body.appendParagraph('').setSpacingAfter(10);
+    var result = UtilityScriptLibrary.generateDocumentFromTemplate('paymentReceipt', variables, fileName, receiptsFolder);
 
-    var orgName = body.appendParagraph('QUAKER ARTS MUSIC PROGRAM');
-    orgName.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
-    orgName.setFontSize(16);
-    orgName.setBold(true);
-    orgName.setForegroundColor('#4a7c59');
-
-    body.appendParagraph('').setSpacingAfter(5);
-
-    var title = body.appendParagraph('PAYMENT RECEIPT');
-    title.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
-    title.setFontSize(18);
-    title.setBold(true);
-
-    body.appendParagraph('').setSpacingAfter(20);
-    body.appendHorizontalRule();
-    body.appendParagraph('').setSpacingAfter(15);
-
-    var detailsTable = [];
-    detailsTable.push(['Payment Date:', formattedDate]);
-    detailsTable.push(['Amount Paid:', formattedAmount]);
-    detailsTable.push(['Payment Method:', paymentData.paymentMethod || 'Check']);
-    if (paymentData.invoiceNumber) detailsTable.push(['Invoice Number:', paymentData.invoiceNumber]);
-    if (paymentData.studentId) detailsTable.push(['Student ID:', paymentData.studentId]);
-
-    var studentName = (paymentData.studentFirstName || '') + ' ' + (paymentData.studentLastName || '');
-    if (studentName.trim()) detailsTable.push(['Student:', studentName.trim()]);
-
-    var table = body.appendTable(detailsTable);
-    table.setBorderWidth(0);
-
-    for (var i = 0; i < table.getNumRows(); i++) {
-      var tableRow = table.getRow(i);
-      tableRow.getCell(0).setWidth(150).setPaddingBottom(5).setPaddingTop(5)
-              .editAsText().setFontSize(11).setBold(true);
-      tableRow.getCell(1).setPaddingBottom(5).setPaddingTop(5)
-              .editAsText().setFontSize(11);
+    if (!result.success) {
+      throw new Error(result.error);
     }
 
-    body.appendParagraph('').setSpacingAfter(20);
-    body.appendHorizontalRule();
-    body.appendParagraph('').setSpacingAfter(15);
-
-    var thankYou = body.appendParagraph('Thank you for your payment.');
-    thankYou.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
-    thankYou.setFontSize(11);
-    thankYou.setItalic(true);
-
-    body.appendParagraph('').setSpacingAfter(30);
-    body.appendHorizontalRule();
-    body.appendParagraph('').setSpacingAfter(10);
-
-    var footer1 = body.appendParagraph('Quaker Arts Music Program');
-    footer1.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
-    footer1.setFontSize(10);
-
-    var footer2 = body.appendParagraph('PO Box 372, Orchard Park, NY 14127');
-    footer2.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
-    footer2.setFontSize(9);
-
-    var footer3 = body.appendParagraph('info@quakermusic.org');
-    footer3.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
-    footer3.setFontSize(9);
-
-    doc.saveAndClose();
-
-    var docId = doc.getId();
-    var pdfBlob = DriveApp.getFileById(docId).getAs('application/pdf');
+    // Convert to PDF
+    var pdfBlob = DriveApp.getFileById(result.fileId).getAs('application/pdf');
     pdfBlob.setName(fileName + '.pdf');
-
     var pdfFile = receiptsFolder.createFile(pdfBlob);
-    DriveApp.getFileById(docId).setTrashed(true);
+    DriveApp.getFileById(result.fileId).setTrashed(true);
 
     return {
       success: true,
@@ -199,11 +139,15 @@ function createPaymentReceiptDocument(paymentData, receiptsFolder) {
 
   } catch (error) {
     UtilityScriptLibrary.debugLog('createPaymentReceiptDocument', 'ERROR', 'Failed to create receipt',
-                                  'Student: ' + (paymentData.studentFirstName || 'Unknown') + ' ' + (paymentData.studentLastName || ''),
-                                  error.message);
+      'Student: ' + (paymentData.studentFirstName || 'Unknown') + ' ' + (paymentData.studentLastName || ''),
+      error.message);
     return {
       success: false,
       error: error.message
     };
   }
+}
+
+function logSheetHeaders() {
+  UtilityScriptLibrary.logAllSheetHeaders();
 }
