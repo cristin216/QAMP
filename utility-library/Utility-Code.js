@@ -7,7 +7,7 @@ Total Functions: 132 (130 standard + 2 EnvironmentManager methods)
 Documentation: See Utility-Functions.md
 ================================================================================
 */
-
+// #region
 var _executionCache = {};
 
 var EnvironmentManager = (function () {
@@ -175,7 +175,7 @@ var MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'
 ];
-
+// #endregion
 function addToCurrencyCols(currencyCols, columnNumber, headerName) {
   // CURRENCY VALIDATION: Never add hours columns to currencyCols
   if (typeof columnNumber !== 'number' || columnNumber <= 0) {
@@ -1491,11 +1491,11 @@ function extractTotalLessonsFromPackages(qty30, qty45, qty60) {
 
 function findColumnByPartialName(headers, searchTerm) {
   if (!headers || !searchTerm) return -1;
-  
+
   var search = searchTerm.toLowerCase();
   for (var i = 0; i < headers.length; i++) {
     if (headers[i] && headers[i].toString().toLowerCase().indexOf(search) !== -1) {
-      return i + 1; // Return 1-based index
+      return i + 1; // 1-based index
     }
   }
   return -1;
@@ -1527,8 +1527,9 @@ function findMostRecentRosterSheet(workbook) {
 
     var data = semesterMetadataSheet.getDataRange().getValues();
     var headers = data[0];
+    var nameCol = -1;
+    var startCol = -1;
 
-    var nameCol = -1, startCol = -1;
     for (var i = 0; i < headers.length; i++) {
       var header = normalizeHeader(headers[i]);
       if (header.indexOf('semester') !== -1 || header.indexOf('name') !== -1) {
@@ -1565,8 +1566,8 @@ function findMostRecentRosterSheet(workbook) {
             semester.season + ' Roster (' + semester.semesterName + ')', '');
           return rosterSheets[j].sheet;
         }
-      }
-    }
+      } // closes inner for
+    } // closes outer for
 
     debugLog('findMostRecentRosterSheet', 'WARNING', 'No semester match found - using first available roster',
       rosterSheets[0].season + ' Roster', '');
@@ -1593,12 +1594,12 @@ function findParentRow(parentsSheet, parentId, fallbackKey) {
 
     if (idCol === -1 || lookupCol === -1) {
       debugLog('findParentRow', 'ERROR', 'Missing required columns',
-               'Parent ID col: ' + idCol + ', Parent Lookup col: ' + lookupCol, '');
+        'Parent ID col: ' + idCol + ', Parent Lookup col: ' + lookupCol, '');
       throw new Error("Missing 'Parent ID' or 'Parent Lookup' column in Parents sheet.");
     }
 
     debugLog('findParentRow', 'DEBUG', 'Searching for parent',
-             'Parent ID: "' + parentId + '", Key: "' + fallbackKey + '", Rows to check: ' + (data.length - 1), '');
+      'Parent ID: "' + parentId + '", Key: "' + fallbackKey + '", Rows to check: ' + (data.length - 1), '');
 
     for (var j = 1; j < data.length; j++) {
       var rowId = (data[j][idCol] || '').toString().trim();
@@ -1611,7 +1612,7 @@ function findParentRow(parentsSheet, parentId, fallbackKey) {
     }
 
     debugLog('findParentRow', 'DEBUG', 'No parent match found',
-             'Parent ID: "' + parentId + '", Key: "' + fallbackKey + '"', '');
+      'Parent ID: "' + parentId + '", Key: "' + fallbackKey + '"', '');
     return -1;
 
   } catch (error) {
