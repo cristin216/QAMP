@@ -145,7 +145,7 @@ function addCarryoverStudentsToNewRoster(spreadsheet, newRosterSheet, currentSem
       var lessonsRemaining = parseFloat(row[lessonsRemainingCol - 1]) || 0;
       var studentId = row[studentIdCol - 1];
 
-      if (status && status.toString().toLowerCase() === 'active' && lessonsRemaining > 0 && studentId) {
+      if (status && ['active', 'carryover', 'transferred'].indexOf(status.toString().toLowerCase()) !== -1 && lessonsRemaining > 0 && studentId) {
         studentsToCarryOver.push({
           rowIndex: i + 1,
           rowData: row,
@@ -194,7 +194,7 @@ function addCarryoverStudentsToNewRoster(spreadsheet, newRosterSheet, currentSem
           if (oldColIndex && newColIndex) newRowData[newColIndex - 1] = student.rowData[oldColIndex - 1];
         }
 
-        newRowData[newStatusCol - 1] = 'Carryover';
+        newRowData[newStatusCol - 1] = 'carryover';
 
         var systemCommentsCol = newHeaderMap['systemcomments'];
         if (systemCommentsCol) {
@@ -371,8 +371,9 @@ function addStudentToAttendanceSheetsFromDate(workbook, studentInfo, effectiveDa
 function addStudentToRosterFromData(rosterSheet, studentInfo, headerMap) {
   try {
     var norm = UtilityScriptLibrary.normalizeHeader;
-    var numCols = Object.keys(headerMap).length;
-    var newRowData = new Array(numCols).fill('');
+    var numCols = rosterSheet.getLastColumn();
+    var newRowData = [];
+    for (var i = 0; i < numCols; i++) newRowData[i] = '';
 
     var contacted        = headerMap[norm('Contacted')];
     var firstLessonDate  = headerMap[norm('First Lesson Date')];
@@ -416,7 +417,7 @@ function addStudentToRosterFromData(rosterSheet, studentInfo, headerMap) {
     if (additionalContacts) newRowData[additionalContacts - 1] = studentInfo.additionalContacts || '';
     if (hoursRemaining)   newRowData[hoursRemaining - 1]   = studentInfo.hoursRemaining || 0;
     if (lessonsRemaining) newRowData[lessonsRemaining - 1] = studentInfo.lessonsRemaining || 0;
-    if (status)           newRowData[status - 1]           = 'Active';
+    if (status)           newRowData[status - 1]           = 'active';
     if (studentId)        newRowData[studentId - 1]        = studentInfo.studentId || '';
     if (systemComments)   newRowData[systemComments - 1]   = studentInfo.systemComment || '';
 
@@ -752,7 +753,7 @@ function checkIfStudentExists(rosterSheet, studentId, headerMap) {
     for (var i = 1; i < rosterData.length; i++) {
       var existingId = rosterData[i][studentIdCol - 1];
       if (existingId && existingId.toString().trim() === studentId.toString().trim()) {
-        if (statusCol && rosterData[i][statusCol - 1] && rosterData[i][statusCol - 1].toString() === 'Carryover') {
+        if (statusCol && rosterData[i][statusCol - 1] && rosterData[i][statusCol - 1].toString() === 'carryover') {
           UtilityScriptLibrary.debugLog('checkIfStudentExists', 'DEBUG', 'Found carryover student', studentId, '');
           return 'CARRYOVER';
         }
@@ -1030,7 +1031,7 @@ function convertCarryoverToActive(rosterSheet, studentId, formData, headerMap) {
       'additionalcontacts': formData['Additional contacts'] || '',
       'hoursremaining':   0,
       'lessonsremaining': 0,
-      'status':           'Active'
+      'status':           'active'
     };
 
     for (var fieldName in updates) {
@@ -1073,7 +1074,7 @@ function convertStudentInfoToAttendanceObject(studentInfo) {
     lessonsRegistered: studentInfo.lessonsRemaining || 0,
     lessonsCompleted: 0,
     lessonsRemaining: studentInfo.lessonsRemaining || 0,
-    status: 'Active'
+    status: 'active'
   };
 }
 
@@ -1262,7 +1263,7 @@ function createStudentObjectForAttendance(studentData) {
     lessonsRegistered: studentData[2] || 0,
     lessonsCompleted: 0,
     lessonsRemaining: studentData[2] || 0,
-    status: 'Active'
+    status: 'active'
   };
 }
 
@@ -1354,7 +1355,7 @@ function extractStudentDataFromRoster(studentRow, headerMap) {
     additionalContacts: getVal('Additional contacts'),
     hoursRemaining: getVal('Hours Remaining'),
     lessonsRemaining: getVal('Lessons Remaining'),
-    status: 'Active',
+    status: 'active',
     firstLessonDate: getVal('First Lesson Date'),
     firstLessonTime: getVal('First Lesson Time'),
     comments: getVal('Comments')
@@ -2215,7 +2216,7 @@ function populateRosterWithContinuingStudents(workbook, semesterName, students) 
         s.additionalContacts,                // Q - Additional contacts
         0,                                   // R - Hours Remaining (reset; updated by sync)
         s.lessonsRemaining,                  // S - Lessons Remaining (carry forward)
-        'Carryover',                         // T - Status
+        'carryover',                         // T - Status
         s.studentId,                         // U - Student ID
         '',                                  // V - Admin Comments
         'Carried over from previous year'    // W - System Comments
@@ -2523,7 +2524,7 @@ function processReassignment() {
       var student = selectedStudents[i];
       try {
         var statusCol = oldHeaderMap['status'];
-        oldRosterSheet.getRange(student.rowNumber, statusCol).setValue('Transferred');
+        oldRosterSheet.getRange(student.rowNumber, statusCol).setValue('transferred');
 
         var rowRange = oldRosterSheet.getRange(student.rowNumber, 1, 1, 23);
         if (student.rowNumber % 2 === 0) {

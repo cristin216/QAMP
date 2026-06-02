@@ -573,7 +573,7 @@ function cascadeFormerStatus(teacherId) {
     for (var i = 1; i < data.length; i++) {
       var rowTeacherId = String(data[i][teacherIdCol - 1] || '').trim();
       if (rowTeacherId === String(teacherId).trim()) {
-        instrumentSheet.getRange(i + 1, statusCol).setValue('Former');
+        instrumentSheet.getRange(i + 1, statusCol).setValue('former');
         updatedCount++;
       }
     }
@@ -1379,7 +1379,7 @@ function extractRosterData(rosterSheet) {
       lessonsRegistered: row[getCol('Quantity')] || 0,
       lessonsCompleted: 0, // Will be calculated from lesson rows
       lessonsRemaining: row[getCol('Quantity')] || 0,
-      status: row[getCol('Status')] || 'Active'
+      status: row[getCol('Status')] || 'active'
     };
     
     // Only include active students (not dropped)
@@ -3595,7 +3595,7 @@ function setupRosterTemplateProtection(sheet) {
       debugLog('setupRosterTemplateProtection', 'WARNING', 'Status column not found, skipping status validation', '', '');
     } else {
       var statusRule = SpreadsheetApp.newDataValidation()
-        .requireValueInList(['active', 'dropped'], true)
+        .requireValueInList(['active', 'dropped', 'carryover', 'transferred'], true)
         .setAllowInvalid(false)
         .build();
       sheet.getRange(2, statusCol, sheet.getMaxRows() - 1, 1).setDataValidation(statusRule);

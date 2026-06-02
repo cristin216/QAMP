@@ -7492,8 +7492,8 @@ function processTeacherAttendanceForBilling(teacherSS, targetDate) {
     if (data.length < 3) continue; // header + sign-off + at least one lesson row
 
     // Read sign-off initials from C2 (data[1][2])
-var signOff = String(data[1][2] || '').trim();
-var sheetConfirmedDate = null;
+  var signOff = String(data[1][2] || '').trim();
+  var sheetConfirmedDate = null;
   if (signOff !== '') {
     var sheetMonthIdx = monthNames.indexOf(sheetName.trim());
     if (sheetMonthIdx !== -1) {
@@ -7555,6 +7555,7 @@ var sheetConfirmedDate = null;
 
       var hasAdminReview = (adminReviewDate instanceof Date) ||
                            (typeof adminReviewDate === 'string' && adminReviewDate !== '');
+      UtilityScriptLibrary.debugLog('processTeacherAttendanceForBilling', 'DEBUG', 'shouldSum check', 'Student: ' + studentId + ', Status: ' + status + ', Length: ' + length + ', hasAdminReview: ' + hasAdminReview + ', invoiceDate: [' + invoiceDate + '] type: ' + typeof invoiceDate, '');
       var shouldSum = (
         hasAdminReview &&
         (!invoiceDate || invoiceDate === '') &&
@@ -7619,7 +7620,7 @@ function processTeacherForNewAttendance(teacherId, rosterUrl, targetMonthName) {
       var student = allStudents[i];
       var status = (student.status || '').toString().trim();
       if (student.lessonsRemaining && student.lessonsRemaining > 0 &&
-          (status === 'Active' || status === 'Carryover')) {
+          (status === 'active' || status === 'carryover')) {
         activeStudents.push(student);
       }
     }
