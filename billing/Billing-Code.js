@@ -1313,7 +1313,7 @@ function applyWarningsToTeacherWorkbook(teacherSS, warningStudents, targetDate) 
 
 function buildBillingContext(customToday, semesterName, billingCycleName, programConfig) {
   UtilityScriptLibrary.debugLog("buildBillingContext", "INFO", "Building billing context for new cycle",
-          "Date: " + customToday.toLocaleDateString() + ", Semester: " + semesterName, "");
+          "Date: " + UtilityScriptLibrary.formatDateFlexible(customToday, 'M/d/yy') + ", Semester: " + semesterName, "");
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var formResponsesSS = UtilityScriptLibrary.getWorkbook('formResponses');
@@ -2561,7 +2561,7 @@ function continueAttendanceSheetCreation(targetMonthName, targetYear) {
                'Could not find a semester for ' + targetMonthName + ' ' + targetYear + '.\n\n' +
                'Please set up the semester first in Semester Metadata.');
       UtilityScriptLibrary.debugLog("continueAttendanceSheetCreation", "ERROR", "No semester found for date", 
-                                    targetDate.toDateString(), "");
+                                    UtilityScriptLibrary.formatDateFlexible(targetDate, 'M/d/yy'), "");
       return;
     }
     
@@ -5188,7 +5188,8 @@ function getCurrentBillingCycleDates() {
     var paymentEndDate = new Date();
 
     UtilityScriptLibrary.debugLog('getCurrentBillingCycleDates', 'SUCCESS', 'Retrieved billing cycle dates',
-      'Start: ' + paymentStartDate.toDateString() + ', End: ' + paymentEndDate.toDateString(), '');
+      'Start: ' + UtilityScriptLibrary.formatDateFlexible(paymentStartDate, 'M/d/yy') + 
+      ', End: ' + UtilityScriptLibrary.formatDateFlexible(paymentEndDate, 'M/d/yy'), '');
 
     return {
       startDate: paymentStartDate,

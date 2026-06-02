@@ -275,7 +275,7 @@ function appendToMetadataWithVerification(metadataSheet, rowData, verificationSt
     // Append the data
     metadataSheet.appendRow(rowData);
     
-    Logger.log('Successfully appended metadata with ' + verificationSteps.length + ' verification steps');
+    debugLog('appendToMetadataWithVerification', 'SUCCESS', 'Metadata appended', 'Steps: ' + verificationSteps.length, '');
     
     return {
       success: true,
@@ -285,7 +285,7 @@ function appendToMetadataWithVerification(metadataSheet, rowData, verificationSt
     };
     
   } catch (error) {
-    Logger.log('Error appending metadata with verification: ' + error.message);
+    debugLog('appendToMetadataWithVerification', 'ERROR', 'Failed to append metadata', '', error.message);
     return {
       success: false,
       error: error.message,
@@ -460,7 +460,7 @@ function bulkUpdateStudentStatus(studentsSheet, statusColumn, newValue, options)
         try {
           shouldUpdate = condition(row, k + 1);
         } catch (conditionError) {
-          Logger.log('Condition function error for row ' + (k + 1) + ': ' + conditionError.message);
+          debugLog('bulkUpdateStudentStatus', 'WARNING', 'Condition function error', 'Row: ' + (k + 1), conditionError.message);
           continue;
         }
       } else if (whereColumn && whereValue !== undefined) {
@@ -489,7 +489,7 @@ function bulkUpdateStudentStatus(studentsSheet, statusColumn, newValue, options)
       studentsSheet.getDataRange().setValues(data);
     }
     
-    Logger.log('Bulk update completed: ' + updatedCount + ' rows updated');
+    debugLog('bulkUpdateStudentStatus', 'SUCCESS', 'Bulk update completed', 'Rows updated: ' + updatedCount, '');
     
     return {
       success: true,
@@ -499,7 +499,7 @@ function bulkUpdateStudentStatus(studentsSheet, statusColumn, newValue, options)
     };
     
   } catch (error) {
-    Logger.log('Error in bulk student status update: ' + error.message);
+    debugLog('bulkUpdateStudentStatus', 'ERROR', 'Bulk update failed', '', error.message);
     return {
       success: false,
       error: error.message,
@@ -668,7 +668,7 @@ function combineDocumentsIntoPDF(documents, fileName, destinationFolder) {
         individualPdfFiles.push(individualPdf);
         
       } catch (docError) {
-        Logger.log('Error converting document ' + doc.name + ' to PDF: ' + docError.message);
+        debugLog('combineDocumentsIntoPDF', 'ERROR', 'Failed to convert document to PDF', doc.name, docError.message);
       }
     }
     
@@ -694,7 +694,7 @@ function combineDocumentsIntoPDF(documents, fileName, destinationFolder) {
     };
     
   } catch (error) {
-    Logger.log('Error creating individual PDFs: ' + error.message);
+    debugLog('combineDocumentsIntoPDF', 'ERROR', 'Failed to create individual PDFs', '', error.message);
     return {
       success: false,
       error: error.message,
@@ -798,7 +798,7 @@ function copySheetWithProtections(sourceSheet, targetWorkbook, newName, options)
       }
     }
     
-    Logger.log('Successfully copied sheet "' + sourceSheet.getName() + '" to "' + newName + '"');
+    debugLog('copySheetWithProtections', 'SUCCESS', 'Sheet copied', sourceSheet.getName() + ' → ' + newName, '');
     
     return {
       success: true,
@@ -807,7 +807,7 @@ function copySheetWithProtections(sourceSheet, targetWorkbook, newName, options)
     };
     
   } catch (error) {
-    Logger.log('Error copying sheet: ' + error.message);
+    debugLog('copySheetWithProtections', 'ERROR', 'Failed to copy sheet', '', error.message);
     return {
       success: false,
       sheet: null,
@@ -1244,7 +1244,7 @@ function documentAlreadyExists(fileName, folder) {
     var files = folder.getFilesByName(fileName);
     return files.hasNext();
   } catch (error) {
-    Logger.log('Error checking if document exists: ' + error.message);
+    debugLog('documentAlreadyExists', 'ERROR', 'Failed to check document existence', fileName, error.message);
     return false; // If we can't check, assume it doesn't exist and proceed
   }
 }
@@ -1271,7 +1271,7 @@ function executeWithErrorHandling(operation, successMessage, context, options) {
     
     // Log success
     if (logLevel !== 'NONE') {
-      Logger.log('[' + logLevel + '] ' + context + ': ' + successMessage);
+      debugLog('executeWithErrorHandling', logLevel, successMessage, context, '');
     }
     
     // Show UI feedback if requested
@@ -1289,10 +1289,7 @@ function executeWithErrorHandling(operation, successMessage, context, options) {
     var errorMessage = error.message || 'Unknown error occurred';
     
     // Log error with stack trace
-    Logger.log('[ERROR] ' + context + ': ' + errorMessage);
-    if (error.stack) {
-      Logger.log('Stack trace: ' + error.stack);
-    }
+    debugLog('executeWithErrorHandling', 'ERROR', errorMessage, context, error.stack || '');
     
     // Show UI error if requested
     if (showUI) {
@@ -1730,7 +1727,7 @@ function formatAttendanceColumns(sheet, studentCount) {
              .setSecondRowColor(STYLES.ALTERNATING_DARK.background);
     }
   } catch (e) {
-    Logger.log("Error in formatAttendanceColumns: " + e.message);
+    debugLog('formatAttendanceColumns', 'ERROR', 'Formatting failed', '', e.message);
   }
 }
 
@@ -1867,7 +1864,7 @@ function formatRosterColumns(sheet) {
              .setSecondRowColor(STYLES.ALTERNATING_DARK.background);
     }
   } catch (e) {
-    Logger.log("❌ Error in formatRosterColumns: " + e.message);
+    debugLog('formatRosterColumns', 'ERROR', 'Formatting failed', '', e.message);
   }
 }
 
@@ -2483,13 +2480,13 @@ function getSemesterForDate(targetDate) {
 
       if (targetDate >= startDate && targetDate <= endDate) {
         debugLog("getSemesterForDate", "INFO", "Found semester for date",
-                 "Date: " + targetDate.toDateString() + ", Semester: " + semesterName, "");
+                 "Date: " + formatDateFlexible(targetDate, 'M/d/yy') + ", Semester: " + semesterName, "");
         return semesterName;
       }
     }
 
     debugLog("getSemesterForDate", "WARNING", "No semester found for date",
-             targetDate.toDateString(), "");
+             formatDateFlexible(targetDate, 'M/d/yy'), "");
     return null;
 
   } catch (error) {
@@ -2988,12 +2985,12 @@ function logAllSheetHeaders() {
     var lastCol = sheet.getLastColumn();
     
     if (lastCol === 0) {
-      Logger.log(sheet.getName() + ': (empty)');
+      debugLog('logAllSheetHeaders', 'INFO', 'Sheet is empty', sheet.getName(), '');
       continue;
     }
     
     var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-    Logger.log(sheet.getName() + ': ' + headers.join(' | '));
+    debugLog('logAllSheetHeaders', 'INFO', sheet.getName(), headers.join(' | '), '');
   }
 }
 
@@ -3362,7 +3359,7 @@ function promptForHistoricalId(sheet, columnName, prefix, recordName) {
     }
     
   } catch (error) {
-    Logger.log('Error in promptForHistoricalId: ' + error.message);
+    debugLog('promptForHistoricalId', 'ERROR', 'Failed, falling back to auto-generate', '', error.message);
     // Fallback to auto-generation
     return generateNextIdDirect(sheet, columnName, prefix);
   }
@@ -3763,7 +3760,7 @@ function showConfirmationDialog(title, message, details, options) {
     return response === confirmButton;
     
   } catch (error) {
-    Logger.log('Error in showConfirmationDialog: ' + error.message);
+    debugLog('showConfirmationDialog', 'ERROR', 'Dialog failed', '', error.message);
     return false;
   }
 }
@@ -3915,7 +3912,7 @@ function updateFieldMappings(fieldMapSheet, newHeaders, sourceSheetName, options
     };
     
   } catch (error) {
-    Logger.log('Error updating field mappings: ' + error.message);
+    debugLog('updateFieldMappings', 'ERROR', 'Failed to update field mappings', '', error.message);
     return {
       success: false,
       error: error.message,
@@ -4101,7 +4098,7 @@ function validateProgramConfiguration(programSheet, options) {
     };
     
   } catch (error) {
-    Logger.log('Error validating program configuration: ' + error.message);
+    debugLog('validateProgramConfiguration', 'ERROR', 'Validation failed', '', error.message);
     return {
       success: false,
       error: error.message,
@@ -4165,7 +4162,7 @@ function verifyConfigurationWithUser(title, itemName, data, formatFunction, opti
         formattedData = formatFunction(data);
       } catch (formatError) {
         formattedData = 'Error formatting data: ' + formatError.message;
-        Logger.log('Format function error: ' + formatError.message);
+        debugLog('verifyConfigurationWithUser', 'WARNING', 'Format function error', itemName, formatError.message);
       }
     } else if (data) {
       // Default formatting
@@ -4210,18 +4207,18 @@ function verifyConfigurationWithUser(title, itemName, data, formatFunction, opti
     
     // Handle response
     if (response === confirmButton) {
-      Logger.log('User confirmed ' + itemName + ' configuration');
+      debugLog('verifyConfigurationWithUser', 'INFO', 'User confirmed', itemName, '');
       return true;
     } else if (allowSkip && response === ui.Button.NO) {
-      Logger.log('User skipped ' + itemName + ' verification');
+      debugLog('verifyConfigurationWithUser', 'INFO', 'User skipped', itemName, '');
       return false; // Skipped, but continue
     } else {
-      Logger.log('User cancelled ' + itemName + ' verification');
+      debugLog('verifyConfigurationWithUser', 'INFO', 'User cancelled', itemName, '');
       throw new Error('User cancelled ' + itemName + ' verification');
     }
     
   } catch (error) {
-    Logger.log('Error in verification dialog: ' + error.message);
+    debugLog('verifyConfigurationWithUser', 'ERROR', 'Verification dialog error', itemName, error.message);
     
     // Re-throw user cancellation errors
     if (error.message.indexOf('cancelled') !== -1) {

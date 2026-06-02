@@ -596,15 +596,13 @@ function calculateLessonsStartingDate(metadataSheet) {
   try {
     var lastRow = metadataSheet.getLastRow();
     
-    // If only headers exist (row 1), use first day of cutoff date's month
     if (lastRow < 2) {
       UtilityScriptLibrary.debugLog("calculateLessonsStartingDate", "INFO", 
                                     "First invoice ever - no previous metadata", 
                                     "Will use first day of invoice month", "");
-      return null; // Return null to signal that we should calculate from cutoff date
+      return null;
     }
     
-    // Get the previous row's "Lessons Ending Date" 
     var headerMap = UtilityScriptLibrary.getHeaderMap(metadataSheet);
     var endingDateCol = headerMap[UtilityScriptLibrary.normalizeHeader("Lessons Ending Date")];
     
@@ -618,17 +616,16 @@ function calculateLessonsStartingDate(metadataSheet) {
       UtilityScriptLibrary.debugLog("calculateLessonsStartingDate", "WARNING", 
                                     "Invalid previous ending date", 
                                     "Value: " + previousEndingDate, "");
-      return null; // Return null to signal that we should calculate from cutoff date
+      return null;
     }
     
-    // Add 1 day to previous ending date
     var startingDate = new Date(previousEndingDate);
     startingDate.setDate(startingDate.getDate() + 1);
     
     UtilityScriptLibrary.debugLog("calculateLessonsStartingDate", "INFO", 
                                   "Calculated starting date", 
-                                  "Previous ending: " + previousEndingDate.toDateString() + 
-                                  ", New starting: " + startingDate.toDateString(), "");
+                                  "Previous ending: " + UtilityScriptLibrary.formatDateFlexible(previousEndingDate, 'M/d/yy') + 
+                                  ", New starting: " + UtilityScriptLibrary.formatDateFlexible(startingDate, 'M/d/yy'), "");
     
     return startingDate;
     
@@ -636,7 +633,7 @@ function calculateLessonsStartingDate(metadataSheet) {
     UtilityScriptLibrary.debugLog("calculateLessonsStartingDate", "ERROR", 
                                   "Failed to calculate starting date", 
                                   "", error.message);
-    return null; // Return null to fallback to calculation from cutoff date
+    return null;
   }
 }
 
@@ -644,9 +641,8 @@ function collectUninvoicedLessonsUpToDate(cutoffDate, invoiceDate, invoicePeriod
   try {
     UtilityScriptLibrary.debugLog('collectUninvoicedLessonsUpToDate', 'INFO', 
                                   'Starting lesson collection', 
-                                  'Cutoff: ' + cutoffDate.toDateString() + ', Invoice Date: ' + invoiceDate.toDateString(), '');
+                                  'Cutoff: ' + UtilityScriptLibrary.formatDateFlexible(cutoffDate, 'M/d/yy') + ', Invoice Date: ' + UtilityScriptLibrary.formatDateFlexible(invoiceDate, 'M/d/yy'), '');
     
-    // Get Form Responses workbook ONCE to get teacher list
     var formResponsesSS = UtilityScriptLibrary.getWorkbook('formResponses');
     var lookupSheet = formResponsesSS.getSheetByName('Teacher Roster Lookup');
     
@@ -654,7 +650,6 @@ function collectUninvoicedLessonsUpToDate(cutoffDate, invoiceDate, invoicePeriod
       throw new Error('Teacher Roster Lookup sheet not found or empty');
     }
     
-    // Read all teachers into memory using header map
     var headerMap = UtilityScriptLibrary.getHeaderMap(lookupSheet);
     var firstNameCol   = headerMap[UtilityScriptLibrary.normalizeHeader('First Name')];
     var lastNameCol    = headerMap[UtilityScriptLibrary.normalizeHeader('Last Name')];
@@ -676,7 +671,6 @@ function collectUninvoicedLessonsUpToDate(cutoffDate, invoiceDate, invoicePeriod
       var status      = statusCol      ? row[statusCol - 1].toString().trim()      : '';
       var teacherName = (firstName + ' ' + lastName).trim();
       
-      // Only include teachers that have roster URLs
       if (teacherName && rosterUrl !== '') {
         var invoiceNumber = generateInvoiceNumber(teacherId || teacherName, invoiceDate);
         
@@ -697,7 +691,6 @@ function collectUninvoicedLessonsUpToDate(cutoffDate, invoiceDate, invoicePeriod
                                   'Found teachers', 
                                   'Count: ' + allTeachers.length, '');
     
-    // Collect lessons from each teacher (AND mark them as invoiced in same pass)
     var allUninvoicedLessons = [];
     var errors = [];
     
@@ -729,10 +722,7 @@ function collectUninvoicedLessonsUpToDate(cutoffDate, invoiceDate, invoicePeriod
       }
     }
     
-    // Group lessons by teacher and student+length
     var groupedLessons = groupLessonsByTeacherAndType(allUninvoicedLessons);
-    
-    // Basic validation
     var validationResults = validateLessonData(groupedLessons);
     
     return {
@@ -1562,23 +1552,19 @@ function generateMonthlyTeacherInvoices(month, cutoffDate, invoiceDate, lessonRe
   try {
     UtilityScriptLibrary.debugLog("generateMonthlyTeacherInvoices", "INFO", 
                                   "Starting monthly invoice generation", 
-                                  "Month: " + month + ", Cutoff: " + cutoffDate.toDateString(), "");
+                                  "Month: " + month + ", Cutoff: " + UtilityScriptLibrary.formatDateFlexible(cutoffDate, 'M/d/yy'), "");
     
-    // Use provided lesson results (already marked as invoiced during collection)
     if (!lessonResults || Object.keys(lessonResults.lessons).length === 0) {
       UtilityScriptLibrary.debugLog("generateMonthlyTeacherInvoices", "WARNING", 
                                     "No uninvoiced lessons found", "", "");
       return { success: false, message: "No uninvoiced lessons found" };
     }
     
-    // Resolve rates column for this invoice period
     var semesterName = getSemesterForDate(cutoffDate);
     var ratesLookup = getRatesLookupForSemester(semesterName);
     
-    // Create monthly invoice sheet
     var invoiceSheet = createMonthlyInvoiceSheet(month);
     
-    // Populate invoice sheet with lesson data
     var populationResult = populateInvoiceSheetFromLessons(
       invoiceSheet, 
       lessonResults.lessons, 
@@ -1587,7 +1573,6 @@ function generateMonthlyTeacherInvoices(month, cutoffDate, invoiceDate, lessonRe
       ratesLookup
     );
     
-    // Format the sheet
     formatInvoiceSheet(invoiceSheet);
     
     UtilityScriptLibrary.debugLog("generateMonthlyTeacherInvoices", "SUCCESS", 
@@ -2267,23 +2252,19 @@ function getUninvoicedLessonsForTeacher(teacherData, cutoffDate, invoiceDate, in
   try {
     UtilityScriptLibrary.debugLog("getUninvoicedLessonsForTeacher", "INFO", 
                                   "Starting single-pass lesson collection and marking", 
-                                  "Teacher: " + teacherData.teacherName + ", Cutoff: " + cutoffDate.toDateString(), "");
+                                  "Teacher: " + teacherData.teacherName + ", Cutoff: " + UtilityScriptLibrary.formatDateFlexible(cutoffDate, 'M/d/yy'), "");
     
-    // Open teacher's roster workbook ONCE
     var rosterUrl = teacherData.rosterUrl;
     if (!rosterUrl) {
       throw new Error('No roster URL found for ' + teacherData.teacherName);
     }
     
-    // Extract file ID from URL and open spreadsheet
     var fileIdMatch = rosterUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
     if (!fileIdMatch) {
       throw new Error('Invalid roster URL format for ' + teacherData.teacherName);
     }
     
     var rosterSS = SpreadsheetApp.openById(fileIdMatch[1]);
-    
-    // Get all attendance sheets (monthly sheets like "January", "February", etc.)
     var attendanceSheets = getAttendanceSheetsFromWorkbook(rosterSS);
     
     if (attendanceSheets.length === 0) {
@@ -2296,11 +2277,9 @@ function getUninvoicedLessonsForTeacher(teacherData, cutoffDate, invoiceDate, in
     var uninvoicedLessons = [];
     var formattedInvoiceDate = UtilityScriptLibrary.formatDateFlexible(invoiceDate, "MM/dd/yyyy");
     
-    // Process each attendance sheet
     for (var i = 0; i < attendanceSheets.length; i++) {
       var sheet = attendanceSheets[i];
       try {
-        // SINGLE PASS: Read lessons AND mark them as invoiced
         var sheetLessons = extractAndMarkLessonsFromSheet(
           sheet, 
           teacherData, 
@@ -2318,7 +2297,6 @@ function getUninvoicedLessonsForTeacher(teacherData, cutoffDate, invoiceDate, in
                                       "Error processing sheet", 
                                       "Teacher: " + teacherData.teacherName + ", Sheet: " + sheet.getName(), 
                                       sheetError.message);
-        // Continue with other sheets
       }
     }
     
@@ -2844,19 +2822,17 @@ function promptForCutoffDate() {
     var userInput = response.getResponseText().trim();
     UtilityScriptLibrary.debugLog('promptForCutoffDate', 'INFO', 'Processing user input', userInput, '');
     
-    // Try UtilityScriptLibrary first
     var cutoffDate;
     try {
       cutoffDate = UtilityScriptLibrary.parseDateFromString(userInput);
       UtilityScriptLibrary.debugLog('promptForCutoffDate', 'INFO', 'parseDateFromString result',
-        cutoffDate ? cutoffDate.toDateString() : 'null', '');
+        cutoffDate ? UtilityScriptLibrary.formatDateFlexible(cutoffDate, 'M/d/yy') : 'null', '');
     } catch (utilityError) {
       UtilityScriptLibrary.debugLog('promptForCutoffDate', 'WARNING', 'parseDateFromString failed',
         userInput, utilityError.message);
       cutoffDate = null;
     }
     
-    // Fallback to native Date constructor
     if (!cutoffDate) {
       UtilityScriptLibrary.debugLog('promptForCutoffDate', 'WARNING', 'Falling back to native Date constructor', '', '');
       
@@ -2866,7 +2842,7 @@ function promptForCutoffDate() {
           cutoffDate = null;
         }
         UtilityScriptLibrary.debugLog('promptForCutoffDate', 'INFO', 'Native Date constructor result',
-          cutoffDate ? cutoffDate.toDateString() : 'null', '');
+          cutoffDate ? UtilityScriptLibrary.formatDateFlexible(cutoffDate, 'M/d/yy') : 'null', '');
       } catch (nativeError) {
         UtilityScriptLibrary.debugLog('promptForCutoffDate', 'ERROR', 'Native Date constructor failed',
           userInput, nativeError.message);
@@ -2882,7 +2858,7 @@ function promptForCutoffDate() {
     }
     
     UtilityScriptLibrary.debugLog('promptForCutoffDate', 'INFO', 'Successfully parsed cutoff date',
-      'Input: ' + userInput + ', Result: ' + cutoffDate.toDateString(), '');
+      'Input: ' + userInput + ', Result: ' + UtilityScriptLibrary.formatDateFlexible(cutoffDate, 'M/d/yy'), '');
     
     return cutoffDate;
     
@@ -2901,7 +2877,7 @@ function promptForInvoiceDate() {
     var defaultDateStr = UtilityScriptLibrary.formatDateFlexible(today, 'MM/dd/yyyy');
     
     UtilityScriptLibrary.debugLog('promptForInvoiceDate', 'INFO', 'Default date calculated',
-      'Today: ' + today.toDateString() + ', Formatted: ' + defaultDateStr, '');
+      'Today: ' + UtilityScriptLibrary.formatDateFlexible(today, 'M/d/yy') + ', Formatted: ' + defaultDateStr, '');
     
     var response = ui.prompt(
       'Invoice Date',
@@ -2922,26 +2898,23 @@ function promptForInvoiceDate() {
     
     var userInput = response.getResponseText().trim();
     
-    // Use default (today) if user left it blank
     var invoiceDate;
     if (!userInput) {
       invoiceDate = today;
-      UtilityScriptLibrary.debugLog('promptForInvoiceDate', 'INFO', 'Using default date (today)', today.toDateString(), '');
+      UtilityScriptLibrary.debugLog('promptForInvoiceDate', 'INFO', 'Using default date (today)', UtilityScriptLibrary.formatDateFlexible(today, 'M/d/yy'), '');
     } else {
       UtilityScriptLibrary.debugLog('promptForInvoiceDate', 'INFO', 'Parsing user input', userInput, '');
       
-      // Try UtilityScriptLibrary first
       try {
         invoiceDate = UtilityScriptLibrary.parseDateFromString(userInput);
         UtilityScriptLibrary.debugLog('promptForInvoiceDate', 'INFO', 'parseDateFromString result',
-          invoiceDate ? invoiceDate.toDateString() : 'null', '');
+          invoiceDate ? UtilityScriptLibrary.formatDateFlexible(invoiceDate, 'M/d/yy') : 'null', '');
       } catch (utilityError) {
         UtilityScriptLibrary.debugLog('promptForInvoiceDate', 'WARNING', 'parseDateFromString failed',
           userInput, utilityError.message);
         invoiceDate = null;
       }
       
-      // Fallback to native Date constructor
       if (!invoiceDate) {
         try {
           invoiceDate = new Date(userInput);
@@ -2949,7 +2922,7 @@ function promptForInvoiceDate() {
             invoiceDate = null;
           }
           UtilityScriptLibrary.debugLog('promptForInvoiceDate', 'INFO', 'Native Date constructor result',
-            invoiceDate ? invoiceDate.toDateString() : 'null', '');
+            invoiceDate ? UtilityScriptLibrary.formatDateFlexible(invoiceDate, 'M/d/yy') : 'null', '');
         } catch (nativeError) {
           UtilityScriptLibrary.debugLog('promptForInvoiceDate', 'ERROR', 'Native Date constructor failed',
             userInput, nativeError.message);
@@ -2966,7 +2939,7 @@ function promptForInvoiceDate() {
     }
     
     UtilityScriptLibrary.debugLog('promptForInvoiceDate', 'INFO', 'Successfully determined invoice date',
-      invoiceDate.toDateString(), '');
+      UtilityScriptLibrary.formatDateFlexible(invoiceDate, 'M/d/yy'), '');
     
     return invoiceDate;
     
@@ -2981,12 +2954,10 @@ function promptForInvoicePeriod(cutoffDate) {
     UtilityScriptLibrary.debugLog('promptForInvoicePeriod', 'INFO', 'Starting invoice period prompt', '', '');
     
     var ui = SpreadsheetApp.getUi();
-    
-    // Generate default period from cutoff date (month/year)
     var defaultPeriod = generateDefaultInvoicePeriod(cutoffDate);
     
     UtilityScriptLibrary.debugLog('promptForInvoicePeriod', 'INFO', 'Default period calculated',
-      'Cutoff: ' + cutoffDate.toDateString() + ', Default period: ' + defaultPeriod, '');
+      'Cutoff: ' + UtilityScriptLibrary.formatDateFlexible(cutoffDate, 'M/d/yy') + ', Default period: ' + defaultPeriod, '');
     
     var response = ui.prompt(
       'Invoice Period',
@@ -3009,8 +2980,6 @@ function promptForInvoicePeriod(cutoffDate) {
     }
     
     var userInput = response.getResponseText().trim();
-    
-    // Use default if user left it blank, otherwise use their input
     var finalPeriod = userInput || defaultPeriod;
     
     UtilityScriptLibrary.debugLog('promptForInvoicePeriod', 'INFO', 'Invoice period determined',
@@ -3020,7 +2989,6 @@ function promptForInvoicePeriod(cutoffDate) {
     
   } catch (error) {
     UtilityScriptLibrary.debugLog('promptForInvoicePeriod', 'ERROR', 'Unexpected error', '', error.message);
-    // Return default as fallback
     return generateDefaultInvoicePeriod(cutoffDate);
   }
 }
@@ -3029,11 +2997,10 @@ function promptForMonthName(cutoffDate) {
   try {
     UtilityScriptLibrary.debugLog('promptForMonthName', 'INFO', 'Starting month name prompt', '', '');
     
-    // Generate default month name from cutoff date
     var defaultMonth = generateDefaultMonthName(cutoffDate);
     
     UtilityScriptLibrary.debugLog('promptForMonthName', 'INFO', 'Default month calculated',
-      'Cutoff: ' + cutoffDate.toDateString() + ', Default month: ' + defaultMonth, '');
+      'Cutoff: ' + UtilityScriptLibrary.formatDateFlexible(cutoffDate, 'M/d/yy') + ', Default month: ' + defaultMonth, '');
     
     var ui = SpreadsheetApp.getUi();
     var response = ui.prompt(
@@ -3058,13 +3025,11 @@ function promptForMonthName(cutoffDate) {
     
     var userInput = response.getResponseText().trim();
     
-    // Use default if user left it blank, otherwise use their input
     var finalMonth;
     if (!userInput) {
       finalMonth = defaultMonth;
       UtilityScriptLibrary.debugLog('promptForMonthName', 'INFO', 'Using default month', finalMonth, '');
     } else {
-      // Capitalize first letter
       finalMonth = userInput.charAt(0).toUpperCase() + userInput.slice(1).toLowerCase();
       UtilityScriptLibrary.debugLog('promptForMonthName', 'INFO', 'Using custom month',
         'Input: ' + userInput + ', Final: ' + finalMonth, '');
@@ -3140,23 +3105,19 @@ function showInvoiceGenerationResults(lessonResults, invoiceResults) {
   try {
     var ui = SpreadsheetApp.getUi();
     
-    // Build comprehensive summary message
     var summaryMessage = '🎉 INVOICE GENERATION COMPLETE!\n\n';
     
-    // Invoice info
     summaryMessage += '📋 INVOICE SHEET:\n';
     summaryMessage += '• Sheet name: ' + invoiceResults.sheetName + '\n';
     summaryMessage += '• Teachers processed: ' + invoiceResults.teacherCount + '\n';
     summaryMessage += '• Line items created: ' + invoiceResults.lineItemCount + '\n\n';
     
-    // Lesson data info
     summaryMessage += '📅 LESSON DATA:\n';
-    summaryMessage += '• Cutoff date: ' + lessonResults.cutoffDate.toDateString() + '\n';
-    summaryMessage += '• Invoice date: ' + lessonResults.invoiceDate.toDateString() + '\n';
+    summaryMessage += '• Cutoff date: ' + UtilityScriptLibrary.formatDateFlexible(lessonResults.cutoffDate, 'M/d/yy') + '\n';
+    summaryMessage += '• Invoice date: ' + UtilityScriptLibrary.formatDateFlexible(lessonResults.invoiceDate, 'M/d/yy') + '\n';
     summaryMessage += '• Invoice period: ' + lessonResults.invoicePeriod + '\n';
     summaryMessage += '• Total lessons found: ' + lessonResults.summary.totalLessons + '\n\n';
     
-    // Status
     var totalErrors = lessonResults.errors.length + (invoiceResults.errors ? invoiceResults.errors.length : 0);
     var totalIssues = lessonResults.validation.issues.length;
     
@@ -3170,10 +3131,8 @@ function showInvoiceGenerationResults(lessonResults, invoiceResults) {
     
     summaryMessage += '\nCheck Teacher_Invoice_Debug sheet for detailed logs.';
     
-    // Show the summary
     ui.alert('Invoice Generation Complete', summaryMessage, ui.ButtonSet.OK);
     
-    // If there are errors or issues, offer to show details
     if (totalErrors > 0 || totalIssues > 0) {
       var showDetailsResponse = ui.alert(
         'Show Details?',
@@ -3458,7 +3417,8 @@ function verifyAttendanceVsInvoices() {
     
     // Get rosters folder from config
     var env = UtilityScriptLibrary.EnvironmentManager.get();
-    var rosterFolderId = UtilityScriptLibrary.CONFIG[env].rosterFolderId;
+    var config = UtilityScriptLibrary.getConfig();
+    var rosterFolderId = config[env].rosterFolderId;
     
     if (!rosterFolderId) {
       throw new Error('Roster folder ID not found in config');
@@ -3598,39 +3558,33 @@ function writeTeacherInvoicingMetadata(month, cutoffDate, invoiceDate, invoicePe
       throw new Error('Teacher Invoicing Metadata sheet not found');
     }
     
-    // Calculate lessons starting date
     var lessonsStartingDate = calculateLessonsStartingDate(metadataSheet);
     
-    // If no previous metadata, calculate from cutoff date (first day of month)
     if (!lessonsStartingDate) {
       lessonsStartingDate = new Date(cutoffDate.getFullYear(), cutoffDate.getMonth(), 1);
       UtilityScriptLibrary.debugLog("writeTeacherInvoicingMetadata", "INFO", 
                                     "Using first day of month for starting date", 
-                                    "Date: " + lessonsStartingDate.toDateString(), "");
+                                    "Date: " + UtilityScriptLibrary.formatDateFlexible(lessonsStartingDate, 'M/d/yy'), "");
     }
     
-    // Get current semester
     var semesterName = UtilityScriptLibrary.getCurrentSemesterName();
-    
-    // Get rates lookup for semester
     var ratesLookup = getRatesLookupForSemester(semesterName);
     
-    // Prepare row data
     var newRow = [
-      month,                          // Invoice Month
-      lessonsStartingDate,            // Lessons Starting Date
-      cutoffDate,                     // Lessons Ending Date (cutoff date)
-      invoiceDate,                    // Invoice Date
-      ratesLookup,                    // Rates Lookup
-      semesterName,                   // Semester Name
-      'Collected'                     // Status (initially "Collected", then becomes "Generated")
+      month,
+      lessonsStartingDate,
+      cutoffDate,
+      invoiceDate,
+      ratesLookup,
+      semesterName,
+      'Collected'
     ];
     
     metadataSheet.appendRow(newRow);
     
     UtilityScriptLibrary.debugLog("writeTeacherInvoicingMetadata", "SUCCESS", 
                                   "Metadata written", 
-                                  "Month: " + month + ", Period: " + lessonsStartingDate.toDateString() + " to " + cutoffDate.toDateString(), "");
+                                  "Month: " + month + ", Period: " + UtilityScriptLibrary.formatDateFlexible(lessonsStartingDate, 'M/d/yy') + " to " + UtilityScriptLibrary.formatDateFlexible(cutoffDate, 'M/d/yy'), "");
     
     return {
       success: true,

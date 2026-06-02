@@ -14,9 +14,9 @@ function authorizeScript() {
   try {
     SpreadsheetApp.getUi();
     SpreadsheetApp.getActiveSpreadsheet();
-    Logger.log('Script authorized successfully!');
+    UtilityScriptLibrary.debugLog('authorizeScript', 'SUCCESS', 'Script authorized successfully', '', '');
   } catch (e) {
-    Logger.log('Authorization error: ' + e.message);
+    UtilityScriptLibrary.debugLog('authorizeScript', 'ERROR', 'Authorization error', '', e.message);
   }
 }
 
@@ -199,7 +199,7 @@ function addCarryoverStudentsToNewRoster(spreadsheet, newRosterSheet, currentSem
         var systemCommentsCol = newHeaderMap['systemcomments'];
         if (systemCommentsCol) {
           var oldComments = newRowData[systemCommentsCol - 1] || '';
-          newRowData[systemCommentsCol - 1] = 'Carried over from ' + previousRosterSheetName + ' on ' + new Date().toDateString() + '. ' + oldComments;
+          newRowData[systemCommentsCol - 1] = 'Carried over from ' + previousRosterSheetName + ' on ' + UtilityScriptLibrary.formatDateFlexible(new Date(), 'M/d/yy') + '. ' + oldComments;
         }
 
         var targetRow = newRosterSheet.getLastRow() + 1;
@@ -286,7 +286,7 @@ function addStudentToAttendanceSheetsFromDate(workbook, studentInfo, effectiveDa
   try {
     UtilityScriptLibrary.debugLog("addStudentToAttendanceSheetsFromDate", "INFO",
                                   "Starting attendance addition from date",
-                                  "Student: " + studentInfo.studentId + ", Date: " + effectiveDate.toDateString(), "");
+                                  "Student: " + studentInfo.studentId + ", Date: " + UtilityScriptLibrary.formatDateFlexible(effectiveDate, 'M/d/yy'), "");
     
     var monthNames = UtilityScriptLibrary.getMonthNames();
     var effectiveMonthIndex = effectiveDate.getMonth(); // 0-11
@@ -368,132 +368,64 @@ function addStudentToAttendanceSheetsFromDate(workbook, studentInfo, effectiveDa
   }
 }
 
-function addStudentToNewRosterTemplate(sheet, formData, studentId) {
-  try {
-    var lessonLength = '';
-    var lengthFromField = formData['Length'];
-
-    if (lengthFromField && lengthFromField.toString().trim() !== '') {
-      lessonLength = UtilityScriptLibrary.extractNumericLessonLength(lengthFromField);
-    } else {
-      var qty60 = UtilityScriptLibrary.extractLessonQuantityFromPackage(formData['Qty60']);
-      var qty45 = UtilityScriptLibrary.extractLessonQuantityFromPackage(formData['Qty45']);
-      var qty30 = UtilityScriptLibrary.extractLessonQuantityFromPackage(formData['Qty30']);
-      lessonLength = (qty60 > 0) ? 60 : (qty45 > 0) ? 45 : (qty30 > 0) ? 30 : 30;
-    }
-
-    var ageValue = formData['Age'] || '';
-    var gradeValue = (ageValue.toString().toLowerCase().indexOf('yes') === 0) ? 'Adult' : (formData['Grade'] || '');
-
-    var newRowData = new Array(23);
-    for (var i = 0; i < newRowData.length; i++) newRowData[i] = '';
-
-    newRowData[0]  = false;
-    newRowData[1]  = '';
-    newRowData[2]  = '';
-    newRowData[3]  = '';
-    newRowData[4]  = formData['Student Last Name'] || '';
-    newRowData[5]  = formData['Student First Name'] || '';
-    newRowData[6]  = formData['Instrument'] || '';
-    newRowData[7]  = lessonLength;
-    newRowData[8]  = formData['Experience'] || '';
-    newRowData[9]  = gradeValue;
-    newRowData[10] = formData['School'] || '';
-    newRowData[11] = formData['SchoolTeacher'] || '';
-    newRowData[12] = formData['Parent Last Name'] || '';
-    newRowData[13] = formData['Parent First Name'] || '';
-    newRowData[14] = formData['Phone'] || '';
-    newRowData[15] = formData['Email'] || '';
-    newRowData[16] = formData['Additional contacts'] || '';
-    newRowData[17] = 0;
-    newRowData[18] = 0;
-    newRowData[19] = 'Active';
-    newRowData[20] = studentId;
-    newRowData[21] = '';
-    newRowData[22] = 'Added: ' + new Date().toDateString();
-
-    // Batch read to find empty row
-    var lastRow = sheet.getLastRow();
-    var targetRow = lastRow + 1;
-
-    if (lastRow >= 2) {
-      var existingData = sheet.getRange(2, 1, lastRow - 1, 23).getValues();
-      for (var i = 0; i < existingData.length; i++) {
-        var row = existingData[i];
-        var isEmpty = true;
-        for (var j = 0; j < row.length; j++) {
-          if (row[j] !== '' && row[j] !== null && row[j] !== undefined) {
-            isEmpty = false;
-            break;
-          }
-        }
-        if (isEmpty) {
-          targetRow = i + 2;
-          break;
-        }
-      }
-    }
-
-    if (targetRow <= lastRow) {
-      sheet.getRange(targetRow, 1, 1, newRowData.length).setValues([newRowData]);
-    } else {
-      sheet.appendRow(newRowData);
-      targetRow = sheet.getLastRow();
-    }
-
-    sheet.getRange(targetRow, 1).insertCheckboxes().setValue(false);
-
-    if (targetRow % 2 === 0) {
-      sheet.getRange(targetRow, 1, 1, newRowData.length).setBackground(UtilityScriptLibrary.STYLES.ALTERNATING_DARK.background);
-    } else {
-      sheet.getRange(targetRow, 1, 1, newRowData.length).setBackground(UtilityScriptLibrary.STYLES.ALTERNATING_LIGHT.background);
-    }
-
-    UtilityScriptLibrary.debugLog('addStudentToNewRosterTemplate', 'SUCCESS', 'Added student to roster',
-      'Student: ' + studentId + ', Row: ' + targetRow + ', Length: ' + lessonLength + ', Grade: ' + gradeValue, '');
-
-  } catch (error) {
-    UtilityScriptLibrary.debugLog('addStudentToNewRosterTemplate', 'ERROR', 'Failed',
-      'Student: ' + studentId, error.message);
-    throw error;
-  }
-}
-
 function addStudentToRosterFromData(rosterSheet, studentInfo, headerMap) {
   try {
-    var newRowData = new Array(23);
-    for (var i = 0; i < newRowData.length; i++) newRowData[i] = '';
+    var norm = UtilityScriptLibrary.normalizeHeader;
+    var numCols = Object.keys(headerMap).length;
+    var newRowData = new Array(numCols).fill('');
 
-    newRowData[0]  = false;
-    newRowData[1]  = studentInfo.firstLessonDate || '';
-    newRowData[2]  = studentInfo.firstLessonTime || '';
-    newRowData[3]  = studentInfo.comments || '';
-    newRowData[4]  = studentInfo.lastName || '';
-    newRowData[5]  = studentInfo.firstName || '';
-    newRowData[6]  = studentInfo.instrument || '';
-    newRowData[7]  = studentInfo.length || 30;
-    newRowData[8]  = studentInfo.experience || '';
-    newRowData[9]  = studentInfo.grade || '';
-    newRowData[10] = studentInfo.school || '';
-    newRowData[11] = studentInfo.schoolTeacher || '';
-    newRowData[12] = studentInfo.parentLastName || '';
-    newRowData[13] = studentInfo.parentFirstName || '';
-    newRowData[14] = studentInfo.phone || '';
-    newRowData[15] = studentInfo.email || '';
-    newRowData[16] = studentInfo.additionalContacts || '';
-    newRowData[17] = studentInfo.hoursRemaining || 0;
-    newRowData[18] = studentInfo.lessonsRemaining || 0;
-    newRowData[19] = 'Active';
-    newRowData[20] = studentInfo.studentId || '';
-    newRowData[21] = '';
-    newRowData[22] = 'Reassigned: ' + new Date().toDateString();
+    var contacted        = headerMap[norm('Contacted')];
+    var firstLessonDate  = headerMap[norm('First Lesson Date')];
+    var firstLessonTime  = headerMap[norm('First Lesson Time')];
+    var comments         = headerMap[norm('Comments')];
+    var lastName         = headerMap[norm('Last Name')];
+    var firstName        = headerMap[norm('First Name')];
+    var instrument       = headerMap[norm('Instrument')];
+    var length           = headerMap[norm('Length')];
+    var experience       = headerMap[norm('Experience')];
+    var grade            = headerMap[norm('Grade')];
+    var school           = headerMap[norm('School')];
+    var schoolTeacher    = headerMap[norm('School Teacher')];
+    var parentLastName   = headerMap[norm('Parent Last Name')];
+    var parentFirstName  = headerMap[norm('Parent First Name')];
+    var phone            = headerMap[norm('Phone')];
+    var email            = headerMap[norm('Email')];
+    var additionalContacts = headerMap[norm('Additional contacts')];
+    var hoursRemaining   = headerMap[norm('Hours Remaining')];
+    var lessonsRemaining = headerMap[norm('Lessons Remaining')];
+    var status           = headerMap[norm('Status')];
+    var studentId        = headerMap[norm('Student ID')];
+    var systemComments   = headerMap[norm('System Comments')];
 
-    // Batch read to find empty row
+    if (contacted)        newRowData[contacted - 1]        = false;
+    if (firstLessonDate)  newRowData[firstLessonDate - 1]  = studentInfo.firstLessonDate || '';
+    if (firstLessonTime)  newRowData[firstLessonTime - 1]  = studentInfo.firstLessonTime || '';
+    if (comments)         newRowData[comments - 1]         = studentInfo.comments || '';
+    if (lastName)         newRowData[lastName - 1]         = studentInfo.lastName || '';
+    if (firstName)        newRowData[firstName - 1]        = studentInfo.firstName || '';
+    if (instrument)       newRowData[instrument - 1]       = studentInfo.instrument || '';
+    if (length)           newRowData[length - 1]           = studentInfo.length || 30;
+    if (experience)       newRowData[experience - 1]       = studentInfo.experience || '';
+    if (grade)            newRowData[grade - 1]            = studentInfo.grade || '';
+    if (school)           newRowData[school - 1]           = studentInfo.school || '';
+    if (schoolTeacher)    newRowData[schoolTeacher - 1]    = studentInfo.schoolTeacher || '';
+    if (parentLastName)   newRowData[parentLastName - 1]   = studentInfo.parentLastName || '';
+    if (parentFirstName)  newRowData[parentFirstName - 1]  = studentInfo.parentFirstName || '';
+    if (phone)            newRowData[phone - 1]            = studentInfo.phone || '';
+    if (email)            newRowData[email - 1]            = studentInfo.email || '';
+    if (additionalContacts) newRowData[additionalContacts - 1] = studentInfo.additionalContacts || '';
+    if (hoursRemaining)   newRowData[hoursRemaining - 1]   = studentInfo.hoursRemaining || 0;
+    if (lessonsRemaining) newRowData[lessonsRemaining - 1] = studentInfo.lessonsRemaining || 0;
+    if (status)           newRowData[status - 1]           = 'Active';
+    if (studentId)        newRowData[studentId - 1]        = studentInfo.studentId || '';
+    if (systemComments)   newRowData[systemComments - 1]   = studentInfo.systemComment || '';
+
+    // Find empty row or append
     var lastRow = rosterSheet.getLastRow();
     var targetRow = lastRow + 1;
 
     if (lastRow >= 2) {
-      var existingData = rosterSheet.getRange(2, 1, lastRow - 1, 23).getValues();
+      var existingData = rosterSheet.getRange(2, 1, lastRow - 1, numCols).getValues();
       for (var i = 0; i < existingData.length; i++) {
         var row = existingData[i];
         var isEmpty = true;
@@ -511,7 +443,7 @@ function addStudentToRosterFromData(rosterSheet, studentInfo, headerMap) {
     }
 
     if (targetRow <= lastRow) {
-      rosterSheet.getRange(targetRow, 1, 1, newRowData.length).setValues([newRowData]);
+      rosterSheet.getRange(targetRow, 1, 1, numCols).setValues([newRowData]);
     } else {
       rosterSheet.appendRow(newRowData);
       targetRow = rosterSheet.getLastRow();
@@ -520,12 +452,12 @@ function addStudentToRosterFromData(rosterSheet, studentInfo, headerMap) {
     rosterSheet.getRange(targetRow, 1).insertCheckboxes().setValue(false);
 
     if (targetRow % 2 === 0) {
-      rosterSheet.getRange(targetRow, 1, 1, 23).setBackground(UtilityScriptLibrary.STYLES.ALTERNATING_DARK.background);
+      rosterSheet.getRange(targetRow, 1, 1, numCols).setBackground(UtilityScriptLibrary.STYLES.ALTERNATING_DARK.background);
     } else {
-      rosterSheet.getRange(targetRow, 1, 1, 23).setBackground(UtilityScriptLibrary.STYLES.ALTERNATING_LIGHT.background);
+      rosterSheet.getRange(targetRow, 1, 1, numCols).setBackground(UtilityScriptLibrary.STYLES.ALTERNATING_LIGHT.background);
     }
 
-    UtilityScriptLibrary.debugLog('addStudentToRosterFromData', 'SUCCESS', 'Added reassigned student',
+    UtilityScriptLibrary.debugLog('addStudentToRosterFromData', 'SUCCESS', 'Added student to roster',
       'Student: ' + studentInfo.studentId + ', Row: ' + targetRow, '');
 
   } catch (error) {
@@ -573,8 +505,9 @@ function addStudentToSemesterRoster(workbook, formData, studentId, semesterName)
       }
     }
 
+    var headerMap = UtilityScriptLibrary.getHeaderMap(rosterSheet);
+
     try {
-      var headerMap = UtilityScriptLibrary.getHeaderMap(rosterSheet);
       var existsResult = checkIfStudentExists(rosterSheet, studentId, headerMap);
 
       if (existsResult === 'CARRYOVER') {
@@ -591,7 +524,41 @@ function addStudentToSemesterRoster(workbook, formData, studentId, semesterName)
     }
 
     try {
-      addStudentToNewRosterTemplate(rosterSheet, formData, studentId);
+      var lessonLength = '';
+      var lengthFromField = formData['Length'];
+      if (lengthFromField && lengthFromField.toString().trim() !== '') {
+        lessonLength = UtilityScriptLibrary.extractNumericLessonLength(lengthFromField);
+      } else {
+        var qty60 = UtilityScriptLibrary.extractLessonQuantityFromPackage(formData['Qty60']);
+        var qty45 = UtilityScriptLibrary.extractLessonQuantityFromPackage(formData['Qty45']);
+        var qty30 = UtilityScriptLibrary.extractLessonQuantityFromPackage(formData['Qty30']);
+        lessonLength = (qty60 > 0) ? 60 : (qty45 > 0) ? 45 : (qty30 > 0) ? 30 : 30;
+      }
+
+      var ageValue = formData['Age'] || '';
+      var gradeValue = (ageValue.toString().toLowerCase().indexOf('yes') === 0) ? 'Adult' : (formData['Grade'] || '');
+
+      var studentInfo = {
+        studentId:         studentId,
+        lastName:          formData['Student Last Name'] || '',
+        firstName:         formData['Student First Name'] || '',
+        instrument:        formData['Instrument'] || '',
+        length:            lessonLength,
+        experience:        formData['Experience'] || '',
+        grade:             gradeValue,
+        school:            formData['School'] || '',
+        schoolTeacher:     formData['SchoolTeacher'] || '',
+        parentLastName:    formData['Parent Last Name'] || '',
+        parentFirstName:   formData['Parent First Name'] || '',
+        phone:             formData['Phone'] || '',
+        email:             formData['Email'] || '',
+        additionalContacts: formData['Additional contacts'] || '',
+        hoursRemaining:    0,
+        lessonsRemaining:  0,
+        systemComment:     'Added: ' + UtilityScriptLibrary.formatDateFlexible(new Date(), 'M/d')
+      };
+
+      addStudentToRosterFromData(rosterSheet, studentInfo, headerMap);
     } catch (addError) {
       throw new Error('Failed to add student to roster: ' + addError.message);
     }
@@ -664,10 +631,10 @@ function appendToReports(detailIssues, summaryData) {
       summarySheet.getRange(lastRow + 1, 1, summaryRows.length, 4).setValues(summaryRows);
     }
     
-    Logger.log('✅ Appended to reports');
+    UtilityScriptLibrary.debugLog('appendToReports', 'SUCCESS', 'Appended to reports', '', '');
     
   } catch (error) {
-    Logger.log('❌ Error appending to reports: ' + error.message);
+    UtilityScriptLibrary.debugLog('appendToReports', 'ERROR', 'Failed to append to reports', '', error.message);
     throw error;
   }
 }
@@ -821,21 +788,18 @@ function checkSheet(workbook, workbookName, sheet, studentMap, detailIssues, sum
     for (var h = 0; h < headers.length; h++) {
       var normalizedHeader = norm(headers[h]);
       
-      // ID column - try "Student ID" first, then "ID"
       if (normalizedHeader === norm('Student ID')) {
         idCol = h;
       } else if (idCol === -1 && normalizedHeader === norm('ID')) {
         idCol = h;
       }
       
-      // First Name - prioritize "Student First Name" over "First Name"
       if (normalizedHeader === norm('Student First Name')) {
         firstNameCol = h;
       } else if (firstNameCol === -1 && normalizedHeader === norm('First Name')) {
         firstNameCol = h;
       }
       
-      // Last Name - prioritize "Student Last Name" over "Last Name"
       if (normalizedHeader === norm('Student Last Name')) {
         lastNameCol = h;
       } else if (lastNameCol === -1 && normalizedHeader === norm('Last Name')) {
@@ -855,12 +819,10 @@ function checkSheet(workbook, workbookName, sheet, studentMap, detailIssues, sum
       var firstName = (row[firstNameCol] || '').toString().trim();
       var lastName = (row[lastNameCol] || '').toString().trim();
       
-      // Skip completely empty rows
       if (!foundId && !firstName && !lastName) {
         continue;
       }
       
-      // Skip rows with non-Q IDs (P, T, G, etc.)
       if (foundId && foundId.charAt(0) !== 'Q') {
         continue;
       }
@@ -868,7 +830,6 @@ function checkSheet(workbook, workbookName, sheet, studentMap, detailIssues, sum
       var issue = null;
       
       if (foundId.charAt(0) === 'Q' && (!firstName || !lastName)) {
-        // ID without name
         issue = {
           workbookName: workbookName,
           sheetName: sheetName,
@@ -881,7 +842,6 @@ function checkSheet(workbook, workbookName, sheet, studentMap, detailIssues, sum
         };
         
       } else if (firstName && lastName && !foundId) {
-        // Name without ID
         var key = firstName.toLowerCase() + '|' + lastName.toLowerCase();
         var expectedId = studentMap[key] || 'NOT FOUND';
         
@@ -897,7 +857,6 @@ function checkSheet(workbook, workbookName, sheet, studentMap, detailIssues, sum
         };
         
       } else if (foundId.charAt(0) === 'Q' && firstName && lastName) {
-        // Both present - check for mismatch
         var key = firstName.toLowerCase() + '|' + lastName.toLowerCase();
         var expectedId = studentMap[key];
         
@@ -940,18 +899,18 @@ function checkSheet(workbook, workbookName, sheet, studentMap, detailIssues, sum
     });
     
     if (sheetIssues.length > 0) {
-      Logger.log('    ⚠️ Found ' + sheetIssues.length + ' issues in sheet: ' + sheetName);
+      UtilityScriptLibrary.debugLog('checkSheet', 'WARNING', 'Issues found in sheet', sheetName + ': ' + sheetIssues.length, '');
     }
     
   } catch (error) {
-    Logger.log('❌ Error checking sheet ' + workbookName + ' - ' + sheetName + ': ' + error.message);
+    UtilityScriptLibrary.debugLog('checkSheet', 'ERROR', 'Failed to check sheet', workbookName + ' - ' + sheetName, error.message);
   }
 }
 
 function checkWorkbook(workbook, workbookName, studentMap, detailIssues, summaryData) {
   try {
     var sheets = workbook.getSheets();
-    Logger.log('  📄 Checking ' + sheets.length + ' sheets in: ' + workbookName);
+    UtilityScriptLibrary.debugLog('checkWorkbook', 'INFO', 'Checking sheets', workbookName + ': ' + sheets.length + ' sheets', '');
     
     for (var i = 0; i < sheets.length; i++) {
       var sheet = sheets[i];
@@ -959,7 +918,7 @@ function checkWorkbook(workbook, workbookName, studentMap, detailIssues, summary
     }
     
   } catch (error) {
-    Logger.log('❌ Error checking workbook ' + workbookName + ': ' + error.message);
+    UtilityScriptLibrary.debugLog('checkWorkbook', 'ERROR', 'Failed to check workbook', workbookName, error.message);
   }
 }
 
@@ -979,31 +938,31 @@ function checkWorkbooksInFolder(folder, studentMap, detailIssues, summaryData, i
       var workbookName = file.getName();
       
       if (isHomeFolder && excludedNames.indexOf(workbookName) !== -1) {
-        Logger.log('⏭️ Skipping excluded workbook: ' + workbookName);
+        UtilityScriptLibrary.debugLog('checkWorkbooksInFolder', 'INFO', 'Skipping excluded workbook', workbookName, '');
         continue;
       }
       
       try {
-        Logger.log('📖 Opening workbook: ' + workbookName);
+        UtilityScriptLibrary.debugLog('checkWorkbooksInFolder', 'INFO', 'Opening workbook', workbookName, '');
         var workbook = SpreadsheetApp.openById(file.getId());
         checkWorkbook(workbook, workbookName, studentMap, detailIssues, summaryData);
         processedCount++;
         
         if (processedCount % 5 === 0) {
           Utilities.sleep(1000);
-          Logger.log('⏸️ Processed ' + processedCount + ' workbooks, pausing briefly...');
+          UtilityScriptLibrary.debugLog('checkWorkbooksInFolder', 'INFO', 'Pausing briefly', 'Processed: ' + processedCount + ' workbooks', '');
         }
         
       } catch (error) {
-        Logger.log('⚠️ Could not access workbook ' + workbookName + ': ' + error.message);
+        UtilityScriptLibrary.debugLog('checkWorkbooksInFolder', 'WARNING', 'Could not access workbook', workbookName, error.message);
         continue;
       }
     }
     
-    Logger.log('✅ Completed folder check. Processed ' + processedCount + ' workbooks.');
+    UtilityScriptLibrary.debugLog('checkWorkbooksInFolder', 'SUCCESS', 'Folder check complete', 'Processed: ' + processedCount + ' workbooks', '');
     
   } catch (error) {
-    Logger.log('❌ Error checking workbooks in folder: ' + error.message);
+    UtilityScriptLibrary.debugLog('checkWorkbooksInFolder', 'ERROR', 'Failed', '', error.message);
   }
 }
 
@@ -1021,11 +980,11 @@ function clearReports() {
       ss.deleteSheet(summarySheet);
     }
     
-    Logger.log('✅ Reports cleared');
+    UtilityScriptLibrary.debugLog('clearReports', 'SUCCESS', 'Reports cleared', '', '');
     Browser.msgBox('Reports cleared. Ready for new verification run.');
     
   } catch (error) {
-    Logger.log('❌ Error: ' + error.message);
+    UtilityScriptLibrary.debugLog('clearReports', 'ERROR', 'Failed to clear reports', '', error.message);
     Browser.msgBox('Error: ' + error.message);
   }
 }
@@ -1083,7 +1042,7 @@ function convertCarryoverToActive(rosterSheet, studentId, formData, headerMap) {
     if (systemCommentsCol) {
       var oldComments = data[studentRow - 1][systemCommentsCol - 1] || '';
       rosterSheet.getRange(studentRow, systemCommentsCol).setValue(
-        'Re-registered on ' + new Date().toDateString() + ' with ' + newLessonsRegistered + ' lessons. ' + oldComments
+        'Re-registered on ' + UtilityScriptLibrary.formatDateFlexible(new Date(), 'M/d/yy') + ' with ' + newLessonsRegistered + ' lessons. ' + oldComments
       );
     }
 
@@ -1347,7 +1306,7 @@ function enterEffectiveDate(newTeacherDisplay) {
       return;
     }
 
-    UtilityScriptLibrary.debugLog('enterEffectiveDate', 'INFO', 'Effective date set', effectiveDate.toDateString(), '');
+    UtilityScriptLibrary.debugLog('enterEffectiveDate', 'INFO', 'Effective date set', UtilityScriptLibrary.formatDateFlexible(effectiveDate, 'M/d/yy'), '');
     scriptProps.setProperty('reassign_effectiveDate', effectiveDate.toISOString());
 
     processReassignment();
@@ -2207,11 +2166,11 @@ function loadStudentMapFromContacts() {
       }
     }
     
-    Logger.log('📚 Loaded ' + Object.keys(studentMap).length + ' students from Contacts');
+    UtilityScriptLibrary.debugLog('loadStudentMapFromContacts', 'SUCCESS', 'Loaded students from Contacts', Object.keys(studentMap).length + ' students', '');
     return studentMap;
     
   } catch (error) {
-    Logger.log('❌ Error loading student map: ' + error.message);
+    UtilityScriptLibrary.debugLog('loadStudentMapFromContacts', 'ERROR', 'Failed to load student map', '', error.message);
     throw error;
   }
 }
@@ -2579,6 +2538,7 @@ function processReassignment() {
         if (studentExists) {
           skipCount++;
         } else {
+          student.systemComment = 'Reassigned: ' + UtilityScriptLibrary.formatDateFlexible(new Date(), 'M/d');
           addStudentToRosterFromData(newRosterSheet, student, newHeaderMap);
         }
 
@@ -3663,12 +3623,12 @@ function updateTeacherRosterLookup(teacherId, fileUrl) {
 function verifyByDriveId(driveId) {
   try {
     if (!driveId) {
-      Logger.log('❌ No Drive ID provided');
+      UtilityScriptLibrary.debugLog('verifyByDriveId', 'WARNING', 'No Drive ID provided', '', '');
       return;
     }
     
     driveId = driveId.trim();
-    Logger.log('🔍 Processing Drive ID: ' + driveId);
+    UtilityScriptLibrary.debugLog('verifyByDriveId', 'INFO', 'Processing Drive ID', driveId, '');
     
     var studentMap = loadStudentMapFromContacts();
     var detailIssues = [];
@@ -3677,7 +3637,7 @@ function verifyByDriveId(driveId) {
     // Try as folder first
     try {
       var folder = DriveApp.getFolderById(driveId);
-      Logger.log('📁 Processing folder: ' + folder.getName());
+      UtilityScriptLibrary.debugLog('verifyByDriveId', 'INFO', 'Processing folder', folder.getName(), '');
       checkWorkbooksInFolder(folder, studentMap, detailIssues, summaryData, false);
     } catch (e) {
       // Not a folder, try as file
@@ -3686,7 +3646,7 @@ function verifyByDriveId(driveId) {
         if (file.getMimeType() !== MimeType.GOOGLE_SHEETS) {
           throw new Error('File is not a Google Spreadsheet');
         }
-        Logger.log('📄 Processing file: ' + file.getName());
+        UtilityScriptLibrary.debugLog('verifyByDriveId', 'INFO', 'Processing file', file.getName(), '');
         var workbook = SpreadsheetApp.openById(driveId);
         checkWorkbook(workbook, file.getName(), studentMap, detailIssues, summaryData);
       } catch (e2) {
@@ -3695,10 +3655,10 @@ function verifyByDriveId(driveId) {
     }
     
     appendToReports(detailIssues, summaryData);
-    Logger.log('✅ Complete. Found ' + detailIssues.length + ' issues.');
+    UtilityScriptLibrary.debugLog('verifyByDriveId', 'SUCCESS', 'Complete', 'Issues found: ' + detailIssues.length, '');
     
   } catch (error) {
-    Logger.log('❌ Error: ' + error.message);
+    UtilityScriptLibrary.debugLog('verifyByDriveId', 'ERROR', 'Failed', '', error.message);
   }
 }
 
