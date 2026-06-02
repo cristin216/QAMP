@@ -7555,7 +7555,6 @@ function processTeacherAttendanceForBilling(teacherSS, targetDate) {
 
       var hasAdminReview = (adminReviewDate instanceof Date) ||
                            (typeof adminReviewDate === 'string' && adminReviewDate !== '');
-      UtilityScriptLibrary.debugLog('processTeacherAttendanceForBilling', 'DEBUG', 'shouldSum check', 'Student: ' + studentId + ', Status: ' + status + ', Length: ' + length + ', hasAdminReview: ' + hasAdminReview + ', invoiceDate: [' + invoiceDate + '] type: ' + typeof invoiceDate, '');
       var shouldSum = (
         hasAdminReview &&
         (!invoiceDate || invoiceDate === '') &&
