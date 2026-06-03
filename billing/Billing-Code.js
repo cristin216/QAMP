@@ -11,6 +11,119 @@ Documentation: See FUNCTIONS_Billing.md
 // ============================================================================
 // SECTION 1: UI MENU
 // ============================================================================
+function backfillCumulativeTracking() {
+  try {
+    UtilityScriptLibrary.debugLog("backfillCumulativeTracking", "INFO", "Starting cumulative tracking backfill", "", "");
+
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+    var metadataSheet = ss.getSheetByName("Billing Metadata");
+    if (!metadataSheet) throw new Error("Billing Metadata sheet not found.");
+
+    var trackingSheet = ss.getSheetByName("Cumulative Tracking");
+    if (!trackingSheet) throw new Error("Cumulative Tracking sheet not found.");
+
+    var metaData = metadataSheet.getDataRange().getValues();
+    var norm = UtilityScriptLibrary.normalizeHeader;
+    var metaHeaderMap = UtilityScriptLibrary.getHeaderMap(metadataSheet);
+    var billingMonthCol = metaHeaderMap[norm("Billing Month")];
+    if (!billingMonthCol) throw new Error("Billing Month column not found in Billing Metadata.");
+
+    var trackingHeaderMap = UtilityScriptLibrary.getHeaderMap(trackingSheet);
+    var trackingIdCol      = trackingHeaderMap[norm("Student ID")];
+    var trackingCycleCol   = trackingHeaderMap[norm("Last Billing Cycle")];
+    var trackingTaughtCol  = trackingHeaderMap[norm("Cumulative Hours Taught")];
+    var trackingBilledCol  = trackingHeaderMap[norm("Cumulative Hours Billed")];
+    var trackingBalanceCol = trackingHeaderMap[norm("Last Balance")];
+    var trackingUpdatedCol = trackingHeaderMap[norm("Last Updated")];
+
+    if (!trackingIdCol || !trackingCycleCol || !trackingTaughtCol || !trackingBilledCol || !trackingBalanceCol || !trackingUpdatedCol) {
+      throw new Error("Required columns not found in Cumulative Tracking sheet.");
+    }
+
+    // Collect billing cycle names in reverse chronological order
+    var cycleNames = [];
+    var monthNames = UtilityScriptLibrary.getMonthNames();
+    for (var i = metaData.length - 1; i >= 1; i--) {
+      var cycleName = metaData[i][billingMonthCol - 1];
+      if (!cycleName) continue;
+      if (Object.prototype.toString.call(cycleName) === '[object Date]' || typeof cycleName.getMonth === 'function') {
+        cycleName = monthNames[cycleName.getMonth()] + ' ' + cycleName.getFullYear();
+      } else {
+        cycleName = String(cycleName).trim();
+      }
+      if (cycleName) cycleNames.push(cycleName);
+    }
+    UtilityScriptLibrary.debugLog("backfillCumulativeTracking", "DEBUG", "Cycle names from metadata", cycleNames.join(", "), "");
+    var studentMap = {}; // studentId -> { cycleName, cumTaught, cumBilled, balance }
+    var now = new Date();
+
+    for (var c = 0; c < cycleNames.length; c++) {
+      var cycleName = cycleNames[c];
+      var billingSheet = ss.getSheetByName(cycleName);
+
+      if (!billingSheet) {
+        UtilityScriptLibrary.debugLog("backfillCumulativeTracking", "WARNING", "Billing sheet not found — skipping",
+                      cycleName, "");
+        continue;
+      }
+
+      var billingData      = billingSheet.getDataRange().getValues();
+      var billingHeaderMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
+
+      var studentIdCol  = billingHeaderMap[norm("Student ID")];
+      var cumTaughtCol  = billingHeaderMap[norm("Current Cumulative Hours Taught")];
+      var cumBilledCol  = billingHeaderMap[norm("Current Cumulative Hours Billed")];
+      var balanceCol    = billingHeaderMap[norm("Current Balance")];
+
+      if (!studentIdCol || !cumTaughtCol || !cumBilledCol || !balanceCol) {
+        UtilityScriptLibrary.debugLog("backfillCumulativeTracking", "WARNING", "Required columns not found — skipping",
+                      cycleName, "");
+        continue;
+      }
+
+      for (var r = 1; r < billingData.length; r++) {
+        var row       = billingData[r];
+        var studentId = String(row[studentIdCol - 1] || '').trim();
+        if (!studentId || studentMap[studentId]) continue; // already found a more recent row
+
+        studentMap[studentId] = {
+          cycleName: cycleName,
+          cumTaught: parseFloat(row[cumTaughtCol - 1]) || 0,
+          cumBilled: parseFloat(row[cumBilledCol - 1]) || 0,
+          balance:   parseFloat(row[balanceCol - 1])   || 0
+        };
+      }
+
+      UtilityScriptLibrary.debugLog("backfillCumulativeTracking", "INFO", "Processed billing sheet",
+                    cycleName, "");
+    }
+
+    // Write all found students to Cumulative Tracking
+    var addedCount = 0;
+    for (var studentId in studentMap) {
+      var entry = studentMap[studentId];
+      trackingSheet.appendRow([
+        studentId,
+        entry.cycleName,
+        entry.cumTaught,
+        entry.cumBilled,
+        entry.balance,
+        now
+      ]);
+      addedCount++;
+    }
+
+    UtilityScriptLibrary.debugLog("backfillCumulativeTracking", "SUCCESS", "Backfill complete",
+                  "Students added: " + addedCount, "");
+
+    SpreadsheetApp.getUi().alert("✅ Cumulative Tracking backfill complete. " + addedCount + " students added.");
+
+  } catch (error) {
+    UtilityScriptLibrary.debugLog("backfillCumulativeTracking", "ERROR", "Backfill failed", "", error.message);
+    SpreadsheetApp.getUi().alert("❌ Error: " + error.message);
+  }
+}
 
 function onOpen() {
   SpreadsheetApp.getUi()
@@ -45,7 +158,7 @@ function runBillingCycleAutomation() {
 
     var ss  = SpreadsheetApp.getActiveSpreadsheet();
     var ui  = SpreadsheetApp.getUi();
-    var customToday     = promptForCustomToday();
+    var customToday     = UtilityScriptLibrary.promptForCustomToday();
     var billingCycleName = promptForBillingCycleName(customToday);
     if (!billingCycleName) return;
 
@@ -1032,30 +1145,31 @@ function applyBillingConditionalFormatting(billingSheet) {
 
 function applyCumulativeHistory(newRow, studentId, context, currencyCols) {
   var cumulativeHistory = getCumulativeHistory(studentId);
-  
+
   if (!cumulativeHistory) {
-    UtilityScriptLibrary.debugLog("applyCumulativeHistory", "DEBUG", "No cumulative history found", 
+    UtilityScriptLibrary.debugLog("applyCumulativeHistory", "DEBUG", "No cumulative history found",
                   "Student ID: " + studentId, "");
     return;
   }
-  
-  var h = context.headerMap;
+
+  var h    = context.headerMap;
   var norm = UtilityScriptLibrary.normalizeHeader;
-  
+
   var pastCumTaughtCol = h[norm("Past Cumulative Hours Taught")];
   var pastCumBilledCol = h[norm("Past Cumulative Hours Billed")];
-  
-  if (pastCumTaughtCol) {
-    newRow[pastCumTaughtCol - 1] = cumulativeHistory.cumulativeHoursTaught;
+  var pastBalanceCol   = h[norm("Past Balance")];
+
+  if (pastCumTaughtCol) newRow[pastCumTaughtCol - 1] = cumulativeHistory.cumulativeHoursTaught;
+  if (pastCumBilledCol) newRow[pastCumBilledCol - 1] = cumulativeHistory.cumulativeHoursBilled;
+  if (pastBalanceCol)   {
+    newRow[pastBalanceCol - 1] = cumulativeHistory.lastBalance;
+    UtilityScriptLibrary.addToCurrencyCols(currencyCols, pastBalanceCol);
   }
-  
-  if (pastCumBilledCol) {
-    newRow[pastCumBilledCol - 1] = cumulativeHistory.cumulativeHoursBilled;
-  }
-  
-  UtilityScriptLibrary.debugLog("applyCumulativeHistory", "INFO", "Applied cumulative history", 
-                "Student ID: " + studentId + ", Taught: " + cumulativeHistory.cumulativeHoursTaught + 
-                ", Billed: " + cumulativeHistory.cumulativeHoursBilled, "");
+
+  UtilityScriptLibrary.debugLog("applyCumulativeHistory", "INFO", "Applied cumulative history",
+                "Student ID: " + studentId + ", Taught: " + cumulativeHistory.cumulativeHoursTaught +
+                ", Billed: " + cumulativeHistory.cumulativeHoursBilled +
+                ", Balance: " + cumulativeHistory.lastBalance, "");
 }
 
 function applyLateFeeToRow(newRow, context, currencyCols, pastBalanceValue) {
@@ -1390,8 +1504,6 @@ function buildBillingRowFromForm(formRow, prevRow, context, rowIndex) {
   populateInvoiceMetadata(newRow, studentId, context, rowIndex);
   populateLetterType(newRow, context, 'form', null);
 
-  var enrolledPrograms = getExpandedPrograms(formRow, context);
-
   var qty30Package = get('Qty30') !== -1 ? formRow[get('Qty30')] : '';
   var qty45Package = get('Qty45') !== -1 ? formRow[get('Qty45')] : '';
   var qty60Package = get('Qty60') !== -1 ? formRow[get('Qty60')] : '';
@@ -1400,7 +1512,7 @@ function buildBillingRowFromForm(formRow, prevRow, context, rowIndex) {
   var lessonLength = UtilityScriptLibrary.getLessonLengthFromPackages(qty30Package, qty45Package, qty60Package);
 
   var result = buildDynamicProgramColumns(
-    newRow, formRow, enrolledPrograms, context,
+    newRow, formRow, context,
     quantityCols, currencyCols, rowIndex, quantities.totalQuantity
   );
   quantityCols = result.quantityCols;
@@ -1792,12 +1904,12 @@ function buildDynamicLineItems(billingData) {
   }
 }
 
-function buildDynamicProgramColumns(newRow, row, enrolledPrograms, context, quantityCols, currencyCols, rowNum, lessonQuantity) {
+function buildDynamicProgramColumns(newRow, row, context, quantityCols, currencyCols, rowNum, lessonQuantity) {
   UtilityScriptLibrary.debugLog('buildDynamicProgramColumns', 'DEBUG', 'FUNCTION ENTERED',
-    'enrolledPrograms: ' + JSON.stringify(enrolledPrograms), '');
+    'lessonQuantity: ' + lessonQuantity, '');
 
-  var get = context.getColIndex;
-  var h   = context.headerMap;
+  var get     = context.getColIndex;
+  var h       = context.headerMap;
   var rateMap = getRateMap(context);
 
   for (var programName in context.programMap) {
@@ -1805,17 +1917,6 @@ function buildDynamicProgramColumns(newRow, row, enrolledPrograms, context, quan
     var prefix   = program.prefix;
     var rateKey  = program.rateKey;
     var qtyType  = program.quantityType;
-
-    var isEnrolled = false;
-    for (var i = 0; i < enrolledPrograms.length; i++) {
-      if (enrolledPrograms[i] === programName.toLowerCase()) {
-        isEnrolled = true;
-        break;
-      }
-    }
-
-    UtilityScriptLibrary.debugLog('buildDynamicProgramColumns', 'DEBUG', 'Checking program enrollment',
-      'Program: ' + programName + ', isEnrolled: ' + isEnrolled, '');
 
     var price    = rateMap[rateKey] || 0;
     var qtyCol   = h[UtilityScriptLibrary.normalizeHeader(prefix + " Quantity")];
@@ -1825,11 +1926,11 @@ function buildDynamicProgramColumns(newRow, row, enrolledPrograms, context, quan
 
     var quantity = 0;
 
-    if (isEnrolled && programName.toLowerCase() === "lessons") {
+    if (programName.toLowerCase() === "lessons") {
       quantity = lessonQuantity || 0;
-    } else if (isEnrolled && qtyType === "Multiple") {
+    } else if (qtyType === "Multiple") {
       quantity = row[get(qtyType)] || 1;
-    } else if (isEnrolled) {
+    } else {
       var quantityKey = prefix + " Number";
       quantity = rateMap[quantityKey] || 0;
       if (quantity === 0) {
@@ -1853,7 +1954,6 @@ function buildDynamicProgramColumns(newRow, row, enrolledPrograms, context, quan
       newRow[priceCol - 1] = price;
       currencyCols.push(priceCol);
     }
-
     if (hoursCol && prefix.toLowerCase() === "lesson") {
       var lessonLength = getLessonLengthFromRow(row, get);
       var lengthMinutes = parseInt(lessonLength) || 30;
@@ -2620,7 +2720,7 @@ function continueAttendanceSheetCreation(targetMonthName, targetYear) {
       }
       
       try {
-        var result = processTeacherForNewAttendance(teacherId, rosterUrl, targetMonthName);
+        var result = processTeacherForNewAttendance(teacherId, rosterUrl, targetMonthName, targetYear);
         stats.processed++;
         
         if (result.created) {
@@ -4357,7 +4457,6 @@ function extractRosterDataForAttendance(rosterSheet) {
   var data = rosterSheet.getDataRange().getValues();
   var headers = data[0];
   
-  // Dynamic column finder
   var getCol = function(name) {
     for (var i = 0; i < headers.length; i++) {
       if (headers[i] && headers[i].toString().toLowerCase().indexOf(name.toLowerCase()) !== -1) {
@@ -4367,29 +4466,26 @@ function extractRosterDataForAttendance(rosterSheet) {
     return -1;
   };
   
+  var lastNameCol = getCol('Last Name');
+  var firstNameCol = getCol('First Name');
+  var lessonsRemainingCol = getCol('Lessons Remaining');
   var students = [];
   
-  // Process each row (skip header)
   for (var i = 1; i < data.length; i++) {
     var row = data[i];
-    
-    // Skip empty rows - check both last name and first name
-    var lastNameCol = getCol('Last Name');
-    var firstNameCol = getCol('First Name');
     
     if (lastNameCol === -1 || firstNameCol === -1 || 
         !row[lastNameCol] || !row[firstNameCol]) {
       continue;
     }
     
-    // Find lessons remaining column
-    var lessonsRemainingCol = getCol('Lessons Remaining');
     var lessonsRemaining = 0;
-    
     if (lessonsRemainingCol !== -1 && row[lessonsRemainingCol]) {
       lessonsRemaining = parseFloat(row[lessonsRemainingCol]) || 0;
     }
     
+    var status = (row[getCol('Status')] || 'active').toString().toLowerCase().trim();
+
     var student = {
       id: row[getCol('Student ID')] || '',
       lastName: row[lastNameCol] || '',
@@ -4399,18 +4495,17 @@ function extractRosterDataForAttendance(rosterSheet) {
       lessonsRegistered: 0,
       lessonsCompleted: 0,
       lessonsRemaining: lessonsRemaining,
-      status: row[getCol('Status')] || 'active'
+      status: status
     };
     
-    // Only include active students (not dropped)
-    if (student.status.toString().toLowerCase() !== 'dropped') {
+    if (status !== 'dropped' && status !== 'transferred') {
       students.push(student);
     }
   }
   
-  UtilityScriptLibrary.debugLog("extractRosterDataForAttendance", "INFO", 
-                                "Extracted roster data", 
-                                students.length + " students found", "");
+  UtilityScriptLibrary.debugLog('extractRosterDataForAttendance', 'INFO', 
+                                'Extracted roster data', 
+                                students.length + ' students found', '');
   return students;
 }
 
@@ -5114,42 +5209,42 @@ function getCumulativeHistory(studentId) {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var trackingSheet = ss.getSheetByName("Cumulative Tracking");
-    
+
     if (!trackingSheet) {
       UtilityScriptLibrary.debugLog("getCumulativeHistory", "WARNING", "Cumulative Tracking sheet not found", "", "");
       return null;
     }
-    
-    var trackingData = trackingSheet.getDataRange().getValues();
+
+    var trackingData      = trackingSheet.getDataRange().getValues();
     var trackingHeaderMap = UtilityScriptLibrary.getHeaderMap(trackingSheet);
-    
-    var norm = UtilityScriptLibrary.normalizeHeader;
-    var idCol = trackingHeaderMap[norm("Student ID")];
-    var cycleCol = trackingHeaderMap[norm("Last Billing Cycle")];
-    var taughtCol = trackingHeaderMap[norm("Cumulative Hours Taught")];
-    var billedCol = trackingHeaderMap[norm("Cumulative Hours Billed")];
-    
-    if (!idCol || !cycleCol || !taughtCol || !billedCol) {
+
+    var norm       = UtilityScriptLibrary.normalizeHeader;
+    var idCol      = trackingHeaderMap[norm("Student ID")];
+    var cycleCol   = trackingHeaderMap[norm("Last Billing Cycle")];
+    var taughtCol  = trackingHeaderMap[norm("Cumulative Hours Taught")];
+    var billedCol  = trackingHeaderMap[norm("Cumulative Hours Billed")];
+    var balanceCol = trackingHeaderMap[norm("Last Balance")];
+
+    if (!idCol || !cycleCol || !taughtCol || !billedCol || !balanceCol) {
       UtilityScriptLibrary.debugLog("getCumulativeHistory", "ERROR", "Required columns not found in tracking sheet", "", "");
       return null;
     }
-    
-    // Search for student
+
     for (var i = 1; i < trackingData.length; i++) {
       if (trackingData[i][idCol - 1] === studentId) {
         return {
-          lastBillingCycle: trackingData[i][cycleCol - 1],
-          cumulativeHoursTaught: parseFloat(trackingData[i][taughtCol - 1]) || 0,
-          cumulativeHoursBilled: parseFloat(trackingData[i][billedCol - 1]) || 0
+          lastBillingCycle:       trackingData[i][cycleCol - 1],
+          cumulativeHoursTaught:  parseFloat(trackingData[i][taughtCol - 1])  || 0,
+          cumulativeHoursBilled:  parseFloat(trackingData[i][billedCol - 1])  || 0,
+          lastBalance:            parseFloat(trackingData[i][balanceCol - 1]) || 0
         };
       }
     }
-    
-    // Student not found
+
     return null;
-    
+
   } catch (error) {
-    UtilityScriptLibrary.debugLog("getCumulativeHistory", "ERROR", "Failed to get cumulative history", 
+    UtilityScriptLibrary.debugLog("getCumulativeHistory", "ERROR", "Failed to get cumulative history",
                   "Student ID: " + studentId, error.message);
     return null;
   }
@@ -5547,6 +5642,7 @@ function getDocumentSelectionHtml() {
 }
 
 function getExpandedPrograms(row, context) {
+  // FUTURE: getExpandedPrograms may be useful when multi-program support is re-added
   var enrollmentRaw = row[context.getColIndex("Enrollment")] || '';
   var enrolled = enrollmentRaw
     .toString()
@@ -7594,17 +7690,17 @@ function processTeacherAttendanceForBilling(teacherSS, targetDate) {
   };
 }
 
-function processTeacherForNewAttendance(teacherId, rosterUrl, targetMonthName) {
+function processTeacherForNewAttendance(teacherId, rosterUrl, targetMonthName, targetYear) {
   try {
     UtilityScriptLibrary.debugLog('processTeacherForNewAttendance', 'INFO',
       'Processing teacher', teacherId, '');
 
     var rosterSS = SpreadsheetApp.openByUrl(rosterUrl);
-    var rosterSheet = UtilityScriptLibrary.findMostRecentRosterSheet(rosterSS);
+    var rosterSheet = UtilityScriptLibrary.findRosterSheetForMonth(rosterSS, targetMonthName + ' ' + targetYear);
 
     if (!rosterSheet) {
       UtilityScriptLibrary.debugLog('processTeacherForNewAttendance', 'INFO',
-        'No roster sheet found - skipping', teacherId, '');
+        'No matching roster sheet for month - skipping', teacherId + ' - ' + targetMonthName, '');
       return { skipped: true, reason: 'no_roster' };
     }
 
@@ -7612,21 +7708,11 @@ function processTeacherForNewAttendance(teacherId, rosterUrl, targetMonthName) {
     UtilityScriptLibrary.debugLog('processTeacherForNewAttendance', 'INFO',
       'Using roster sheet', teacherId + ' - ' + usedRosterName, '');
 
-    var allStudents = extractRosterDataForAttendance(rosterSheet);
-    var activeStudents = [];
-
-    for (var i = 0; i < allStudents.length; i++) {
-      var student = allStudents[i];
-      var status = (student.status || '').toString().trim();
-      if (student.lessonsRemaining && student.lessonsRemaining > 0 &&
-          (status === 'active' || status === 'carryover')) {
-        activeStudents.push(student);
-      }
-    }
+    var activeStudents = extractRosterDataForAttendance(rosterSheet);
 
     if (activeStudents.length === 0) {
       UtilityScriptLibrary.debugLog('processTeacherForNewAttendance', 'INFO',
-        'No active/carryover students with lessons remaining - skipping', teacherId, '');
+        'No active/carryover students - skipping', teacherId, '');
       return { skipped: true, reason: 'no_active_students' };
     }
 
@@ -9066,93 +9152,91 @@ function updateBillingForStudents(billingSheet, studentHours) {
 
 function updateCumulativeTracking(billingSheetName) {
   try {
-    UtilityScriptLibrary.debugLog("updateCumulativeTracking", "INFO", "Starting cumulative tracking update", 
+    UtilityScriptLibrary.debugLog("updateCumulativeTracking", "INFO", "Starting cumulative tracking update",
                   "Billing sheet: " + billingSheetName, "");
-    
+
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var billingSheet = ss.getSheetByName(billingSheetName);
-    
+
     if (!billingSheet) {
-      UtilityScriptLibrary.debugLog("updateCumulativeTracking", "WARNING", "Billing sheet not found", 
+      UtilityScriptLibrary.debugLog("updateCumulativeTracking", "WARNING", "Billing sheet not found",
                     "Sheet name: " + billingSheetName, "");
       return;
     }
-    
+
     var trackingSheet = ss.getSheetByName("Cumulative Tracking");
     if (!trackingSheet) {
-      UtilityScriptLibrary.debugLog("updateCumulativeTracking", "ERROR", "Cumulative Tracking sheet not found", "", "");
-      return;
+      trackingSheet = ss.insertSheet("Cumulative Tracking");
+      trackingSheet.appendRow(["Student ID", "Last Billing Cycle", "Cumulative Hours Taught", "Cumulative Hours Billed", "Last Balance", "Last Updated"]);
+      UtilityScriptLibrary.debugLog("updateCumulativeTracking", "INFO", "Created Cumulative Tracking sheet", "", "");
     }
-    
+
     var billingData = billingSheet.getDataRange().getValues();
     var billingHeaderMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
     var trackingHeaderMap = UtilityScriptLibrary.getHeaderMap(trackingSheet);
-    
+
     var norm = UtilityScriptLibrary.normalizeHeader;
-    var studentIdCol = billingHeaderMap[norm("Student ID")];
-    var cumTaughtCol = billingHeaderMap[norm("Current Cumulative Hours Taught")];
-    var cumBilledCol = billingHeaderMap[norm("Current Cumulative Hours Billed")];
-    
-    if (!studentIdCol || !cumTaughtCol || !cumBilledCol) {
+    var studentIdCol  = billingHeaderMap[norm("Student ID")];
+    var cumTaughtCol  = billingHeaderMap[norm("Current Cumulative Hours Taught")];
+    var cumBilledCol  = billingHeaderMap[norm("Current Cumulative Hours Billed")];
+    var balanceCol    = billingHeaderMap[norm("Current Balance")];
+
+    if (!studentIdCol || !cumTaughtCol || !cumBilledCol || !balanceCol) {
       UtilityScriptLibrary.debugLog("updateCumulativeTracking", "ERROR", "Required columns not found in billing sheet", "", "");
       return;
     }
-    
-    var trackingData = trackingSheet.getDataRange().getValues();
-    var trackingIdCol = trackingHeaderMap[norm("Student ID")];
-    var trackingCycleCol = trackingHeaderMap[norm("Last Billing Cycle")];
-    var trackingTaughtCol = trackingHeaderMap[norm("Cumulative Hours Taught")];
-    var trackingBilledCol = trackingHeaderMap[norm("Cumulative Hours Billed")];
+
+    var trackingData       = trackingSheet.getDataRange().getValues();
+    var trackingIdCol      = trackingHeaderMap[norm("Student ID")];
+    var trackingCycleCol   = trackingHeaderMap[norm("Last Billing Cycle")];
+    var trackingTaughtCol  = trackingHeaderMap[norm("Cumulative Hours Taught")];
+    var trackingBilledCol  = trackingHeaderMap[norm("Cumulative Hours Billed")];
+    var trackingBalanceCol = trackingHeaderMap[norm("Last Balance")];
     var trackingUpdatedCol = trackingHeaderMap[norm("Last Updated")];
-    
-    if (!trackingIdCol || !trackingCycleCol || !trackingTaughtCol || !trackingBilledCol || !trackingUpdatedCol) {
+
+    if (!trackingIdCol || !trackingCycleCol || !trackingTaughtCol || !trackingBilledCol || !trackingBalanceCol || !trackingUpdatedCol) {
       UtilityScriptLibrary.debugLog("updateCumulativeTracking", "ERROR", "Required columns not found in tracking sheet", "", "");
       return;
     }
-    
+
     var now = new Date();
     var updatedCount = 0;
     var addedCount = 0;
-    
-    // Build tracking lookup map
+
     var trackingMap = {};
     for (var i = 1; i < trackingData.length; i++) {
-      var studentId = trackingData[i][trackingIdCol - 1];
-      if (studentId) {
-        trackingMap[studentId] = i + 1; // Store actual row number (1-indexed)
-      }
+      var sid = trackingData[i][trackingIdCol - 1];
+      if (sid) trackingMap[sid] = i + 1;
     }
-    
-    // Process each student from billing sheet
+
     for (var i = 1; i < billingData.length; i++) {
-      var row = billingData[i];
+      var row       = billingData[i];
       var studentId = row[studentIdCol - 1];
-      
       if (!studentId) continue;
-      
+
       var cumTaught = parseFloat(row[cumTaughtCol - 1]) || 0;
       var cumBilled = parseFloat(row[cumBilledCol - 1]) || 0;
-      
+      var balance   = parseFloat(row[balanceCol - 1])   || 0;
+
       if (trackingMap[studentId]) {
-        // Update existing row
         var trackingRow = trackingMap[studentId];
         trackingSheet.getRange(trackingRow, trackingCycleCol).setValue(billingSheetName);
         trackingSheet.getRange(trackingRow, trackingTaughtCol).setValue(cumTaught);
         trackingSheet.getRange(trackingRow, trackingBilledCol).setValue(cumBilled);
+        trackingSheet.getRange(trackingRow, trackingBalanceCol).setValue(balance);
         trackingSheet.getRange(trackingRow, trackingUpdatedCol).setValue(now);
         updatedCount++;
       } else {
-        // Append new row
-        trackingSheet.appendRow([studentId, billingSheetName, cumTaught, cumBilled, now]);
+        trackingSheet.appendRow([studentId, billingSheetName, cumTaught, cumBilled, balance, now]);
         addedCount++;
       }
     }
-    
-    UtilityScriptLibrary.debugLog("updateCumulativeTracking", "SUCCESS", "Cumulative tracking updated", 
+
+    UtilityScriptLibrary.debugLog("updateCumulativeTracking", "SUCCESS", "Cumulative tracking updated",
                   "Updated: " + updatedCount + ", Added: " + addedCount, "");
-    
+
   } catch (error) {
-    UtilityScriptLibrary.debugLog("updateCumulativeTracking", "ERROR", "Failed to update cumulative tracking", 
+    UtilityScriptLibrary.debugLog("updateCumulativeTracking", "ERROR", "Failed to update cumulative tracking",
                   "", error.message);
     throw error;
   }

@@ -1621,6 +1621,86 @@ function findParentRow(parentsSheet, parentId, fallbackKey) {
   }
 }
 
+function findRosterSheetForMonth(workbook, targetMonthName) {
+  try {
+    var parts = targetMonthName.split(' ');
+    if (parts.length !== 2) {
+      debugLog('findRosterSheetForMonth', 'ERROR', 'Invalid targetMonthName format', targetMonthName, '');
+      return null;
+    }
+
+    var monthIndex = MONTH_NAMES.indexOf(parts[0]);
+    var year = parseInt(parts[1]);
+    if (monthIndex === -1 || isNaN(year)) {
+      debugLog('findRosterSheetForMonth', 'ERROR', 'Could not parse month/year', targetMonthName, '');
+      return null;
+    }
+
+    var targetDate = new Date(year, monthIndex, 1);
+
+    var semesterMetadataSheet = getSheet('semesterMetadata');
+    if (!semesterMetadataSheet) {
+      debugLog('findRosterSheetForMonth', 'ERROR', 'Semester Metadata sheet not found', '', '');
+      return null;
+    }
+
+    var data = semesterMetadataSheet.getDataRange().getValues();
+    var headers = data[0];
+    var headerMap = getHeaderMap(semesterMetadataSheet);
+    var norm = normalizeHeader;
+
+    var nameCol = headerMap[norm('Semester Name')];
+    var startCol = headerMap[norm('Start Date')];
+    var endCol = headerMap[norm('End Date')];
+
+    if (!nameCol || !startCol || !endCol) {
+      debugLog('findRosterSheetForMonth', 'ERROR', 'Required columns not found in Semester Metadata', '', '');
+      return null;
+    }
+
+    var matchedSemester = null;
+    for (var i = 1; i < data.length; i++) {
+      var row = data[i];
+      var semesterName = (row[nameCol - 1] || '').toString().trim();
+      var startDate = new Date(row[startCol - 1]);
+      var endDate = new Date(row[endCol - 1]);
+
+      if (!semesterName || isNaN(startDate.getTime()) || isNaN(endDate.getTime())) continue;
+
+      if (targetDate >= startDate && targetDate <= endDate) {
+        matchedSemester = semesterName;
+        break;
+      }
+    }
+
+    if (!matchedSemester) {
+      debugLog('findRosterSheetForMonth', 'WARNING', 'No semester found for month', targetMonthName, '');
+      return null;
+    }
+
+    var season = extractSeasonFromSemester(matchedSemester);
+    if (!season) {
+      debugLog('findRosterSheetForMonth', 'WARNING', 'Could not extract season from semester', matchedSemester, '');
+      return null;
+    }
+
+    var rosterSheetName = season + ' Roster';
+    var rosterSheet = workbook.getSheetByName(rosterSheetName);
+
+    if (!rosterSheet) {
+      debugLog('findRosterSheetForMonth', 'INFO', 'No matching roster sheet found', rosterSheetName, '');
+      return null;
+    }
+
+    debugLog('findRosterSheetForMonth', 'SUCCESS', 'Found roster sheet', rosterSheetName + ' for ' + targetMonthName, '');
+    return rosterSheet;
+
+  } catch (error) {
+    debugLog('findRosterSheetForMonth', 'ERROR', 'Error finding roster sheet', targetMonthName, error.message);
+    return null;
+  }
+}
+
 function findStudentInContacts(contactsData, studentIdCol, targetStudentId) {
   for (var i = 1; i < contactsData.length; i++) {
     if (contactsData[i][studentIdCol - 1] === targetStudentId) {
