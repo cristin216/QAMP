@@ -1711,10 +1711,17 @@ function generateEnrollmentComparisonGraph() {
 
     function mapToLabels(cum, labels) {
       var lookup = {};
-      cum.forEach(function(pt) { lookup[pt.label] = pt.count; });
+      var lastLabel = null;
+      cum.forEach(function(pt) {
+        lookup[pt.label] = pt.count;
+        lastLabel = pt.label;
+      });
       var last = 0;
+      var done = false;
       return labels.map(function(lbl) {
+        if (done) return null;
         if (lookup[lbl] !== undefined) last = lookup[lbl];
+        if (lbl === lastLabel) done = true;
         return last || null;
       });
     }
