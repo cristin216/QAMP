@@ -1,8 +1,8 @@
 ================================================================================
 PAYMENTS FUNCTION DIRECTORY
 ================================================================================
-    Total Functions: 2
-    Most Recent version: 2
+    Total Functions: 3
+    Most Recent version: 3
 
     This directory provides a quick reference for all functions in Payments script.
     Parameters marked with ? are optional.
@@ -17,6 +17,7 @@ PAYMENTS FUNCTION DIRECTORY
   ALPHABETICAL INDEX:
   ================================================================================
     createPaymentReceiptDocument
+    logSheetHeaders
     onEditInstallable
 
   ================================================================================
@@ -28,6 +29,9 @@ PAYMENTS FUNCTION DIRECTORY
 
     EVENT_TRIGGER (1 function):
       onEditInstallable
+
+    TESTING (1 function):
+      logSheetHeaders
 
   ================================================================================
   FUNCTION REFERENCE (Alphabetical)
@@ -42,6 +46,13 @@ PAYMENTS FUNCTION DIRECTORY
         Local functions used: None
         Utility functions used: UtilityScriptLibrary.debugLog()
         Called by: onEditInstallable()
+
+    logSheetHeaders() -> void
+        Logs all sheet names and their header row values to the console for debugging.
+        Skips empty sheets.
+        Category: TESTING
+        Local functions used: None
+        Utility functions used: UtilityScriptLibrary.logAllSheetHeaders()
 
     onEditInstallable(e) -> void
         Installable edit trigger. Fires when the Receipt Needed column is set to TRUE

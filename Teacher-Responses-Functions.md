@@ -1,8 +1,8 @@
 ================================================================================
 TEACHER RESPONSES FUNCTION DIRECTORY
 ================================================================================
-    Total Functions: 17
-    Most Recent version: 16
+    Total Functions: 16
+    Most Recent version: 17
 
     This directory provides a quick reference for all functions in TeacherResponses script.
     Parameters marked with ? are optional.
@@ -16,11 +16,22 @@ TEACHER RESPONSES FUNCTION DIRECTORY
   ================================================================================
   ALPHABETICAL INDEX:
   ================================================================================
-    addOrUpdateTeacherRosterLookup, appendAdminFlag, buildTeacherDisplayName,
-    createPartialReturningRecord, extractReturningFormData, extractTeacherFormData,
-    findInstrumentRow, findTeacherRow, handleReturningFormSubmit, handleTeacherFormSubmit,
-    logSheetHeaders, migrateTeacherDisplayNames, processSingleInstrument, processTeacher,
-    setInstrumentAvailability, updateInstrumentAvailability, updateTeacherFields
+    addOrUpdateTeacherRosterLookup
+    appendAdminFlag
+    buildTeacherDisplayName
+    createPartialReturningRecord
+    extractFormData
+    findInstrumentRow
+    findTeacherRow
+    handleReturningFormSubmit
+    handleTeacherFormSubmit
+    logSheetHeaders
+    migrateTeacherDisplayNames
+    processSingleInstrument
+    processTeacher
+    setInstrumentAvailability
+    updateInstrumentAvailability
+    updateTeacherFields
 
   ================================================================================
   FUNCTION REFERENCE (Alphabetical)
@@ -63,21 +74,14 @@ TEACHER RESPONSES FUNCTION DIRECTORY
                                 UtilityScriptLibrary.createColumnFinder(), UtilityScriptLibrary.debugLog()
         Called by: handleReturningFormSubmit()
 
-    extractReturningFormData(e) -> Object
-        Extracts form data from a teacher returning form submission event or, if no event
-        is provided, reads the last row of the Teacher Returning Responses sheet.
-        Returns object with form field names as keys.
+    extractFormData(e?, sheetKey) -> Object
+        Extracts form data from either a form submission event or, if no event is provided,
+        reads the last row of the sheet identified by sheetKey. Returns an object with
+        form field names as keys and their values.
         Category: DATA_EXTRACTION
         Local functions used: None
         Utility functions used: UtilityScriptLibrary.getSheet()
-        Called by: handleReturningFormSubmit()
-
-    extractTeacherFormData(e) -> Object
-        Extracts form data from either a form submission event or active sheet.
-        Returns an object with form field names as keys and their values.
-        Category: DATA_EXTRACTION
-        Local functions used: None
-        Utility functions used: UtilityScriptLibrary.getColumnHeaders()
+        Called by: handleTeacherFormSubmit(), handleReturningFormSubmit()
 
     findInstrumentRow(sheet, firstName, lastName, instrument) -> Number
         Finds the row number for a specific teacher/instrument combination in the

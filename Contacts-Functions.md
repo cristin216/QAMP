@@ -2,7 +2,7 @@
 CONTACTS FUNCTION DIRECTORY
 ================================================================================
     Total Functions: 2
-    Most Recent version: 4
+    Most Recent version: 5
 
     This directory provides a quick reference for all functions in Contacts script.
     Parameters marked with ? are optional.
@@ -42,11 +42,11 @@ FUNCTION DETAILS (ALPHABETICAL):
         Skips empty sheets.
         Category: TESTING
         Local functions used: None
-        Utility functions used: None
+        Utility functions used: UtilityScriptLibrary.logAllSheetHeaders()
 
     onEditContacts(e) -> void
         Handles edit events on the Teachers and Admin sheet.
-        Watches for Status column changes to 'Former' on teacher rows (Teacher ID
+        Watches for Status column changes to 'former' on teacher rows (Teacher ID
         starting with 'T'). Skips multi-cell edits, non-teacher rows, and edits
         outside the Status column. Calls cascadeFormerStatus() to propagate the
         status change downstream.

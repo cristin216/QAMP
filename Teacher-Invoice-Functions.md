@@ -1,8 +1,8 @@
 ================================================================================
-TEACHERINVOICE FUNCTION DIRECTORY
+TEACHER INVOICE FUNCTION DIRECTORY
 ================================================================================
-    Total Functions: 85
-    Most Recent version: 31
+    Total Functions: 59
+    Most Recent version: 32
 
     This directory provides a quick reference for all functions in TeacherInvoice script.
     Parameters marked with ? are optional.
@@ -16,90 +16,65 @@ TEACHERINVOICE FUNCTION DIRECTORY
   ================================================================================
   ALPHABETICAL INDEX:
   ================================================================================
-addLateTeacherToInvoice,
-    addStudentLineItem,
-    addTeacherHeaderRow,
-    appendTeacherToInvoiceSheet,
-    buildTeacherInvoiceFileName,
-    buildTeacherInvoiceVariableMap,
-    calculateLessonRateAndCost,
-    calculateLessonsStartingDate,
-    checkTemplateFormatting,
-    collectUninvoicedLessonsUpToDate,
-    convertFolderDocsToPdfUI,
-    createAdminDetailReport,
-    createAdminSummaryReport,
-    createAugDecVerificationSheet,
-    createInvoiceVsBillingSheet,
-    createMonthlyInvoiceSheet,
-    createStudentHoursByAdminMonthReport,
-    createStudentReconciliationReport,
-    createUnpaidLessonsReport,
-    createVerificationSheet,
-    debugMonthlySheetStructure,
-    extractAndMarkLessonsFromSheet,
-    extractLessonFromRow,
-    extractLessonsFromAttendanceSheet,
-    extractTeacherInvoiceNumbers,
-    extractTeachersFromFormattedSheet,
-    formatDateForComparison,
-    formatDateForInput,
-    formatInvoiceSheet,
-    generate2025AdminReports,
-    generateAndVerifyHours,
-    generateDefaultInvoicePeriod,
-    generateDefaultMonthName,
-    generateInvoiceNumber,
-    generateMonthlyTeacherInvoices,
-    generateSingleTeacherInvoice,
-    generateTeacherInvoiceDocuments,
-    generateYearlyStudentTotals,
-    getActiveTeacherList,
-    getAttendanceSheetsFromWorkbook,
-    getDecemberCumulativeData,
-    getRateForSemester,
-    getRateKeyForProgram,
-    getRatesLookupForSemester,
-    getSemesterForDate,
-    getTeacherContactInfo,
-    getTeacherInfoByName,
-    getTeacherInfoFromLessonGroup,
-    getTeacherInvoicesFolder,
-    getTeacherInvoicingMetadata,
-    getUninvoicedLessonsForTeacher,
-    groupLessonsByTeacherAndType,
-    isMonthlyInvoiceSheet,
-    loadProgramRateKeysCache,
-    loadRatesCache,
-    normalizeNameForMatching,
-    onOpen,
-    parseLessonDate,
-    parseStudentName,
-    populateInvoiceSheetFromLessons,
-    processBillingSheetData,
-    processBillingSheetFor2025,
-    processBillingSheetForAugDec,
-    processAttendanceSheet,
-    processAttendanceSheetForAdminReports,
-    processInvoiceSheetForVerification,
-    processSheetForMonthlyTotals,
-    promptForCutoffDate,
-    promptForInvoiceDate,
-    promptForInvoicePeriod,
-    promptForMonthName,
-    setupMetadataStatusDropdown,
-    showCombinedErrorDetails,
-    showInvoiceGenerationResults,
-    showInvoiceGenerationUI,
-    showResultsSummaryUI,
-    showTeacherInvoiceResults,
-    updateMetadataStatus,
-    updateTeacherInvoiceHistory,
-    validateLessonData,
-    verifyAttendanceVsInvoices,
-    verifyHoursAugustDecember2025,
-    verifyHoursTaught,
-    verifyInvoiceVsBilling2025,
+    addLateTeacherToInvoice
+    addStudentLineItem
+    addTeacherHeaderRow
+    appendTeacherToInvoiceSheet
+    buildTeacherInvoiceFileName
+    buildTeacherInvoiceVariableMap
+    calculateLessonRateAndCost
+    calculateLessonsStartingDate
+    collectUninvoicedLessonsUpToDate
+    convertFolderDocsToPdfUI
+    createMonthlyInvoiceSheet
+    createStudentReconciliationReport
+    createUnpaidLessonsReport
+    extractAndMarkLessonsFromSheet
+    extractLessonFromRow
+    extractLessonsFromAttendanceSheet
+    extractTeachersFromFormattedSheet
+    formatInvoiceSheet
+    generateDefaultInvoicePeriod
+    generateDefaultMonthName
+    generateInvoiceNumber
+    generateMonthlyTeacherInvoices
+    generateSingleTeacherInvoice
+    generateTeacherInvoiceDocuments
+    getActiveTeacherList
+    getAttendanceSheetsFromWorkbook
+    getRateForSemester
+    getRateKeyForProgram
+    getRatesLookupForSemester
+    getSemesterForDate
+    getTeacherContactInfo
+    getTeacherInfoByName
+    getTeacherInfoFromLessonGroup
+    getTeacherInvoicesFolder
+    getTeacherInvoicingMetadata
+    getUninvoicedLessonsForTeacher
+    groupLessonsByTeacherAndType
+    isMonthlyInvoiceSheet
+    loadProgramRateKeysCache
+    loadRatesCache
+    normalizeNameForMatching
+    onOpen
+    parseLessonDate
+    parseStudentName
+    populateInvoiceSheetFromLessons
+    processAttendanceSheet
+    processInvoiceSheetForVerification
+    promptForCutoffDate
+    promptForInvoiceDate
+    promptForInvoicePeriod
+    promptForMonthName
+    showCombinedErrorDetails
+    showInvoiceGenerationResults
+    showInvoiceGenerationUI
+    showTeacherInvoiceResults
+    updateMetadataStatus
+    updateTeacherInvoiceHistory
+    validateLessonData
+    verifyAttendanceVsInvoices
     writeTeacherInvoicingMetadata
 
   ================================================================================
@@ -107,675 +82,538 @@ addLateTeacherToInvoice,
   ================================================================================
 
     addLateTeacherToInvoice() -> void
-        UI workflow for adding a late teacher to an already-generated monthly invoice sheet.
-        Validates active sheet, loads metadata, prompts user to select a teacher, collects and
-        marks their uninvoiced lessons, and appends their rows to the existing sheet.
-        Category: UI_WORKFLOW
-        Local functions used: isMonthlyInvoiceSheet(), getTeacherInvoicingMetadata(),
-                              getActiveTeacherList(), generateInvoiceNumber(),
-                              getUninvoicedLessonsForTeacher(), groupLessonsByTeacherAndType(),
-                              validateLessonData(), appendTeacherToInvoiceSheet()
-        Utility functions used: UtilityScriptLibrary.formatDateFlexible(), UtilityScriptLibrary.debugLog()
-
-    addStudentLineItem(sheet, row, columnMap, lessonGroup, teacherName, ratesCache, programRateKeysCache) -> Number
-        Adds a student line item row to the monthly invoice sheet with calculated rate and cost.
-        Uses cached rates to avoid repeated database lookups. Returns the next available row number.
-        Category: SHEET_OPERATIONS
-        Local functions used: calculateLessonRateAndCost(), parseStudentName()
+        UI-triggered function to add a teacher who was missing from the original invoice
+        run to the active invoice sheet. Prompts for invoice date, period, and rates
+        column, then appends the teacher's lessons.
+        Category: INVOICE_GENERATION
+        Local functions used: appendTeacherToInvoiceSheet(), getActiveTeacherList(),
+                              collectUninvoicedLessonsUpToDate(), groupLessonsByTeacherAndType(),
+                              promptForInvoiceDate(), promptForInvoicePeriod(), promptForCutoffDate()
         Utility functions used: UtilityScriptLibrary.debugLog()
 
-    addTeacherHeaderRow(sheet, row, columnMap, teacherInfo, invoiceDate, invoiceNumber, invoicePeriod) -> Number
-        Adds a teacher header row to the monthly invoice sheet with invoice metadata.
-        Applies bold formatting with light green background. Returns the next available row number.
-        Category: SHEET_OPERATIONS
-        Local functions used: None
-        Utility functions used: UtilityScriptLibrary.formatDateFlexible(), UtilityScriptLibrary.debugLog()
+    addStudentLineItem(sheet, row, columnMap, lessonGroup, teacherName, ratesCache, programRateKeysCache) -> void
+        Writes a single student lesson line item row to the invoice sheet using cached
+        rate data. Calculates rate and cost via calculateLessonRateAndCost().
+        Category: INVOICE_GENERATION
+        Local functions used: calculateLessonRateAndCost()
+        Utility functions used: UtilityScriptLibrary.debugLog()
 
-    appendTeacherToInvoiceSheet(sheet, groupedLessons, invoiceDate, invoicePeriod) -> Object
-        Appends a single teacher's header row and student line items to an existing invoice sheet
-        starting after the last used row. Returns object with success status and lineItemCount.
-        Category: SHEET_OPERATIONS
-        Local functions used: loadRatesCache(), loadProgramRateKeysCache(),
-                              getTeacherInfoFromLessonGroup(), addTeacherHeaderRow(), addStudentLineItem()
+    addTeacherHeaderRow(sheet, row, columnMap, teacherInfo, invoiceDate, invoiceNumber, invoicePeriod) -> void
+        Writes a teacher header row to the invoice sheet including teacher name,
+        invoice date, invoice number, and invoice period.
+        Category: INVOICE_GENERATION
+        Local functions used: None
+        Utility functions used: UtilityScriptLibrary.debugLog()
+
+    appendTeacherToInvoiceSheet(sheet, groupedLessons, invoiceDate, invoicePeriod, ratesColumnHeader) -> void
+        Appends all lesson line items for a teacher to the invoice sheet, loading rate
+        caches once and writing header and student rows.
+        Category: INVOICE_GENERATION
+        Local functions used: addTeacherHeaderRow(), addStudentLineItem(),
+                              loadRatesCache(), loadProgramRateKeysCache()
         Utility functions used: UtilityScriptLibrary.getHeaderMap(), UtilityScriptLibrary.debugLog()
 
     buildTeacherInvoiceFileName(teacherData, variables) -> String
-        Constructs the filename for a teacher's invoice document using teacher name and invoice number.
-        Format: "Teacher Name - InvoiceNumber". Returns filename string.
-        Category: DOCUMENT_GENERATION
+        Builds the file name for a teacher invoice document using teacher name and
+        invoice metadata from the variable map.
+        Category: INVOICE_GENERATION
         Local functions used: None
         Utility functions used: UtilityScriptLibrary.debugLog()
 
     buildTeacherInvoiceVariableMap(teacherData, teacherContactInfo, metadata) -> Object
-        Builds a variable mapping object for populating the teacher invoice template.
-        Creates dynamic content for student rows and formats dates using metadata when available.
-        Category: DOCUMENT_GENERATION
-        Local functions used: None
-        Utility functions used: UtilityScriptLibrary.formatDateFlexible(), UtilityScriptLibrary.formatCurrency(), 
-                                UtilityScriptLibrary.debugLog()
+        Builds the template variable map for a teacher invoice document, including
+        dynamic description rows, quantities, rates, costs, and total.
+        Category: INVOICE_GENERATION
+        Local functions used: generateInvoiceNumber()
+        Utility functions used: UtilityScriptLibrary.formatDateFlexible(), UtilityScriptLibrary.debugLog()
 
     calculateLessonRateAndCost(lessonGroup, ratesCache, programRateKeysCache) -> Object
-        Calculates the hourly rate, lesson rate, and total cost for a lesson group.
-        Handles both student lessons and group sessions with different rate structures.
-        Returns object with hourlyRate, lessonRate, and totalCost.
-        Category: RATE_CALCULATION
-        Local functions used: getSemesterForDate(), getRateKeyForProgram(), getRateForSemester()
-        Utility functions used: UtilityScriptLibrary.debugLog(), UtilityScriptLibrary.formatDateFlexible()
+        Calculates the hourly rate and total cost for a lesson group using the rates
+        cache and program rate keys cache. Returns an object with rate, cost, and
+        rateKey.
+        Category: RATES
+        Local functions used: getRateKeyForProgram()
+        Utility functions used: UtilityScriptLibrary.debugLog()
 
-    calculateLessonsStartingDate(metadataSheet) -> Date|null
-        Calculates the starting date for lessons by adding 1 day to the previous invoice's ending date.
-        Returns null if no previous metadata exists (signals to use first day of cutoff month).
-        Category: DATE_CALCULATION
+    calculateLessonsStartingDate(metadataSheet) -> Date | null
+        Reads the metadata sheet to determine the lessons starting date for the current
+        invoice period based on the previous entry's cutoff date.
+        Category: METADATA
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.getHeaderMap(), UtilityScriptLibrary.normalizeHeader(),
-                                UtilityScriptLibrary.debugLog()
-
-    checkTemplateFormatting() -> Array
-        Debug utility that reads the Monthly Template sheet and analyzes number formats for each column.
-        Categorizes formats as CURRENCY, DATE, DECIMAL, INTEGER, GENERAL, or OTHER and displays summary.
-        Returns array of column analysis objects.
-        Category: DEBUG
-        Local functions used: None
-        Utility functions used: UtilityScriptLibrary.columnToLetter(), UtilityScriptLibrary.debugLog()
+        Utility functions used: UtilityScriptLibrary.debugLog()
 
     collectUninvoicedLessonsUpToDate(cutoffDate, invoiceDate, invoicePeriod) -> Object
-        Main data collection function. Gathers all uninvoiced lessons from active teachers up to cutoff date.
-        Returns comprehensive results object with lessons, errors, validation, summary statistics, and parameters used.
-        Category: DATA_COLLECTION
-        Local functions used: getActiveTeacherList(), generateInvoiceNumber(), getUninvoicedLessonsForTeacher(),
-                              groupLessonsByTeacherAndType(), validateLessonData()
+        Iterates all active teachers and collects uninvoiced lessons up to the cutoff
+        date. Returns an object with lessonResults and allGroupedLessons.
+        Category: LESSON_COLLECTION
+        Local functions used: getActiveTeacherList(), getUninvoicedLessonsForTeacher(),
+                              groupLessonsByTeacherAndType()
         Utility functions used: UtilityScriptLibrary.debugLog(), UtilityScriptLibrary.formatDateFlexible()
 
     convertFolderDocsToPdfUI() -> void
-        Converts all Google Docs in the active month's Teacher Invoices Drive folder to PDFs,
-        saves them in a '[Month] PDFs' subfolder, and updates each teacher's roster Invoice Log
-        with the PDF URL. Skips already-converted documents.
-        Category: UI_WORKFLOW
-        Local functions used: isMonthlyInvoiceSheet(), getTeacherInvoicingMetadata(),
-                              extractTeachersFromFormattedSheet(), updateTeacherInvoiceHistory()
-        Utility functions used: UtilityScriptLibrary.EnvironmentManager.get(), UtilityScriptLibrary.getConfig(),
-                                UtilityScriptLibrary.debugLog()
-
-    createAdminDetailReport(workbook, detailErrors) -> void
-        Creates or clears 'Admin Detail' sheet and writes row-level validation errors from
-        processAttendanceSheetForAdminReports(). Highlights error cells in red.
-        Category: REPORTING
-        Local functions used: None
+        UI-triggered function to convert all Google Docs in the active invoice sheet's
+        teacher invoices folder to PDF format.
+        Category: DOCUMENT_GENERATION
+        Local functions used: getTeacherInvoicesFolder()
         Utility functions used: UtilityScriptLibrary.debugLog()
 
-    createAdminSummaryReport(workbook, summaryData) -> void
-        Creates or clears 'Admin Summary' sheet and writes per-workbook error counts
-        from generate2025AdminReports(). Sorted by workbook name.
-        Category: REPORTING
-        Local functions used: None
-        Utility functions used: UtilityScriptLibrary.debugLog()
-
-    createAugDecVerificationSheet(currentWorkbook, ourData, billingData, monthsToVerify) -> void
-        Creates or clears 'Aug-Dec 2025 Verification' sheet. Compares calculated invoice hours
-        against billing sheet hours for August–December for each student with match indicators.
-        Category: REPORTING
-        Local functions used: None
-        Utility functions used: UtilityScriptLibrary.debugLog()
-
-    createInvoiceVsBillingSheet(currentWorkbook, ourData, billingData, monthNames) -> void
-        Creates or clears 'Invoice vs Billing 2025' sheet. Compares admin-month invoice hours
-        against billing cycle hours for all 12 months with per-student match indicators and totals row.
-        Category: REPORTING
-        Local functions used: None
-        Utility functions used: UtilityScriptLibrary.debugLog()
-                
     createMonthlyInvoiceSheet(month) -> Sheet
-        Creates a new monthly invoice sheet by copying the Monthly Template.
-        If sheet already exists, clears data while preserving headers. Returns the sheet object.
+        Creates or clears a monthly invoice sheet in the active Teacher Invoices
+        workbook with standard column headers.
         Category: SHEET_OPERATIONS
         Local functions used: None
         Utility functions used: UtilityScriptLibrary.debugLog()
 
-    createStudentHoursByAdminMonthReport(workbook, studentHours, monthNames) -> void
-        Creates or clears the '2025 Hours by Admin Month' sheet in the given workbook.
-        Writes a header row with Student ID plus each month name, then populates one row
-        per student with their hours per month from the studentHours object.
-        Category: REPORTING
-        Local functions used: None
-        Utility functions used: None
-        Called by: generate2025AdminReports()
-
     createStudentReconciliationReport(workbook, attendanceData, invoiceData) -> void
-        Creates or clears the 'Student Reconciliation Report' sheet. Compares attendance
-        hours against invoice hours per teacher/invoice date/student, flagging mismatches.
-        Category: REPORTING
+        Creates or overwrites a Student Reconciliation Report sheet in the given
+        workbook, comparing attendance records against invoice records by student.
+        Category: VERIFICATION
         Local functions used: None
         Utility functions used: None
-        Called by: verifyAttendanceVsInvoices()
 
     createUnpaidLessonsReport(workbook, unpaidLessons) -> void
-        Creates or clears the 'Unpaid Lessons Report' sheet. Writes all lessons found in
-        attendance sheets that have no matching invoice entry.
-        Category: REPORTING
+        Creates or overwrites an Unpaid Lessons Report sheet listing all lessons
+        that have not yet been invoiced.
+        Category: VERIFICATION
         Local functions used: None
         Utility functions used: None
-        Called by: verifyAttendanceVsInvoices()
-
-    createVerificationSheet(currentWorkbook, ourData, billingData, cleanMonthColumns, decemberCumulativeData) -> void
-        Creates or clears the 'Hours Taught Verification' sheet. Compares invoice-derived
-        hours against billing sheet hours for each student across months, with Expected/Actual/Match
-        column groups per month and December cumulative totals column.
-        Category: REPORTING
-        Local functions used: None
-        Utility functions used: UtilityScriptLibrary.debugLog()
-        Called by: verifyHoursTaught()
-
-    debugMonthlySheetStructure() -> void
-        Debug utility. Reads the active sheet and logs column mapping (teacher, url, lastName,
-        firstName) and first few data rows to the debug log for structural analysis.
-        Category: DEBUG
-        Local functions used: None
-        Utility functions used: UtilityScriptLibrary.getHeaderMap(), UtilityScriptLibrary.debugLog()
 
     extractAndMarkLessonsFromSheet(sheet, teacherData, cutoffDate, formattedInvoiceDate, invoiceNumber) -> Array
-        Single-pass function that extracts uninvoiced lessons from an attendance sheet AND
-        immediately marks them with invoice data. Returns array of lesson objects.
-        Category: DATA_EXTRACTION
-        Local functions used: parseLessonDate()
-        Utility functions used: UtilityScriptLibrary.getHeaderMap(), UtilityScriptLibrary.debugLog()
+        Extracts uninvoiced lessons from an attendance sheet up to the cutoff date and
+        marks them with the invoice date and invoice number in the sheet.
+        Category: LESSON_COLLECTION
+        Local functions used: extractLessonFromRow()
+        Utility functions used: UtilityScriptLibrary.getHeaderMap(), UtilityScriptLibrary.debugLog(),
+                                UtilityScriptLibrary.formatDateFlexible()
 
-    extractLessonFromRow(row, headerMap, teacherData, cutoffDate, sheet, sheetRowIndex) -> Object|null
-        Extracts and validates a single lesson from a data row. Performs validation on lesson length
-        based on type (student vs group). Writes validation errors to Admin Comments column.
-        Returns lesson object or null if invalid.
-        Category: DATA_EXTRACTION
-        Local functions used: parseLessonDate()
-        Utility functions used: UtilityScriptLibrary.debugLog()
+    extractLessonFromRow(row, headerMap, teacherData, cutoffDate, sheet, sheetRowIndex) -> Object | null
+        Extracts and validates a single lesson row from an attendance sheet. Returns a
+        lesson object or null if the row should be skipped.
+        Category: LESSON_COLLECTION
+        Local functions used: parseLessonDate(), parseStudentName(), normalizeNameForMatching()
+        Utility functions used: UtilityScriptLibrary.debugLog(), UtilityScriptLibrary.formatDateFlexible()
 
     extractLessonsFromAttendanceSheet(sheet, teacherData, cutoffDate) -> Array
-        Extracts uninvoiced lessons from a single attendance sheet without marking them.
-        Used for read-only lesson collection. Returns array of lesson objects.
-        Category: DATA_EXTRACTION
+        Extracts all uninvoiced lessons from an attendance sheet without marking them.
+        Used for verification workflows.
+        Category: LESSON_COLLECTION
         Local functions used: extractLessonFromRow()
         Utility functions used: UtilityScriptLibrary.getHeaderMap(), UtilityScriptLibrary.debugLog()
 
-    extractTeacherInvoiceNumbers(invoiceSheet) -> Object
-        Extracts existing invoice numbers for each teacher from a monthly invoice sheet.
-        Returns object mapping teacher names to invoice numbers.
-        Category: DATA_EXTRACTION
-        Local functions used: None
-        Utility functions used: UtilityScriptLibrary.getHeaderMap(), UtilityScriptLibrary.debugLog()
-
     extractTeachersFromFormattedSheet(sheet) -> Array
-        Parses a formatted monthly invoice sheet to extract teacher data and their student rows.
-        Only includes teachers without existing URLs (not yet generated). Returns array of teacher objects
-        with studentRows nested arrays.
+        Parses a formatted invoice sheet to extract teacher and student lesson data
+        grouped by teacher. Returns an array of teacher data objects.
         Category: DATA_EXTRACTION
         Local functions used: None
         Utility functions used: UtilityScriptLibrary.getHeaderMap(), UtilityScriptLibrary.debugLog()
-
-    formatDateForComparison(dateValue) -> String
-        Formats a Date object or date-parseable value to MM/DD/YYYY string for string comparison.
-        Returns the original toString() value if the date is invalid.
-        Category: DATE_FORMATTING
-        Local functions used: None
-        Utility functions used: None
-        Called by: processAttendanceSheet(), processInvoiceSheetForVerification()
-
-    formatDateForInput(date) -> String
-        Formats a date object for UI input prompts. Returns string in MM/DD/YYYY format.
-        Category: DATE_FORMATTING
-        Local functions used: None
-        Utility functions used: UtilityScriptLibrary.debugLog()
 
     formatInvoiceSheet(sheet) -> void
-        Applies formatting to the monthly invoice sheet including font, wrapping, and currency formats.
-        Does not auto-resize columns to preserve template column widths.
+        Applies standard formatting to an invoice sheet: bolds headers, sets column
+        widths, applies alternating row colors for teacher sections.
         Category: SHEET_OPERATIONS
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.getHeaderMap(), UtilityScriptLibrary.debugLog()
-
-    generate2025AdminReports() -> void
-        UI entry point. Iterates all teacher roster workbooks in the rosters folder,
-        processes each attendance sheet via processAttendanceSheetForAdminReports(), and
-        produces an Admin Summary and Admin Detail report sheet in the active workbook.
-        Category: UI_WORKFLOW
-        Local functions used: processAttendanceSheetForAdminReports(),
-                              createStudentHoursByAdminMonthReport(), createAdminSummaryReport(),
-                              createAdminDetailReport()
-        Utility functions used: UtilityScriptLibrary.CONFIG, UtilityScriptLibrary.debugLog()
-
-    generateAndVerifyHours() -> void
-        UI entry point. Runs generateYearlyStudentTotals() then verifyHoursTaught() in sequence.
-        Displays an error alert if either step fails.
-        Category: UI_WORKFLOW
-        Local functions used: generateYearlyStudentTotals(), verifyHoursTaught()
         Utility functions used: UtilityScriptLibrary.debugLog()
 
     generateDefaultInvoicePeriod(cutoffDate) -> String
-        Generates default invoice period text from cutoff date. Returns string in "Month Year" format.
-        Category: DATE_FORMATTING
+        Generates a default invoice period string (e.g. "May 2026") based on the
+        cutoff date.
+        Category: HELPERS
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.getMonthNames(), UtilityScriptLibrary.debugLog()
+        Utility functions used: UtilityScriptLibrary.getMonthNames()
 
     generateDefaultMonthName(cutoffDate) -> String
-        Extracts month name from cutoff date for sheet naming. Returns month name string.
-        Category: DATE_FORMATTING
+        Returns the month name string for the given cutoff date.
+        Category: HELPERS
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.getMonthNames(), UtilityScriptLibrary.debugLog()
+        Utility functions used: UtilityScriptLibrary.getMonthNames()
 
     generateInvoiceNumber(teacherId, invoiceDate) -> String
-        Generates a unique invoice number combining teacher ID and date.
-        Format: "TeacherID-YYYYMMDD". Returns invoice number string.
-        Category: INVOICE_GENERATION
+        Generates a unique invoice number in the format TXXXX-YYYYMMDD.
+        Category: HELPERS
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.formatDateFlexible(), UtilityScriptLibrary.debugLog()
-
-    generateMonthlyTeacherInvoices(month, cutoffDate, invoiceDate, lessonResults) -> Object
-        Main invoice sheet generation function. Creates monthly sheet, populates with lesson data,
-        and formats it. Returns success status with teacher count, line item count, and marked count.
-        Category: INVOICE_GENERATION
-        Local functions used: createMonthlyInvoiceSheet(), populateInvoiceSheetFromLessons(),
-                              formatInvoiceSheet()
         Utility functions used: UtilityScriptLibrary.debugLog()
 
+    generateMonthlyTeacherInvoices(month, cutoffDate, invoiceDate, lessonResults) -> Object
+        Generates invoice documents for all teachers with lessons in the current
+        month. Returns an object with invoiceResults.
+        Category: INVOICE_GENERATION
+        Local functions used: generateSingleTeacherInvoice(), createMonthlyInvoiceSheet(),
+                              populateInvoiceSheetFromLessons(), formatInvoiceSheet()
+        Utility functions used: UtilityScriptLibrary.debugLog(), UtilityScriptLibrary.formatDateFlexible()
+
     generateSingleTeacherInvoice(teacherData, sheet, metadata) -> Object
-        Generates a single teacher's invoice PDF document from template and uploads to Drive.
-        Sets document to view-only and writes URL back to invoice sheet. Returns result object
-        with success status, fileId, and url.
-        Category: DOCUMENT_GENERATION
+        Generates a single teacher invoice document from the invoice sheet using the
+        template variable map. Returns a result object with success status and file info.
+        Category: INVOICE_GENERATION
         Local functions used: buildTeacherInvoiceVariableMap(), buildTeacherInvoiceFileName(),
-                              getTeacherInvoicesFolder()
-        Utility functions used: UtilityScriptLibrary.documentAlreadyExists(),
-                                UtilityScriptLibrary.generateDocumentFromTemplate(),
-                                UtilityScriptLibrary.getHeaderMap(), UtilityScriptLibrary.debugLog()
+                              getTeacherContactInfo(), updateTeacherInvoiceHistory()
+        Utility functions used: UtilityScriptLibrary.generateDocumentFromTemplate(),
+                                UtilityScriptLibrary.debugLog()
 
     generateTeacherInvoiceDocuments() -> void
-        Main UI function for bulk PDF generation. Validates sheet, extracts teachers,
-        generates documents for each, updates metadata status, and shows results summary.
-        Category: DOCUMENT_GENERATION
-        Local functions used: isMonthlyInvoiceSheet(), getTeacherInvoicingMetadata(),
-                              extractTeachersFromFormattedSheet(), generateSingleTeacherInvoice(),
-                              updateTeacherInvoiceHistory(), updateMetadataStatus(),
+        UI-triggered function to generate PDF invoice documents from the active invoice
+        sheet. Prompts for confirmation and processes each teacher section.
+        Category: INVOICE_GENERATION
+        Local functions used: extractTeachersFromFormattedSheet(), generateSingleTeacherInvoice(),
                               showTeacherInvoiceResults()
         Utility functions used: UtilityScriptLibrary.debugLog()
 
-    generateYearlyStudentTotals() -> void
-        Reads Teacher Invoicing Metadata to identify all invoice months, then processes
-        each monthly invoice sheet via processSheetForMonthlyTotals() to aggregate student
-        lesson totals, writing results to the 'Yearly Student Totals' sheet.
-        Category: REPORTING
-        Local functions used: processSheetForMonthlyTotals()
-        Utility functions used: UtilityScriptLibrary.debugLog()
-        Called by: generateAndVerifyHours(), verifyHoursTaught()
-
     getActiveTeacherList() -> Array
-        Retrieves list of active teachers from Teacher Roster Lookup sheet.
-        Only includes teachers with "Active" status and roster URLs. Returns array of teacher objects.
-        Category: DATA_LOOKUP
+        Returns an array of active teacher objects from the Teacher Roster Lookup sheet,
+        each with teacherId, teacherName, and rosterUrl.
+        Category: DATA_RETRIEVAL
         Local functions used: None
         Utility functions used: UtilityScriptLibrary.getWorkbook(), UtilityScriptLibrary.getHeaderMap(),
-                                UtilityScriptLibrary.normalizeHeader(), UtilityScriptLibrary.debugLog()
+                                UtilityScriptLibrary.debugLog()
 
     getAttendanceSheetsFromWorkbook(spreadsheet) -> Array
-        Identifies and returns all attendance sheets (monthly sheets) from a teacher's roster workbook.
-        Matches sheet names against standard month names. Returns array of Sheet objects.
-        Category: DATA_LOOKUP
+        Returns all month-named attendance sheets from a teacher's roster workbook.
+        Category: DATA_RETRIEVAL
         Local functions used: None
         Utility functions used: UtilityScriptLibrary.getMonthNames(), UtilityScriptLibrary.debugLog()
 
-    getDecemberCumulativeData(sheet, decemberCumulativeData) -> void
-        Reads a billing sheet and populates the decemberCumulativeData object with each
-        student's Current Cumulative Hours Taught value, keyed by Student ID.
-        Category: DATA_EXTRACTION
-        Local functions used: None
-        Utility functions used: None
-        Called by: verifyHoursTaught()
-
-    getRateForSemester(semesterName, rateType, ratesCache) -> Number
-        Looks up a specific rate from the pre-loaded rates cache for a given semester.
-        Returns the rate value.
-        Category: RATE_CALCULATION
+    getRateForSemester(semesterName, rateType, ratesCache) -> Number | null
+        Looks up a rate from the rates cache for a given semester and rate type.
+        Category: RATES
         Local functions used: None
         Utility functions used: UtilityScriptLibrary.debugLog()
 
-    getRateKeyForProgram(programName, programRateKeysCache) -> String|null
-        Retrieves the rate key for a given program name from the pre-loaded program rate keys cache.
-        Returns rate key string or null if not found.
-        Category: RATE_CALCULATION
+    getRateKeyForProgram(programName, programRateKeysCache) -> String | null
+        Looks up the rate key for a program name from the program rate keys cache.
+        Category: RATES
         Local functions used: None
         Utility functions used: UtilityScriptLibrary.debugLog()
 
     getRatesLookupForSemester(semesterName) -> String
-        Retrieves the Rates Verification value for a specific semester from Semester Metadata sheet.
-        Returns rates lookup string or empty string if not found.
-        Category: DATA_LOOKUP
+        Returns the rates column header string for the given semester by reading the
+        billing workbook's Semester Metadata sheet.
+        Category: RATES
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.getWorkbook(), UtilityScriptLibrary.normalizeHeader(),
+        Utility functions used: UtilityScriptLibrary.getWorkbook(), UtilityScriptLibrary.getHeaderMap(),
                                 UtilityScriptLibrary.debugLog()
 
-    getSemesterForDate(date) -> String
-        Determines which semester a given date falls within by querying Semester Metadata sheet.
-        Returns semester name string.
-        Category: DATA_LOOKUP
+    getSemesterForDate(date) -> String | null
+        Returns the semester name for a given date by reading the billing workbook's
+        Semester Metadata sheet. Local version scoped to Teacher-Invoice.
+        Category: DATA_RETRIEVAL
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.getWorkbook(), UtilityScriptLibrary.formatDateFlexible(),
-                                UtilityScriptLibrary.debugLog()
+        Utility functions used: UtilityScriptLibrary.getWorkbook(), UtilityScriptLibrary.getHeaderMap(),
+                                UtilityScriptLibrary.formatDateFlexible(), UtilityScriptLibrary.debugLog()
 
     getTeacherContactInfo(teacherId) -> Object
-        Looks up teacher's first name, last name, and address from Teachers and Admin sheet
-        in contacts workbook. Returns object with firstName, lastName, and address properties.
-        Category: DATA_LOOKUP
+        Looks up a teacher's contact info (name, email, address) from the Teachers and
+        Admin contacts sheet by teacher ID. Returns an object with contact fields.
+        Category: DATA_RETRIEVAL
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.getWorkbook(), UtilityScriptLibrary.normalizeHeader(),
+        Utility functions used: UtilityScriptLibrary.getWorkbook(), UtilityScriptLibrary.getHeaderMap(),
                                 UtilityScriptLibrary.debugLog()
 
-    getTeacherInfoByName(teacherName) -> Object|null
-        Looks up comprehensive teacher info from Teacher Roster Lookup sheet by name.
-        Tries exact match first, then falls back to last name matching. Returns teacher info object
-        or null if not found.
-        Category: DATA_LOOKUP
-        Local functions used: None
-        Utility functions used: UtilityScriptLibrary.getSheet(), UtilityScriptLibrary.debugLog()
+    getTeacherInfoByName(teacherName) -> Object | null
+        Looks up a teacher in the Teacher Roster Lookup sheet by display name or full
+        name. Returns an object with teacherId, rosterUrl, and name fields, or null.
+        Category: DATA_RETRIEVAL
+        Local functions used: normalizeNameForMatching()
+        Utility functions used: UtilityScriptLibrary.getSheet(), UtilityScriptLibrary.getHeaderMap(),
+                                UtilityScriptLibrary.debugLog()
 
-    getTeacherInfoFromLessonGroup(lessonGroup) -> Object
-        Extracts teacher information from a lesson group object and enriches it with contact info.
-        Returns object with teacherName, teacherId, lastName, firstName, and address.
-        Category: DATA_EXTRACTION
-        Local functions used: getTeacherContactInfo()
+    getTeacherInfoFromLessonGroup(lessonGroup) -> Object | null
+        Extracts teacher info from a lesson group object, falling back to a name lookup
+        if the teacher ID is not present.
+        Category: DATA_RETRIEVAL
+        Local functions used: getTeacherInfoByName()
         Utility functions used: UtilityScriptLibrary.debugLog()
 
     getTeacherInvoicesFolder(monthName) -> Folder
-        Gets or creates the monthly subfolder within Teacher Invoices folder for storing
-        generated invoice documents. Returns Drive Folder object.
+        Returns or creates the Teacher Invoices subfolder for the given month under
+        the main generated documents folder.
         Category: DOCUMENT_GENERATION
         Local functions used: None
         Utility functions used: UtilityScriptLibrary.getGeneratedDocumentsFolder(),
                                 UtilityScriptLibrary.debugLog()
 
-    getTeacherInvoicingMetadata(invoiceMonth) -> Object
-        Retrieves metadata for a specific invoice month from Teacher Invoicing Metadata sheet.
-        Returns object with invoiceMonth, lessonsStartingDate, lessonsEndingDate, invoiceDate,
-        ratesLookup, semesterName, and status.
-        Category: METADATA_MANAGEMENT
+    getTeacherInvoicingMetadata(invoiceMonth) -> Object | null
+        Reads the Teacher Invoicing Metadata sheet and returns the metadata row for
+        the given month as an object with date and status fields.
+        Category: METADATA
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.getHeaderMap(), UtilityScriptLibrary.normalizeHeader(),
+        Utility functions used: UtilityScriptLibrary.getSheet(), UtilityScriptLibrary.getHeaderMap(),
                                 UtilityScriptLibrary.debugLog()
 
-    getUninvoicedLessonsForTeacher(teacherData, cutoffDate, invoiceDate, invoiceNumber) -> Array
-        Single-pass function that opens a teacher's roster, processes all attendance sheets,
-        extracts lessons, and marks them as invoiced. Returns array of uninvoiced lesson objects.
-        Category: DATA_COLLECTION
+    getUninvoicedLessonsForTeacher(teacherData, cutoffDate, invoiceDate, invoiceNumber) -> Object
+        Single-pass function that reads all attendance sheets for a teacher, extracts
+        uninvoiced lessons up to the cutoff date, and marks them with the invoice info.
+        Returns an object with lessons array and counts.
+        Category: LESSON_COLLECTION
         Local functions used: getAttendanceSheetsFromWorkbook(), extractAndMarkLessonsFromSheet()
-        Utility functions used: UtilityScriptLibrary.formatDateFlexible(), UtilityScriptLibrary.debugLog()
+        Utility functions used: UtilityScriptLibrary.getWorkbook(), UtilityScriptLibrary.debugLog(),
+                                UtilityScriptLibrary.formatDateFlexible()
 
     groupLessonsByTeacherAndType(allLessons) -> Object
-        Groups flat array of lessons by teacher, student, and lesson length for invoicing.
-        Creates aggregated line items with quantity counts. Returns object keyed by
-        "teacherName|studentId|lessonLength".
-        Category: DATA_PROCESSING
+        Groups an array of lesson objects by teacher and lesson type (program/length).
+        Returns a nested object keyed by teacherId and lessonType.
+        Category: DATA_MANIPULATION
         Local functions used: None
         Utility functions used: UtilityScriptLibrary.debugLog()
 
     isMonthlyInvoiceSheet(sheet) -> Boolean
-        Validates whether a sheet is a monthly invoice sheet by checking for expected headers.
-        Returns true if at least 4 key headers are found.
-        Category: VALIDATION
+        Returns true if a sheet has the expected monthly invoice sheet column headers.
+        Category: HELPERS
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.normalizeHeader(), UtilityScriptLibrary.debugLog()
+        Utility functions used: None
 
     loadProgramRateKeysCache() -> Object
-        Loads all program rate keys from Programs List sheet into a cache object for fast lookups.
-        Returns object mapping normalized program names to rate keys.
-        Category: RATE_CALCULATION
+        Loads the program-to-rate-key mapping from the billing workbook's Program Rates
+        sheet into a cache object keyed by program name.
+        Category: RATES
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.getWorkbook(), UtilityScriptLibrary.debugLog()
+        Utility functions used: UtilityScriptLibrary.getWorkbook(), UtilityScriptLibrary.getHeaderMap(),
+                                UtilityScriptLibrary.debugLog()
 
-    loadRatesCache() -> Object
-        Loads all current rates from Rates sheet into a cache object for fast lookups.
-        Returns object mapping rate types to rate values.
-        Category: RATE_CALCULATION
+    loadRatesCache(ratesColumnHeader) -> Object
+        Loads lesson rates from the billing workbook's Rates sheet into a cache object
+        keyed by semester and rate type.
+        Category: RATES
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.getWorkbook(), UtilityScriptLibrary.debugLog()
+        Utility functions used: UtilityScriptLibrary.getWorkbook(), UtilityScriptLibrary.getHeaderMap(),
+                                UtilityScriptLibrary.debugLog()
 
     normalizeNameForMatching(name) -> String
-        Strips diacritics/accents via NFD normalization, trims whitespace, and lowercases
-        a name string for fuzzy comparison.
-        Returns normalized string, or empty string if input is falsy.
-        Category: DATA_PROCESSING
+        Normalizes a name string for fuzzy matching by removing diacritics, lowercasing,
+        and stripping extra whitespace.
+        Category: HELPERS
         Local functions used: None
         Utility functions used: None
-        Called by: processAttendanceSheet(), processInvoiceSheetForVerification()
 
     onOpen() -> void
-        Creates custom menu 'Teacher Invoice Tools' in the spreadsheet UI when the Teacher Invoices workbook opens.
-        Menu items: Collect Monthly Invoice Data, Add Late Teacher, Generate Invoice Documents,
-        Print Documents, Generate & Verify Hours, Verify Logs vs Invoices,
-        Generate 2025 Admin Reports, Verify Invoice vs Billing 2025.
-        Category: UI_MENU
+        Installs the Teacher Invoice Tools menu in the spreadsheet UI on open.
+        Category: UI
+        Local functions used: None
+        Utility functions used: None
+
+    parseLessonDate(dateValue) -> Date | null
+        Parses a lesson date value that may be a Date object or a string in various
+        formats. Returns a Date or null if unparseable.
+        Category: HELPERS
         Local functions used: None
         Utility functions used: UtilityScriptLibrary.debugLog()
-
-    parseLessonDate(dateValue) -> Date|null
-        Parses various date formats from attendance sheets into Date objects.
-        Handles "Day, M/D" format, standard date strings, and Date objects. Returns Date or null.
-        Category: DATE_PARSING
-        Local functions used: None
-        Utility functions used: UtilityScriptLibrary.parseDateFromString(), UtilityScriptLibrary.debugLog()
 
     parseStudentName(studentName) -> Object
-        Parses student/group name into firstName and lastName components.
-        Handles "Last, First" format for students and plain text for group names.
-        Returns object with firstName and lastName properties.
-        Category: DATA_PARSING
+        Parses a student name string into firstName and lastName components.
+        Returns an object with firstName and lastName.
+        Category: HELPERS
         Local functions used: None
         Utility functions used: UtilityScriptLibrary.debugLog()
 
-    populateInvoiceSheetFromLessons(sheet, groupedLessons, invoiceDate, invoicePeriod) -> Object
-        Main population function that writes all teacher headers and student line items to
-        the monthly invoice sheet. Returns object with teacherCount and lineItemCount.
-        Category: SHEET_OPERATIONS
-        Local functions used: loadRatesCache(), loadProgramRateKeysCache(), getTeacherInfoFromLessonGroup(),
-                              generateInvoiceNumber(), addTeacherHeaderRow(), addStudentLineItem()
-        Utility functions used: UtilityScriptLibrary.getHeaderMap(), UtilityScriptLibrary.debugLog()
+    populateInvoiceSheetFromLessons(sheet, groupedLessons, invoiceDate, invoicePeriod, ratesColumnHeader) -> void
+        Populates a monthly invoice sheet with all grouped lessons, writing teacher
+        header rows and student line items.
+        Category: INVOICE_GENERATION
+        Local functions used: appendTeacherToInvoiceSheet(), getTeacherInfoFromLessonGroup()
+        Utility functions used: UtilityScriptLibrary.debugLog()
 
     processAttendanceSheet(sheet, teacherLastName, sheetName, unpaidLessons, attendanceData) -> void
-        Reads an attendance sheet and identifies completed lessons not found in invoice data.
-        Appends unpaid lessons to the unpaidLessons array and builds attendanceData map
-        keyed by normalized teacher name and invoice date.
-        Category: DATA_COLLECTION
-        Local functions used: formatDateForComparison(), normalizeNameForMatching()
-        Utility functions used: UtilityScriptLibrary.getHeaderMap(), UtilityScriptLibrary.debugLog()
-        Called by: verifyAttendanceVsInvoices(), generate2025AdminReports()
-
-    processAttendanceSheetForAdminReports(sheet, workbookName, sheetName, studentHours, monthNames) -> Array
-        Processes a single attendance sheet for admin report generation. Aggregates completed
-        lesson hours per student per admin month into the studentHours object.
-        Returns array of error objects encountered during processing.
-        Category: DATA_COLLECTION
-        Local functions used: None
-        Utility functions used: UtilityScriptLibrary.getHeaderMap(), UtilityScriptLibrary.debugLog()
-        Called by: generate2025AdminReports()
-
-    processBillingSheetData(sheet, cleanMonth, billingData) -> void
-        Reads a billing sheet and populates the billingData object with each student's
-        Current Hours Taught This Billing Cycle value for the given cleanMonth key.
-        Category: DATA_COLLECTION
-        Local functions used: None
+        Processes a single attendance sheet for the verification workflow, collecting
+        unpaid lesson and attendance data into the provided accumulator arrays.
+        Category: VERIFICATION
+        Local functions used: parseLessonDate()
         Utility functions used: None
-        Called by: verifyHoursTaught()
-
-    processBillingSheetFor2025(sheet, month, billingData) -> void
-        Reads a 2025 billing cycle sheet and populates billingData with student hours
-        for the given month. Variant of processBillingSheetData scoped to 2025 data.
-        Category: DATA_COLLECTION
-        Local functions used: None
-        Utility functions used: None
-        Called by: verifyInvoiceVsBilling2025()
-
-    processBillingSheetForAugDec(sheet, month, billingData) -> void
-        Reads an August–December billing sheet and populates billingData with student hours
-        for the given month. Variant scoped to the Aug–Dec date range.
-        Category: DATA_COLLECTION
-        Local functions used: None
-        Utility functions used: None
-        Called by: verifyHoursAugustDecember2025()
 
     processInvoiceSheetForVerification(sheet, invoiceData) -> void
-        Reads a monthly invoice sheet and builds the invoiceData map keyed by normalized
-        teacher name and invoice date, storing student lesson durations and quantities
-        for attendance vs invoice comparison.
-        Category: DATA_EXTRACTION
-        Local functions used: formatDateForComparison(), normalizeNameForMatching()
-        Utility functions used: UtilityScriptLibrary.getHeaderMap(), UtilityScriptLibrary.debugLog()
-        Called by: verifyAttendanceVsInvoices()
-
-    processSheetForMonthlyTotals(sheet, cleanMonth, studentData) -> void
-        Reads a monthly invoice sheet and aggregates each student's lesson hours for
-        the given cleanMonth into the studentData object, accumulating totals across calls.
-        Category: DATA_COLLECTION
+        Processes a single invoice sheet for the verification workflow, extracting
+        invoice records into the provided accumulator object.
+        Category: VERIFICATION
         Local functions used: None
         Utility functions used: None
-        Called by: generateYearlyStudentTotals()
 
-    promptForCutoffDate() -> Date|null
-        Prompts user for lesson cutoff date with validation. Tries UtilityScriptLibrary parser
-        first, then falls back to native Date constructor. Returns Date object or null if cancelled.
-        Category: UI_PROMPT
+    promptForCutoffDate() -> Date | null
+        Prompts the user to enter a cutoff date, defaulting to today. Returns a Date
+        or null if cancelled.
+        Category: UI
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.parseDateFromString(), UtilityScriptLibrary.debugLog()
+        Utility functions used: UtilityScriptLibrary.promptForCustomToday(),
+                                UtilityScriptLibrary.debugLog()
 
-    promptForInvoiceDate() -> Date|null
-        Prompts user for invoice date with today's date as default. Returns Date object or null
-        if cancelled.
-        Category: UI_PROMPT
-        Local functions used: formatDateForInput()
-        Utility functions used: UtilityScriptLibrary.parseDateFromString(), UtilityScriptLibrary.debugLog()
+    promptForInvoiceDate() -> Date | null
+        Prompts the user to enter an invoice date. Returns a Date or null if cancelled.
+        Category: UI
+        Local functions used: None
+        Utility functions used: UtilityScriptLibrary.promptForDate(), UtilityScriptLibrary.debugLog()
 
-    promptForInvoicePeriod(cutoffDate) -> String|null
-        Prompts user for invoice period description with default generated from cutoff date.
-        Allows custom text input. Returns period string or null if cancelled.
-        Category: UI_PROMPT
+    promptForInvoicePeriod(cutoffDate) -> String | null
+        Prompts the user to confirm or enter an invoice period string, defaulting to
+        the month of the cutoff date. Returns a string or null if cancelled.
+        Category: UI
         Local functions used: generateDefaultInvoicePeriod()
         Utility functions used: UtilityScriptLibrary.debugLog()
 
-    promptForMonthName(cutoffDate) -> String|null
-        Prompts user for invoice sheet month name with default generated from cutoff date.
-        Capitalizes first letter of input. Returns month name or null if cancelled.
-        Category: UI_PROMPT
+    promptForMonthName(cutoffDate) -> String | null
+        Prompts the user to confirm or enter a month name, defaulting to the month of
+        the cutoff date. Returns a string or null if cancelled.
+        Category: UI
         Local functions used: generateDefaultMonthName()
         Utility functions used: UtilityScriptLibrary.debugLog()
 
-    setupMetadataStatusDropdown(metadataSheet) -> void
-        Sets up data validation dropdown for Status column in metadata sheet with values:
-        'Collected', 'Generated', 'Sent', 'Paid'.
-        Category: SHEET_OPERATIONS
-        Local functions used: None
-        Utility functions used: UtilityScriptLibrary.getHeaderMap(), UtilityScriptLibrary.normalizeHeader(),
-                                UtilityScriptLibrary.debugLog()
-
     showCombinedErrorDetails(lessonResults, invoiceResults) -> void
-        Displays detailed error and validation issue alert to user. Shows up to 5 errors
-        from each category with count of additional errors.
-        Category: UI_DISPLAY
+        Displays a combined error details dialog from both lesson collection and invoice
+        generation result objects.
+        Category: UI
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Utility functions used: None
 
     showInvoiceGenerationResults(lessonResults, invoiceResults) -> void
-        Displays comprehensive invoice generation results to user including sheet info,
-        lesson data, and status. Offers to show error details if issues exist.
-        Category: UI_DISPLAY
+        Displays a summary dialog of invoice generation results including counts of
+        successes, skips, and errors.
+        Category: UI
         Local functions used: showCombinedErrorDetails()
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Utility functions used: None
 
     showInvoiceGenerationUI() -> void
-        Main UI workflow function that orchestrates the entire invoice generation process.
-        Prompts for all parameters, collects lessons, generates sheet, writes metadata,
-        and shows results.
-        Category: UI_WORKFLOW
-        Local functions used: promptForCutoffDate(), promptForInvoiceDate(), promptForMonthName(),
-                              promptForInvoicePeriod(), collectUninvoicedLessonsUpToDate(),
-                              generateMonthlyTeacherInvoices(), writeTeacherInvoicingMetadata(),
+        Main UI entry point for the invoice generation workflow. Prompts for cutoff
+        date, invoice date, invoice period, and month name, then runs lesson collection
+        and invoice generation.
+        Category: UI
+        Local functions used: promptForCutoffDate(), promptForInvoiceDate(),
+                              promptForInvoicePeriod(), promptForMonthName(),
+                              collectUninvoicedLessonsUpToDate(), generateMonthlyTeacherInvoices(),
                               showInvoiceGenerationResults()
         Utility functions used: UtilityScriptLibrary.debugLog()
 
-    showResultsSummaryUI(results) -> void
-        Displays comprehensive lesson collection results to user including cutoff date,
-        invoice date, period, summary statistics, and status.
-        Category: UI_DISPLAY
-        Local functions used: None
-        Utility functions used: UtilityScriptLibrary.debugLog()
-
     showTeacherInvoiceResults(results) -> void
-        Displays teacher invoice PDF generation results including counts of successful,
-        skipped, and error documents. Shows first 3 errors inline.
-        Category: UI_DISPLAY
+        Displays a results dialog after generating teacher invoice documents, showing
+        counts of successes and failures.
+        Category: UI
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Utility functions used: None
 
     updateMetadataStatus(invoiceMonth, newStatus) -> void
-        Updates the Status field for a specific invoice month in Teacher Invoicing Metadata sheet.
-        Category: METADATA_MANAGEMENT
+        Updates the status field for a given month in the Teacher Invoicing Metadata
+        sheet.
+        Category: METADATA
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.getWorkbook(), UtilityScriptLibrary.getHeaderMap(),
-                                UtilityScriptLibrary.normalizeHeader(), UtilityScriptLibrary.debugLog()
-
-    updateTeacherInvoiceHistory(teacherData, invoiceResult, metadata) -> void
-        Adds a new invoice record to the teacher's Invoice Log sheet in their roster workbook.
-        Includes invoice number, date, period (date range from metadata), URL, and total amount.
-        Category: METADATA_MANAGEMENT
-        Local functions used: getTeacherInfoByName()
-        Utility functions used: UtilityScriptLibrary.formatDateFlexible(), UtilityScriptLibrary.formatCurrency(),
+        Utility functions used: UtilityScriptLibrary.getSheet(), UtilityScriptLibrary.getHeaderMap(),
                                 UtilityScriptLibrary.debugLog()
 
-    validateLessonData(groupedLessons) -> Object
-        Validates grouped lesson data for completeness and correctness. Checks for required fields,
-        valid lesson lengths, positive quantities, and valid lesson dates. Returns validation object
-        with issues array and isValid boolean.
+    updateTeacherInvoiceHistory(teacherData, invoiceResult, metadata) -> void
+        Logs a successful invoice to the Teacher Invoice History sheet with teacher,
+        date, amount, and document link.
+        Category: METADATA
+        Local functions used: None
+        Utility functions used: UtilityScriptLibrary.getSheet(), UtilityScriptLibrary.debugLog()
+
+    validateLessonData(groupedLessons) -> Array
+        Validates grouped lesson data and returns an array of issue strings for any
+        lessons with missing or invalid fields.
         Category: VALIDATION
         Local functions used: None
-        Utility functions used: UtilityScriptLibrary.debugLog()
+        Utility functions used: None
 
     verifyAttendanceVsInvoices() -> void
-        UI entry point. Prompts for a year, scans all teacher roster workbooks for that year,
-        compares attendance sheet data against invoice sheet data via processAttendanceSheet()
-        and processInvoiceSheetForVerification(), then generates a Student Reconciliation Report
-        and an Unpaid Lessons Report.
-        Category: UI_WORKFLOW
-        Local functions used: processAttendanceSheet(), processInvoiceSheetForVerification(),
+        UI-triggered verification tool that compares attendance records against invoice
+        records across all teachers, generating reconciliation and unpaid lessons reports.
+        Category: VERIFICATION
+        Local functions used: getActiveTeacherList(), getAttendanceSheetsFromWorkbook(),
+                              processAttendanceSheet(), processInvoiceSheetForVerification(),
                               createStudentReconciliationReport(), createUnpaidLessonsReport()
-        Utility functions used: UtilityScriptLibrary.CONFIG, UtilityScriptLibrary.debugLog()
+        Utility functions used: UtilityScriptLibrary.getConfig(), UtilityScriptLibrary.debugLog()
 
-    verifyHoursAugustDecember2025() -> void
-        Reads the 'Yearly Student Totals' sheet, processes August–December billing sheets via
-        processBillingSheetForAugDec(), and produces the 'Aug-Dec 2025 Verification' sheet
-        via createAugDecVerificationSheet() comparing invoice hours against billing hours.
-        Category: UI_WORKFLOW
-        Local functions used: processBillingSheetForAugDec(), createAugDecVerificationSheet()
-        Utility functions used: UtilityScriptLibrary.CONFIG, UtilityScriptLibrary.debugLog()
-        Note: Defined in JS without a leading newline separator (}function) — formatting issue.
-
-    verifyHoursTaught() -> void
-        Reads Teacher Invoicing Metadata to enumerate invoice months, processes corresponding
-        billing sheets via processBillingSheetData() and getDecemberCumulativeData(), then
-        calls generateYearlyStudentTotals() and createVerificationSheet() to produce the
-        'Hours Taught Verification' comparison sheet.
-        Category: UI_WORKFLOW
-        Local functions used: generateYearlyStudentTotals(), processBillingSheetData(),
-                              getDecemberCumulativeData(), createVerificationSheet()
-        Utility functions used: UtilityScriptLibrary.CONFIG, UtilityScriptLibrary.debugLog()
-        Called by: generateAndVerifyHours()
-
-    verifyInvoiceVsBilling2025() -> void
-        Reads the '2025 Hours by Admin Month' sheet and iterates billing sheets to compare
-        invoice-derived hours against billing cycle hours for each student, producing the
-        'Invoice vs Billing 2025' sheet via createInvoiceVsBillingSheet().
-        Category: UI_WORKFLOW
-        Local functions used: processBillingSheetFor2025(), createInvoiceVsBillingSheet()
-        Utility functions used: UtilityScriptLibrary.CONFIG, UtilityScriptLibrary.debugLog()
-
-    writeTeacherInvoicingMetadata(month, cutoffDate, invoiceDate, invoicePeriod) -> Object
-        Writes new invoice metadata record to Teacher Invoicing Metadata sheet including date ranges,
-        semester info, and rates lookup. Returns success object with lessonsStartingDate and
-        lessonsEndingDate.
-        Category: METADATA_MANAGEMENT
+    writeTeacherInvoicingMetadata(month, cutoffDate, invoiceDate, invoicePeriod) -> void
+        Writes a new row to the Teacher Invoicing Metadata sheet for the given month
+        with cutoff date, invoice date, period, rates lookup, semester name, and status.
+        Category: METADATA
         Local functions used: calculateLessonsStartingDate(), getRatesLookupForSemester()
-        Utility functions used: UtilityScriptLibrary.getCurrentSemesterName(), UtilityScriptLibrary.debugLog()
+        Utility functions used: UtilityScriptLibrary.getCurrentSemesterName(),
+                                UtilityScriptLibrary.formatDateFlexible(), UtilityScriptLibrary.debugLog()
+
+  ================================================================================
+  FUNCTIONS BY CATEGORY
+  ================================================================================
+
+  DATA_EXTRACTION (1 function):
+    extractTeachersFromFormattedSheet
+
+  DATA_MANIPULATION (1 function):
+    groupLessonsByTeacherAndType
+
+  DATA_RETRIEVAL (6 functions):
+    getActiveTeacherList
+    getAttendanceSheetsFromWorkbook
+    getSemesterForDate
+    getTeacherContactInfo
+    getTeacherInfoByName
+    getTeacherInfoFromLessonGroup
+
+  DOCUMENT_GENERATION (2 functions):
+    convertFolderDocsToPdfUI
+    getTeacherInvoicesFolder
+
+  HELPERS (7 functions):
+    generateDefaultInvoicePeriod
+    generateDefaultMonthName
+    generateInvoiceNumber
+    isMonthlyInvoiceSheet
+    normalizeNameForMatching
+    parseLessonDate
+    parseStudentName
+
+  INVOICE_GENERATION (10 functions):
+    addLateTeacherToInvoice
+    addStudentLineItem
+    addTeacherHeaderRow
+    appendTeacherToInvoiceSheet
+    buildTeacherInvoiceFileName
+    buildTeacherInvoiceVariableMap
+    generateMonthlyTeacherInvoices
+    generateSingleTeacherInvoice
+    generateTeacherInvoiceDocuments
+    populateInvoiceSheetFromLessons
+
+  LESSON_COLLECTION (5 functions):
+    collectUninvoicedLessonsUpToDate
+    extractAndMarkLessonsFromSheet
+    extractLessonFromRow
+    extractLessonsFromAttendanceSheet
+    getUninvoicedLessonsForTeacher
+
+  METADATA (5 functions):
+    calculateLessonsStartingDate
+    getTeacherInvoicingMetadata
+    updateMetadataStatus
+    updateTeacherInvoiceHistory
+    writeTeacherInvoicingMetadata
+
+  RATES (6 functions):
+    calculateLessonRateAndCost
+    getRateForSemester
+    getRateKeyForProgram
+    getRatesLookupForSemester
+    loadProgramRateKeysCache
+    loadRatesCache
+
+  SHEET_OPERATIONS (2 functions):
+    createMonthlyInvoiceSheet
+    formatInvoiceSheet
+
+  UI (9 functions):
+    onOpen
+    promptForCutoffDate
+    promptForInvoiceDate
+    promptForInvoicePeriod
+    promptForMonthName
+    showCombinedErrorDetails
+    showInvoiceGenerationResults
+    showInvoiceGenerationUI
+    showTeacherInvoiceResults
+
+  VALIDATION (1 function):
+    validateLessonData
+
+  VERIFICATION (5 functions):
+    createStudentReconciliationReport
+    createUnpaidLessonsReport
+    processAttendanceSheet
+    processInvoiceSheetForVerification
+    verifyAttendanceVsInvoices
+
 ================================================================================
 END OF FUNCTION DIRECTORY
 ================================================================================

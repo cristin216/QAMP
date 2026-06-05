@@ -2,7 +2,7 @@
 ================================================================================
 CONTACTS CODE
 ================================================================================
-Version: 4
+Version: 5
 Total Functions: 2
 Documentation: See Contacts-Functions.md
 ================================================================================
@@ -20,8 +20,8 @@ function onEditContacts(e) {
       return;
     }
 
-    var newValue = String(e.value || '').trim();
-    if (newValue !== 'Former') {
+    var newValue = String(e.value || '').trim().toLowerCase();
+    if (newValue !== 'former') {
       return;
     }
 

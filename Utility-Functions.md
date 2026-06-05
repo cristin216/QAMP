@@ -1,8 +1,8 @@
 ================================================================================
 UTILITY LIBRARY FUNCTION DIRECTORY
 ================================================================================
-    Total Functions: 132 (130 standard functions + 2 EnvironmentManager methods)
-     Most Recent version: 90
+    Total Functions: 137 (135 standard functions + 2 EnvironmentManager methods)
+     Most Recent version: 91
 
     This directory provides a quick reference for all functions in Utility script.
     Parameters marked with ? are optional. 'options' parameters are optional 
@@ -13,6 +13,7 @@ UTILITY LIBRARY FUNCTION DIRECTORY
             Category: CATEGORY_NAME
             Dependencies: function1(), function2()
             Called by: 
+
   ================================================================================
   ALPHABETICAL INDEX:
   ================================================================================
@@ -57,7 +58,9 @@ UTILITY LIBRARY FUNCTION DIRECTORY
     extractTeacherNameFromWorkbook
     extractTotalLessonsFromPackages
     findColumnByPartialName
+    findMostRecentRosterSheet
     findParentRow
+    findRosterSheetForMonth
     findStudentInContacts
     findStudentRow
     findTeacherInRosterLookup
@@ -101,6 +104,8 @@ UTILITY LIBRARY FUNCTION DIRECTORY
     getStudentIdFromRow
     getTeacherGroupAssignments
     getTeacherIdByDisplayName
+    getTeacherInfoByDisplayName
+    getTeacherInfoByFullName
     getTeacherNameById
     getTemplate
     getTemplateFolder
@@ -133,6 +138,7 @@ UTILITY LIBRARY FUNCTION DIRECTORY
     protectStudentHeaderRow
     safeGet
     safeParseFloat
+    sendEmail
     setCached
     setupAttendanceHeaders
     setupRosterTemplateProtection
@@ -147,6 +153,7 @@ UTILITY LIBRARY FUNCTION DIRECTORY
     validateTemplateVariables
     verifyConfigurationWithUser
   ================================================================================
+
   ================================================================================
   ENVIRONMENT MANAGER (Special Module)
   ================================================================================
@@ -464,12 +471,28 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Dependencies: None
         Called by: (internal: updateFieldMappings)
 
+    findMostRecentRosterSheet(workbook) -> Sheet | null
+        Finds the most recent roster sheet in a teacher workbook by matching sheet names
+        ending in ' Roster' against semester metadata ordering. Returns null if no roster
+        sheets found.
+        Category: ROSTER
+        Dependencies: getSheet(), debugLog()
+        Called by: 
+
     findParentRow(parentsSheet, parentId, fallbackKey?) -> Number
         Finds the row number for a parent by Parent ID or fallback lookup key.
         Returns -1 if not found.
         Category: DATA_RETRIEVAL
         Dependencies: normalizeHeader()
         Called by: Billing, Responses
+
+    findRosterSheetForMonth(workbook, targetMonthName) -> Sheet | null
+        Finds the roster sheet in a teacher workbook that covers a given month (e.g. 'June 2026').
+        Matches the month to a semester using semester metadata dates. Returns null if no
+        match found or on parse error.
+        Category: ROSTER
+        Dependencies: getSheet(), getHeaderMap(), normalizeHeader(), debugLog()
+        Called by: 
 
     findStudentInContacts(contactsData, studentIdCol, targetStudentId) -> Number
         Searches a contacts data array for a student by ID.
@@ -772,6 +795,22 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Dependencies: getSheet(), createColumnFinder(), debugLog()
         Called by: Billing, Responses, Contacts
 
+    getTeacherInfoByDisplayName(displayName) -> Object | null
+        Looks up a teacher in the Teacher Roster Lookup sheet by their display name.
+        Returns an object with firstName, lastName, rosterUrl, teacherId, status,
+        lastUpdated. Returns null if not found.
+        Category: TEACHER
+        Dependencies: getSheet(), createColumnFinder(), debugLog()
+        Called by: 
+
+    getTeacherInfoByFullName(firstName, lastName) -> Object | null
+        Looks up a teacher in the Teacher Roster Lookup sheet by first and last name
+        (case-insensitive). Returns an object with firstName, lastName, rosterUrl,
+        teacherId, status, lastUpdated. Returns null if not found.
+        Category: TEACHER
+        Dependencies: getSheet(), createColumnFinder(), debugLog()
+        Called by: 
+
     getTeacherNameById(teacherId) -> String
         Looks up a teacher's full name ("First Last") from the Teachers and Admin sheet
         by Teacher ID. Returns empty string if not found or on error.
@@ -998,6 +1037,13 @@ UTILITY LIBRARY FUNCTION DIRECTORY
         Dependencies: None
         Called by: Billing
 
+    sendEmail(to, subject, body, options?) -> void
+        Sends an email via GmailApp with sender name set to 'Quaker Arts Music Program'.
+        options supports cc, bcc, and htmlBody. Throws on failure.
+        Category: EMAIL
+        Dependencies: debugLog()
+        Called by:
+
     setCached(key, value) -> Any
         Stores value in execution cache for duration of script execution.
         Returns the stored value.
@@ -1152,7 +1198,7 @@ ATTENDANCE (1 function):
     prefillAttendanceDatesForStudent
     safeParseFloat
 
-  DATA_RETRIEVAL (12 functions):
+  DATA_RETRIEVAL (14 functions):
     findColumnByPartialName
     findParentRow
     findStudentInContacts
@@ -1164,6 +1210,8 @@ ATTENDANCE (1 function):
     getInstrumentFamily
     getMonthSheets
     getTeacherIdByDisplayName
+    getTeacherInfoByDisplayName
+    getTeacherInfoByFullName
     getTeacherNameById
 
   DATE_TIME (10 functions):
@@ -1185,6 +1233,9 @@ ATTENDANCE (1 function):
   DOCUMENT_GENERATION (2 functions):
     combineDocumentsIntoPDF
     generateDocumentFromTemplate
+
+  EMAIL (1 function):
+    sendEmail
 
   ERROR_HANDLING (1 function):
     executeWithErrorHandling
@@ -1215,7 +1266,9 @@ ATTENDANCE (1 function):
   RATES (1 function):
     getMostRecentRateColumn
 
-  ROSTER (1 function):
+  ROSTER (3 functions):
+    findMostRecentRosterSheet
+    findRosterSheetForMonth
     getTeacherGroupAssignments
 
   SHEET_OPERATIONS (24 functions):
