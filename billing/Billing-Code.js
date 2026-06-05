@@ -8101,7 +8101,7 @@ function renameLatestFormSheet(semesterName) {
     }
 
     if (!hasParentId) {
-      var lastCol = latestSheet.getLastColumn();
+      lastCol = latestSheet.getLastColumn();
       latestSheet.getRange(1, lastCol + 1).setValue('Parent ID');
       UtilityScriptLibrary.debugLog('renameLatestFormSheet', 'INFO', 'Added Parent ID column at end', '', '');
     }
