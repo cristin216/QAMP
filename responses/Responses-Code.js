@@ -8,6 +8,111 @@ Documentation: See Responses-Functions.md
 ================================================================================
 */
 
+function backfillParentIds() {
+  var norm = UtilityScriptLibrary.normalizeHeader;
+
+  // === PART 1: Form responses sheet ===
+  var formSS = UtilityScriptLibrary.getWorkbook('formResponses');
+  var formSheet = formSS.getSheetByName('Summer 2026');
+  if (!formSheet) throw new Error('Summer 2026 form sheet not found.');
+
+  var formHeaders = formSheet.getRange(1, 1, 1, formSheet.getLastColumn()).getValues()[0];
+  var formGetCol = function(name) {
+    for (var i = 0; i < formHeaders.length; i++) {
+      if (norm(String(formHeaders[i])) === norm(name)) return i + 1;
+    }
+    return 0;
+  };
+
+  var fStudentIdCol = formGetCol('Student ID');
+  var fParentIdCol  = formGetCol('Parent ID');
+  if (!fStudentIdCol || !fParentIdCol) throw new Error('Student ID or Parent ID column not found in form sheet.');
+
+  // === PART 2: Billing sheet ===
+  var billingSS = UtilityScriptLibrary.getWorkbook('billing');
+  var billingSheet = billingSS.getSheetByName('May 2026');
+  if (!billingSheet) throw new Error('May 2026 billing sheet not found.');
+
+  var billingHeaders = billingSheet.getRange(1, 1, 1, billingSheet.getLastColumn()).getValues()[0];
+  var billGetCol = function(name) {
+    for (var i = 0; i < billingHeaders.length; i++) {
+      if (norm(String(billingHeaders[i])) === norm(name)) return i + 1;
+    }
+    return 0;
+  };
+
+  var bStudentIdCol = billGetCol('Student ID');
+  var bParentIdCol  = billGetCol('Parent ID');
+  if (!bStudentIdCol || !bParentIdCol) throw new Error('Student ID or Parent ID column not found in billing sheet.');
+
+  // === PART 3: Build Student ID -> Parent ID map from contacts ===
+  var contactsSheet = UtilityScriptLibrary.getSheet('students');
+  var contactsData  = contactsSheet.getDataRange().getValues();
+  var contactHeaders = contactsData[0];
+  var cGetCol = function(name) {
+    for (var i = 0; i < contactHeaders.length; i++) {
+      if (norm(String(contactHeaders[i])) === norm(name)) return i + 1;
+    }
+    return 0;
+  };
+
+  var cStudentIdCol = cGetCol('Student ID');
+  var cParentIdCol  = cGetCol('Parent ID');
+  if (!cStudentIdCol || !cParentIdCol) throw new Error('Student ID or Parent ID column not found in contacts sheet.');
+
+  var studentToParent = {};
+  for (var i = 1; i < contactsData.length; i++) {
+    var sid = String(contactsData[i][cStudentIdCol - 1] || '').trim();
+    var pid = String(contactsData[i][cParentIdCol - 1] || '').trim();
+    if (sid && pid) studentToParent[sid] = pid;
+  }
+
+  // === PART 4: Backfill form responses sheet ===
+  var formData = formSheet.getDataRange().getValues();
+  var formUpdated = 0;
+  var formMissed = [];
+  for (var r = 1; r < formData.length; r++) {
+    var sid = String(formData[r][fStudentIdCol - 1] || '').trim();
+    var pid = String(formData[r][fParentIdCol - 1] || '').trim();
+    if (sid && !pid) {
+      var foundPid = studentToParent[sid];
+      if (foundPid) {
+        formSheet.getRange(r + 1, fParentIdCol).setValue(foundPid);
+        formUpdated++;
+      } else {
+        formMissed.push('Row ' + (r + 1) + ': Student ID ' + sid);
+      }
+    }
+  }
+
+  // === PART 5: Backfill billing sheet ===
+  var billingData = billingSheet.getDataRange().getValues();
+  var billUpdated = 0;
+  var billMissed = [];
+  for (var r = 1; r < billingData.length; r++) {
+    var sid = String(billingData[r][bStudentIdCol - 1] || '').trim();
+    var pid = String(billingData[r][bParentIdCol - 1] || '').trim();
+    if (sid && !pid) {
+      var foundPid = studentToParent[sid];
+      if (foundPid) {
+        billingSheet.getRange(r + 1, bParentIdCol).setValue(foundPid);
+        billUpdated++;
+      } else {
+        billMissed.push('Row ' + (r + 1) + ': Student ID ' + sid);
+      }
+    }
+  }
+
+  // === REPORT ===
+  var msg = 'Form sheet: ' + formUpdated + ' updated.\n' +
+            'Billing sheet: ' + billUpdated + ' updated.\n';
+  if (formMissed.length > 0) msg += '\nForm rows with no match:\n' + formMissed.join('\n');
+  if (billMissed.length > 0) msg += '\nBilling rows with no match:\n' + billMissed.join('\n');
+
+  Logger.log(msg);
+  console.log(msg);
+}
+
 function authorizeScript() {
   // This function just needs to be run once to authorize the script
   // It accesses the UI which triggers the authorization prompt
@@ -101,6 +206,7 @@ function onOpen() {
     .addItem('Clear Reports', 'clearReports')
     .addItem('Verify by Drive ID', 'verifyByDriveIdWithPrompt')
     .addItem('Create New Year Workbooks with Continuing Students', 'createNewYearWorkbooksWithContinuingStudents')
+    .addItem('Generate Enrollment Comparison Graph', 'generateEnrollmentComparisonGraph')
     .addToUi();
 }
 
@@ -1551,6 +1657,112 @@ function generateAttendanceSheetFromRoster(teacherWorkbook, monthName) {
   }
 }
 
+function generateEnrollmentComparisonGraph() {
+  try {
+    UtilityScriptLibrary.debugLog('generateEnrollmentComparisonGraph', 'INFO', 'Starting', '', '');
+
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var MAY_15 = { month: 4, day: 15 };
+
+    var sheet2025 = ss.getSheetByName('Summer 2025');
+    var sheet2026 = ss.getSheetByName('Summer 2026');
+    if (!sheet2025) throw new Error('Sheet "Summer 2025" not found.');
+    if (!sheet2026) throw new Error('Sheet "Summer 2026" not found.');
+
+    function getTimestamps(sheet) {
+      var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
+      var floored = new Date(2000, MAY_15.month, MAY_15.day);
+      return data
+        .map(function(row) { return row[0]; })
+        .filter(function(val) { return val instanceof Date && !isNaN(val); })
+        .map(function(d) {
+          var asNeutral = new Date(2000, d.getMonth(), d.getDate());
+          return asNeutral < floored ? floored : asNeutral;
+        })
+        .sort(function(a, b) { return a - b; });
+    }
+
+    var timestamps2025 = getTimestamps(sheet2025);
+    var timestamps2026 = getTimestamps(sheet2026);
+
+    function buildCumulative(timestamps) {
+      return timestamps.map(function(d, i) {
+        return {
+          label: UtilityScriptLibrary.formatDateFlexible(d),
+          count: i + 1
+        };
+      });
+    }
+
+    var cum2025 = buildCumulative(timestamps2025);
+    var cum2026 = buildCumulative(timestamps2026);
+
+    var allLabels = [];
+    var labelSet = {};
+    cum2025.concat(cum2026).forEach(function(pt) {
+      if (!labelSet[pt.label]) {
+        labelSet[pt.label] = true;
+        allLabels.push(pt.label);
+      }
+    });
+    allLabels.sort(function(a, b) {
+      return new Date('2000 ' + a) - new Date('2000 ' + b);
+    });
+
+    function mapToLabels(cum, labels) {
+      var lookup = {};
+      cum.forEach(function(pt) { lookup[pt.label] = pt.count; });
+      var last = 0;
+      return labels.map(function(lbl) {
+        if (lookup[lbl] !== undefined) last = lookup[lbl];
+        return last || null;
+      });
+    }
+
+    var values2025 = mapToLabels(cum2025, allLabels);
+    var values2026 = mapToLabels(cum2026, allLabels);
+
+    var graphSheet = ss.getSheetByName('Graph');
+    if (graphSheet) {
+      graphSheet.clearContents();
+      graphSheet.getCharts().forEach(function(c) { graphSheet.removeChart(c); });
+    } else {
+      graphSheet = ss.insertSheet('Graph');
+    }
+
+    graphSheet.getRange(1, 1, 1, 3).setValues([['Date', 'Summer 2025', 'Summer 2026']]);
+
+    var rows = allLabels.map(function(lbl, i) {
+      return [lbl, values2025[i], values2026[i]];
+    });
+    graphSheet.getRange(2, 1, rows.length, 3).setValues(rows);
+
+    var chart = graphSheet.newChart()
+      .setChartType(Charts.ChartType.LINE)
+      .addRange(graphSheet.getRange(1, 1, rows.length + 1, 3))
+      .setPosition(2, 5, 0, 0)
+      .setOption('title', 'Summer Enrollment: 2025 vs 2026')
+      .setOption('hAxis.title', '')
+      .setOption('vAxis.title', 'Cumulative Registrations')
+      .setOption('legend.position', 'top')
+      .setOption('interpolateNulls', true)
+      .setOption('width', 700)
+      .setOption('height', 400)
+      .build();
+
+    graphSheet.insertChart(chart);
+
+    UtilityScriptLibrary.debugLog('generateEnrollmentComparisonGraph', 'INFO', 'Complete',
+      '2025: ' + timestamps2025.length + ' registrations, 2026: ' + timestamps2026.length + ' registrations', '');
+
+    SpreadsheetApp.getUi().alert('Enrollment comparison graph generated successfully.');
+
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('generateEnrollmentComparisonGraph', 'ERROR', 'Failed', error.message, error.stack);
+    SpreadsheetApp.getUi().alert('Error generating graph: ' + error.message);
+  }
+}
+
 function getActiveStudentsFromRoster(rosterSheet) {
   try {
     var headerMap = UtilityScriptLibrary.getHeaderMap(rosterSheet);
@@ -2254,13 +2466,13 @@ function processParent(formData, parentsSheet, studentId, existingParentId) {
       formData['Phone'] = UtilityScriptLibrary.formatPhoneNumber(String(formData['Phone']));
     }
 
-    var cityZipRaw = formData['CityZip'];
-    if (cityZipRaw) {
-      var parsed = UtilityScriptLibrary.parseCityZipMessy(cityZipRaw);
-      formData['Address City'] = parsed.city;
-      formData['Address Zip Code'] = parsed.zip;
-      formData['Address Formatted'] = UtilityScriptLibrary.formatAddress(formData['Address Street'] || '', parsed.city, parsed.zip);
-    }
+    var city = String(formData['City'] || '').trim().toLowerCase().split(' ').map(function(w) {
+      return w.charAt(0).toUpperCase() + w.slice(1);
+    }).join(' ');
+    var zip  = String(formData['Zip'] || '').trim();
+    formData['Address City']      = city;
+    formData['Address Zip Code']  = zip;
+    formData['Address Formatted'] = UtilityScriptLibrary.formatAddress(formData['Address Street'] || '', city, zip);
 
     var parentKey = UtilityScriptLibrary.generateKey(
       formData['Parent Last Name'] || '',
@@ -2268,24 +2480,30 @@ function processParent(formData, parentsSheet, studentId, existingParentId) {
       formData['Email'] || ''
     );
 
-    var parentIdCol = getCol('Parent ID');
-    var lookupCol = getCol('Parent Lookup');
-    var studentIdsCol = getCol('Student IDs');
-    var updatedCol = getCol('Updated');
+    var parentIdCol    = getCol('Parent ID');
+    var lookupCol      = getCol('Parent Lookup');
+    var studentIdsCol  = getCol('Student IDs');
+    var updatedCol     = getCol('Updated');
     var parentGroupCol = getCol('Parent Group Interest');
 
     var textFields = [
-      'Parent Last Name', 'Parent First Name', 'Salutation', 'Email', 'Email 2',
-      'Phone', 'Address Formatted', 'Billing Preference', 'Additional Contacts', 'Referral'
+      'Parent Last Name', 'Parent First Name', 'Salutation', 'Email',
+      'Phone', 'Address Formatted', 'Billing Preference', 'Additional contacts', 'Referral'
     ];
 
-    var parentId = existingParentId;
+    var parentId  = existingParentId;
     var parentRow = UtilityScriptLibrary.findParentRow(parentsSheet, parentId, parentKey);
 
     UtilityScriptLibrary.debugLog('processParent', 'DEBUG', 'Duplicate check',
       'Parent ID: "' + parentId + '", Key: "' + parentKey + '", Found row: ' + parentRow, '');
 
     if (parentRow !== -1) {
+      if (!parentId) {
+        var foundRowValues = parentsSheet.getRange(parentRow, 1, 1, parentsSheet.getLastColumn()).getValues()[0];
+        parentId = String(foundRowValues[parentIdCol - 1] || '').trim();
+        UtilityScriptLibrary.debugLog('processParent', 'DEBUG', 'Resolved parent ID from sheet', 'ID: ' + parentId, '');
+      }
+
       UtilityScriptLibrary.debugLog('processParent', 'INFO', 'Updating existing parent', 'Parent ID: ' + parentId, '');
 
       var fieldsObj = {};
@@ -2320,9 +2538,9 @@ function processParent(formData, parentsSheet, studentId, existingParentId) {
       var newRow = new Array(headers.length);
       for (var m = 0; m < headers.length; m++) newRow[m] = '';
 
-      newRow[parentIdCol - 1]    = parentId;
-      newRow[lookupCol - 1]      = parentKey;
-      newRow[studentIdsCol - 1]  = studentId;
+      newRow[parentIdCol - 1]   = parentId;
+      newRow[lookupCol - 1]     = parentKey;
+      newRow[studentIdsCol - 1] = studentId;
 
       for (var n = 0; n < textFields.length; n++) {
         var field = textFields[n];
@@ -2671,10 +2889,6 @@ function processSingleRow(sheet, row, headerMap) {
       idCol = headerMap[UtilityScriptLibrary.normalizeHeader('ID')];
       UtilityScriptLibrary.debugLog('processSingleRow', 'WARNING', 'Student ID column not found, falling back to ID column', 'Col: ' + idCol, '');
     }
-    if (idCol) {
-      sheet.getRange(row, idCol).setValue(studentId);
-      UtilityScriptLibrary.debugLog('processSingleRow', 'DEBUG', 'Wrote Student ID to sheet', 'ID: ' + studentId + ', Row: ' + row + ', Col: ' + idCol, '');
-    }
 
     var parentsSheet = UtilityScriptLibrary.getSheet('parents');
     if (!parentsSheet) throw new Error('Parents sheet not found.');
@@ -2682,6 +2896,17 @@ function processSingleRow(sheet, row, headerMap) {
     var existingParentId = studentResult.parentId || '';
     var parentId = processParent(formData, parentsSheet, studentId, existingParentId);
     updateStudentWithParentId(contactsSheet, studentRow, parentId);
+
+    if (idCol) {
+      sheet.getRange(row, idCol).setValue(studentId);
+      UtilityScriptLibrary.debugLog('processSingleRow', 'DEBUG', 'Wrote Student ID to sheet', 'ID: ' + studentId + ', Row: ' + row + ', Col: ' + idCol, '');
+    }
+
+    var parentIdCol = headerMap[UtilityScriptLibrary.normalizeHeader('Parent ID')];
+    if (parentIdCol) {
+      sheet.getRange(row, parentIdCol).setValue(parentId);
+      UtilityScriptLibrary.debugLog('processSingleRow', 'DEBUG', 'Wrote Parent ID to sheet', 'ID: ' + parentId + ', Row: ' + row + ', Col: ' + parentIdCol, '');
+    }
 
     // === ROSTER PROCESSING ===
     try {
@@ -3203,12 +3428,18 @@ function shouldProcessEdit(e, headerMap) {
   try {
     var teacherCol = headerMap[UtilityScriptLibrary.normalizeHeader('Teacher')];
     var idCol = headerMap[UtilityScriptLibrary.normalizeHeader('Student ID')];
+    var parentIdCol = headerMap[UtilityScriptLibrary.normalizeHeader('Parent ID')];
 
-    UtilityScriptLibrary.debugLog('shouldProcessEdit', 'DEBUG', 'Checking edit', 
+    UtilityScriptLibrary.debugLog('shouldProcessEdit', 'DEBUG', 'Checking edit',
       'Teacher col: ' + teacherCol + ', Student ID col: ' + idCol + ', Edited col: ' + e.range.getColumn(), '');
 
     if (e.range.getColumn() === idCol) {
       UtilityScriptLibrary.debugLog('shouldProcessEdit', 'DEBUG', 'Edit was to Student ID column - ignoring', '', '');
+      return false;
+    }
+
+    if (e.range.getColumn() === parentIdCol) {
+      UtilityScriptLibrary.debugLog('shouldProcessEdit', 'DEBUG', 'Edit was to Parent ID column - ignoring', '', '');
       return false;
     }
 
