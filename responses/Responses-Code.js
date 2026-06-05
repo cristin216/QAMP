@@ -1737,12 +1737,16 @@ function generateEnrollmentComparisonGraph() {
       graphSheet = ss.insertSheet('Graph');
     }
 
-    graphSheet.getRange(1, 1, 1, 3).setValues([['Date', 'Summer 2025', 'Summer 2026']]);
+    graphSheet.getRange(1, 1, 1, 4).setValues([['Date', 'Summer 2025', 'Summer 2026', '% Change']]);
 
     var rows = allLabels.map(function(lbl, i) {
-      return [lbl, values2025[i], values2026[i]];
+      var v25 = values2025[i];
+      var v26 = values2026[i];
+      var pct = (v25 && v26) ? (v26 / v25 - 1) : null;
+      return [lbl, v25, v26, pct];
     });
-    graphSheet.getRange(2, 1, rows.length, 3).setValues(rows);
+    graphSheet.getRange(2, 1, rows.length, 4).setValues(rows);
+    graphSheet.getRange(2, 4, rows.length, 1).setNumberFormat('0.0%');
 
     var chart = graphSheet.newChart()
       .setChartType(Charts.ChartType.LINE)
