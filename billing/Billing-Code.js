@@ -87,11 +87,17 @@ function backfillCumulativeTracking() {
         var studentId = String(row[studentIdCol - 1] || '').trim();
         if (!studentId || studentMap[studentId]) continue; // already found a more recent row
 
+        var cumTaught = parseFloat(row[cumTaughtCol - 1]) || 0;
+        var cumBilled = parseFloat(row[cumBilledCol - 1]) || 0;
+        var balance   = parseFloat(row[balanceCol - 1])   || 0;
+
+        if (cumTaught === 0 && cumBilled === 0) continue; // skip cycles with no real data
+
         studentMap[studentId] = {
           cycleName: cycleName,
-          cumTaught: parseFloat(row[cumTaughtCol - 1]) || 0,
-          cumBilled: parseFloat(row[cumBilledCol - 1]) || 0,
-          balance:   parseFloat(row[balanceCol - 1])   || 0
+          cumTaught: cumTaught,
+          cumBilled: cumBilled,
+          balance:   balance
         };
       }
 
@@ -8073,11 +8079,13 @@ function renameLatestFormSheet(semesterName) {
     var currentHeaders = latestSheet.getRange(1, 1, 1, latestSheet.getLastColumn()).getValues()[0];
     var hasTeacher = false;
     var hasStudentId = false;
+    var hasParentId = false;
 
     for (var i = 0; i < currentHeaders.length; i++) {
       var normalizedHeader = UtilityScriptLibrary.normalizeHeader(currentHeaders[i]);
       if (normalizedHeader === 'teacher') hasTeacher = true;
       if (normalizedHeader === 'studentid') hasStudentId = true;
+      if (normalizedHeader === 'parentid') hasParentId = true;
     }
 
     if (!hasTeacher) {
@@ -8092,6 +8100,12 @@ function renameLatestFormSheet(semesterName) {
       UtilityScriptLibrary.debugLog('renameLatestFormSheet', 'INFO', 'Added Student ID column at end', '', '');
     }
 
+    if (!hasParentId) {
+      var lastCol = latestSheet.getLastColumn();
+      latestSheet.getRange(1, lastCol + 1).setValue('Parent ID');
+      UtilityScriptLibrary.debugLog('renameLatestFormSheet', 'INFO', 'Added Parent ID column at end', '', '');
+    }
+
     latestSheet.setName(semesterName);
 
     UtilityScriptLibrary.debugLog('renameLatestFormSheet', 'INFO', 'Sheet renamed',
@@ -8101,7 +8115,8 @@ function renameLatestFormSheet(semesterName) {
       oldName: currentName,
       newName: semesterName,
       teacherAdded: !hasTeacher,
-      studentIdAdded: !hasStudentId
+      studentIdAdded: !hasStudentId,
+      parentIdAdded: !hasParentId
     };
 
   }, 'Form response sheet renamed to ' + semesterName, 'renameLatestFormSheet', {
