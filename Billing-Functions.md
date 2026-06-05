@@ -1711,3 +1711,14 @@ BILLING FUNCTION DIRECTORY
 ================================================================================
 END OF FUNCTION DIRECTORY
 ================================================================================
+
+================================================================================
+HTML TEMPLATES
+================================================================================
+
+  ReRegistration.html
+      Web app re-registration form served by doGet(). Accepts a Parent ID via
+      URL parameter (pid) and displays a pre-filled re-registration form.
+      First verifies the parent's identity via verifyAndGetParentData(), then
+      on submission calls submitReregistration() via google.script.run.
+      Interacts with: doGet(), verifyAndGetParentData(), submitReregistration()
