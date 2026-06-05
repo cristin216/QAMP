@@ -3043,6 +3043,10 @@ function promptForMonthName(cutoffDate) {
   }
 }
 
+function runLogHeaders() {
+  UtilityScriptLibrary.logAllSheetHeaders();
+}
+
 function showCombinedErrorDetails(lessonResults, invoiceResults) {
   try {
     var ui = SpreadsheetApp.getUi();

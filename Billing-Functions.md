@@ -130,6 +130,7 @@ BILLING FUNCTION DIRECTORY
     locateStudentRecord
     locateStudentRecordEnhanced
     logMysteryStudents
+    logSheetHeaders
     markReregistrationProcessed
     markStudentsInactive
     migrateTeacherDisplayNamesToIds
@@ -163,7 +164,6 @@ BILLING FUNCTION DIRECTORY
     runBillingCycleAutomation
     runFullReconciliation
     runFullReconciliationUI
-    runLogHeaders
     runPaymentsReconciliation
     runPaymentsReconciliationUI
     runRegistrationPacketGenerationUI
@@ -1012,6 +1012,13 @@ BILLING FUNCTION DIRECTORY
         Local functions used: None
         Utility functions used: UtilityScriptLibrary.debugLog()
 
+    logSheetHeaders() -> void
+        One-liner wrapper calling UtilityScriptLibrary.logAllSheetHeaders() for
+        debugging.
+        Category: HELPERS
+        Local functions used: None
+        Utility functions used: UtilityScriptLibrary.logAllSheetHeaders()
+
     markReregistrationProcessed(reregSheet, processedIds) -> void
         Marks re-registration rows as processed in the re-registration sheet.
         Category: REREGISTRATION
@@ -1250,13 +1257,6 @@ BILLING FUNCTION DIRECTORY
         Category: UI
         Local functions used: runFullReconciliation()
         Utility functions used: UtilityScriptLibrary.promptForCustomToday(), UtilityScriptLibrary.debugLog()
-
-    runLogHeaders() -> void
-        One-liner wrapper calling UtilityScriptLibrary.logAllSheetHeaders() for
-        debugging.
-        Category: HELPERS
-        Local functions used: None
-        Utility functions used: UtilityScriptLibrary.logAllSheetHeaders()
 
     runPaymentsReconciliation() -> Object
         Runs payment reconciliation by comparing the Payments sheet against billing
@@ -1625,11 +1625,12 @@ BILLING FUNCTION DIRECTORY
     getStudentDocumentsFolder
     isHeaderRow
     logMysteryStudents
+    logSheetHeaders
     markStudentsInactive
     migrateTeacherDisplayNamesToIds
     parseMonthYear
     populateAllCumulativeColumns
-    runLogHeaders
+
 
   METADATA (2 functions):
     appendToBillingMetadata

@@ -63,6 +63,7 @@ RESPONSES FUNCTION DIRECTORY
     handleNewStudentFormSubmit
     hasMonthBeenInvoiced
     loadStudentMapFromContacts
+    logSheetHeaders
     onOpen
     populateRosterWithContinuingStudents
     processParent
@@ -74,7 +75,6 @@ RESPONSES FUNCTION DIRECTORY
     processStudentSelection
     reassignStudentToNewTeacher
     refreshCurrentSemesterTeacherDropdown
-    runLogHeaders
     selectNewTeacher
     selectStudents
     setupCompleteRosterWorkbook
@@ -432,6 +432,13 @@ RESPONSES FUNCTION DIRECTORY
         Local functions used: None
         Utility functions used: UtilityScriptLibrary.getSheet(), UtilityScriptLibrary.getHeaderMap()
 
+    logSheetHeaders() -> void
+        One-liner wrapper that calls UtilityScriptLibrary.logAllSheetHeaders() for
+        debugging.
+        Category: HELPERS
+        Local functions used: None
+        Utility functions used: UtilityScriptLibrary.logAllSheetHeaders()
+
     onOpen() -> void
         Installs the QAMP Tools menu in the spreadsheet UI on open.
         Category: UI
@@ -515,13 +522,6 @@ RESPONSES FUNCTION DIRECTORY
         Category: UI
         Local functions used: applyTeacherDropdownToCurrentSemester()
         Utility functions used: UtilityScriptLibrary.debugLog()
-
-    runLogHeaders() -> void
-        One-liner wrapper that calls UtilityScriptLibrary.logAllSheetHeaders() for
-        debugging.
-        Category: HELPERS
-        Local functions used: None
-        Utility functions used: UtilityScriptLibrary.logAllSheetHeaders()
 
     selectNewTeacher() -> void
         Second step of the reassignment workflow. Presents a dropdown to select the
@@ -694,7 +694,7 @@ RESPONSES FUNCTION DIRECTORY
     convertStudentInfoToAttendanceObject
     createStudentObjectForAttendance
     getYearRosterFolders
-    runLogHeaders
+    logSheetHeaders
 
   REASSIGNMENT (7 functions):
     enterEffectiveDate

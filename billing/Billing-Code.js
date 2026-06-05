@@ -376,10 +376,6 @@ function runFullReconciliationUI() {
   }
 }
 
-function runLogHeaders() {
-  UtilityScriptLibrary.logAllSheetHeaders();
-}
-
 function runWeeklyLessonReconciliationUI() {
   try {
     var ui = SpreadsheetApp.getUi();
@@ -6632,6 +6628,10 @@ function logMysteryStudents(mysteryStudents) {
     UtilityScriptLibrary.debugLog('logMysteryStudents', 'ERROR',
       'Error logging mystery students', '', error.message);
   }
+}
+
+function logSheetHeaders() {
+  UtilityScriptLibrary.logAllSheetHeaders();
 }
 
 function markReregistrationProcessed(reregSheet, processedIds) {

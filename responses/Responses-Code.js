@@ -2399,6 +2399,10 @@ function loadStudentMapFromContacts() {
   }
 }
 
+function logSheetHeaders() {
+  UtilityScriptLibrary.logAllSheetHeaders();
+}
+
 function populateRosterWithContinuingStudents(workbook, semesterName, students) {
   try {
     var season = UtilityScriptLibrary.extractSeasonFromSemester(semesterName);
@@ -3196,10 +3200,6 @@ function refreshCurrentSemesterTeacherDropdown() {
     UtilityScriptLibrary.debugLog('refreshCurrentSemesterTeacherDropdown', 'ERROR', 'Manual refresh failed', '', error.message);
     SpreadsheetApp.getUi().alert('❌ Error refreshing teacher dropdown: ' + error.message);
   }
-}
-
-function runLogHeaders() {
-  UtilityScriptLibrary.logAllSheetHeaders();
 }
 
 function selectNewTeacher() {
