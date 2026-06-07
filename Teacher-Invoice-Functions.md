@@ -1,7 +1,7 @@
 ================================================================================
 TEACHER INVOICE FUNCTION DIRECTORY
 ================================================================================
-    Total Functions: 59
+    Total Functions: 60
     Most Recent version: 32
 
     This directory provides a quick reference for all functions in TeacherInvoice script.
@@ -56,6 +56,7 @@ TEACHER INVOICE FUNCTION DIRECTORY
     isMonthlyInvoiceSheet
     loadProgramRateKeysCache
     loadRatesCache
+    logSheetHeaders
     normalizeNameForMatching
     onOpen
     parseLessonDate
@@ -377,6 +378,13 @@ TEACHER INVOICE FUNCTION DIRECTORY
         Utility functions used: UtilityScriptLibrary.getWorkbook(), UtilityScriptLibrary.getHeaderMap(),
                                 UtilityScriptLibrary.debugLog()
 
+    logSheetHeaders() -> void
+        Calls UtilityScriptLibrary.logAllSheetHeaders() to log all sheet names and
+        their header row values to the debug log. Used for debugging sheet structure.
+        Category: TESTING
+        Local functions used: None
+        Utility functions used: UtilityScriptLibrary.logAllSheetHeaders()
+
     normalizeNameForMatching(name) -> String
         Normalizes a name string for fuzzy matching by removing diacritics, lowercasing,
         and stripping extra whitespace.
@@ -554,6 +562,9 @@ TEACHER INVOICE FUNCTION DIRECTORY
     normalizeNameForMatching
     parseLessonDate
     parseStudentName
+
+  TESTING (1 function):
+    logSheetHeaders
 
   INVOICE_GENERATION (10 functions):
     addLateTeacherToInvoice

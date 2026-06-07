@@ -423,7 +423,7 @@ function findTeacherRow(sheet, teacherKey) {
   return -1;
 }
 
-function runLogHeaders() {
+function logSheetHeaders() {
   UtilityScriptLibrary.logAllSheetHeaders();
 }
 

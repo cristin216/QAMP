@@ -2450,6 +2450,10 @@ function loadRatesCache(ratesColumnHeader) {
   }
 }
 
+function logSheetHeaders() {
+  UtilityScriptLibrary.logAllSheetHeaders();
+}
+
 function normalizeNameForMatching(name) {
   if (!name) return '';
   
@@ -3041,10 +3045,6 @@ function promptForMonthName(cutoffDate) {
     UtilityScriptLibrary.debugLog('promptForMonthName', 'ERROR', 'Unexpected error', '', error.message);
     return null;
   }
-}
-
-function runLogHeaders() {
-  UtilityScriptLibrary.logAllSheetHeaders();
 }
 
 function showCombinedErrorDetails(lessonResults, invoiceResults) {

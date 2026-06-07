@@ -104,7 +104,7 @@ TEACHER RESPONSES FUNCTION DIRECTORY
         instruments via processSingleInstrument() and updates the roster lookup.
         Appends admin flags for unresolved or problematic records.
         Category: FORM_PROCESSING
-        Local functions used: extractReturningFormData(), processTeacher(),
+        Local functions used: extractFormData(), processTeacher(),
                               addOrUpdateTeacherRosterLookup(), createPartialReturningRecord(),
                               appendAdminFlag(), processSingleInstrument()
         Utility functions used: UtilityScriptLibrary.getSheet(), UtilityScriptLibrary.getFieldMappingFromSheet(),
@@ -114,19 +114,20 @@ TEACHER RESPONSES FUNCTION DIRECTORY
         Main event handler for new teacher interest form submissions. Acquires a script lock,
         extracts form data, checks teaching interest, and routes to processTeacher(),
         processSingleInstrument(), and addOrUpdateTeacherRosterLookup() as appropriate.
-        Teachers not interested in teaching are tracked in the Future Prospects sheet inline.
+        Teachers not currently available to teach but wishing to be contacted in future
+        are tracked in the Future Teacher Contacts sheet inline.
         Category: FORM_PROCESSING
-        Local functions used: extractTeacherFormData(), processTeacher(),
+        Local functions used: extractFormData(), processTeacher(),
                               processSingleInstrument(), addOrUpdateTeacherRosterLookup()
         Utility functions used: UtilityScriptLibrary.getSheet(), UtilityScriptLibrary.getFieldMappingFromSheet(),
                                 UtilityScriptLibrary.normalizeHeader(), UtilityScriptLibrary.debugLog()
 
     logSheetHeaders() -> void
-        Logs all sheet names and their header row values to the console for debugging.
-        Skips empty sheets.
+        Calls UtilityScriptLibrary.logAllSheetHeaders() to log all sheet names and
+        their header row values to the debug log. Used for debugging sheet structure.
         Category: TESTING
         Local functions used: None
-        Utility functions used: None
+        Utility functions used: UtilityScriptLibrary.logAllSheetHeaders()
 
     migrateTeacherDisplayNames() -> void
         One-time migration utility. Iterates the Teacher Roster Lookup sheet and rewrites

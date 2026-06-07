@@ -2159,101 +2159,6 @@ function getOrCreateRosterFromTemplate(teacherInfo, rosterFolder, year, semester
   }
 }
 
-function getTeacherInfoByDisplayName(displayName) {
-  try {
-    var lookupSheet = UtilityScriptLibrary.getSheet('teacherRosterLookup');
-
-    if (!lookupSheet || lookupSheet.getLastRow() <= 1) {
-      UtilityScriptLibrary.debugLog('getTeacherInfoByDisplayName', 'WARNING', 'Teacher Roster Lookup sheet not found or empty', '', '');
-      return null;
-    }
-
-    var getCol = UtilityScriptLibrary.createColumnFinder(lookupSheet);
-    var firstNameCol   = getCol('First Name');
-    var lastNameCol    = getCol('Last Name');
-    var rosterUrlCol   = getCol('Roster URL');
-    var teacherIdCol   = getCol('Teacher ID');
-    var displayNameCol = getCol('Display Name');
-    var statusCol      = getCol('Status');
-    var lastUpdatedCol = getCol('Last Updated');
-
-    if (!teacherIdCol || !displayNameCol) {
-      UtilityScriptLibrary.debugLog('getTeacherInfoByDisplayName', 'ERROR', 'Required columns not found', '', '');
-      return null;
-    }
-
-    var data = lookupSheet.getDataRange().getValues();
-    for (var i = 1; i < data.length; i++) {
-      if (String(data[i][displayNameCol - 1]).trim() !== displayName) continue;
-
-      return {
-        firstName:   firstNameCol   ? String(data[i][firstNameCol - 1]).trim()  : '',
-        lastName:    lastNameCol     ? String(data[i][lastNameCol - 1]).trim()   : '',
-        rosterUrl:   rosterUrlCol    ? String(data[i][rosterUrlCol - 1]).trim()  : '',
-        teacherId:   String(data[i][teacherIdCol - 1]).trim(),
-        status:      statusCol       ? String(data[i][statusCol - 1]).trim()     : '',
-        lastUpdated: lastUpdatedCol  ? data[i][lastUpdatedCol - 1]               : ''
-      };
-    }
-
-    UtilityScriptLibrary.debugLog('getTeacherInfoByDisplayName', 'WARNING', 'Display name not found', displayName, '');
-    return null;
-
-  } catch (error) {
-    UtilityScriptLibrary.debugLog('getTeacherInfoByDisplayName', 'ERROR', 'Failed', displayName, error.message);
-    return null;
-  }
-}
-
-function getTeacherInfoByFullName(firstName, lastName) {
-  try {
-    var lookupSheet = UtilityScriptLibrary.getSheet('teacherRosterLookup');
-
-    if (!lookupSheet || lookupSheet.getLastRow() <= 1) {
-      UtilityScriptLibrary.debugLog('getTeacherInfoByFullName', 'WARNING', 'Teacher Roster Lookup sheet not found or empty', '', '');
-      return null;
-    }
-
-    var getCol = UtilityScriptLibrary.createColumnFinder(lookupSheet);
-    var firstNameCol = getCol('First Name');
-    var lastNameCol = getCol('Last Name');
-    var rosterUrlCol = getCol('Roster URL');
-    var teacherIdCol = getCol('Teacher ID');
-    var statusCol = getCol('Status');
-    var lastUpdatedCol = getCol('Last Updated');
-
-    if (!firstNameCol || !lastNameCol) {
-      UtilityScriptLibrary.debugLog('getTeacherInfoByFullName', 'ERROR', 'Required columns not found', '', '');
-      return null;
-    }
-
-    var data = lookupSheet.getDataRange().getValues();
-
-    for (var i = 1; i < data.length; i++) {
-      var rowFirstName = String(data[i][firstNameCol - 1]).trim();
-      var rowLastName = String(data[i][lastNameCol - 1]).trim();
-      if (rowFirstName.toLowerCase() !== firstName.trim().toLowerCase()) continue;
-      if (rowLastName.toLowerCase() !== lastName.trim().toLowerCase()) continue;
-
-      return {
-        firstName:   rowFirstName,
-        lastName:    rowLastName,
-        rosterUrl:   rosterUrlCol   ? String(data[i][rosterUrlCol - 1]).trim() : '',
-        teacherId:   teacherIdCol   ? String(data[i][teacherIdCol - 1]).trim() : '',
-        status:      statusCol      ? String(data[i][statusCol - 1]).trim()    : '',
-        lastUpdated: lastUpdatedCol ? data[i][lastUpdatedCol - 1]              : ''
-      };
-    }
-
-    UtilityScriptLibrary.debugLog('getTeacherInfoByFullName', 'WARNING', 'Teacher not found', firstName + ' ' + lastName, '');
-    return null;
-
-  } catch (error) {
-    UtilityScriptLibrary.debugLog('getTeacherInfoByFullName', 'ERROR', 'Failed', firstName + ' ' + lastName, error.message);
-    return null;
-  }
-}
-
 function getYearRosterFolders(previousYear, newYear) {
   var rostersFolder = UtilityScriptLibrary.getRosterFolder();
   var previousFolder = null;
@@ -2728,7 +2633,7 @@ function processReassignment() {
     var rosterFolder = DriveApp.getFolderById(yearRow[folderIdColIndex]);
     UtilityScriptLibrary.debugLog('processReassignment', 'DEBUG', 'Found roster folder', 'Year: ' + year, '');
 
-    var newTeacherInfo = getTeacherInfoByDisplayName(newTeacherDisplay);
+    var newTeacherInfo = UtilityScriptLibrary.getTeacherInfoByDisplayName(newTeacherDisplay);
     if (!newTeacherInfo) throw new Error('Could not find new teacher info in Teacher Roster Lookup');
 
     var newRosterWorkbook = getOrCreateRosterFromTemplate(newTeacherInfo, rosterFolder, year, currentSemester);
@@ -3241,7 +3146,7 @@ function selectStudents(oldTeacherDisplay) {
     UtilityScriptLibrary.debugLog('selectStudents', 'INFO', 'Old teacher selected', oldTeacherDisplay, '');
     scriptProps.setProperty('reassign_oldTeacherDisplay', oldTeacherDisplay);
 
-    var oldTeacherInfo = getTeacherInfoByDisplayName(oldTeacherDisplay);
+    var oldTeacherInfo = UtilityScriptLibrary.getTeacherInfoByDisplayName(oldTeacherDisplay);
     if (!oldTeacherInfo || !oldTeacherInfo.rosterUrl) {
       ui.alert('Error', 'Could not find roster URL for old teacher: ' + oldTeacherDisplay, ui.ButtonSet.OK);
       return;
@@ -3743,7 +3648,7 @@ function updateGroupAssignmentsForCurrentMonth(firstName, lastName, semesterName
       return;
     }
 
-    var teacherInfo = getTeacherInfoByFullName(firstName, lastName);
+    var teacherInfo = UtilityScriptLibrary.getTeacherInfoByFullName(firstName, lastName);
     if (!teacherInfo || !teacherInfo.rosterUrl) {
       UtilityScriptLibrary.debugLog('updateGroupAssignmentsForCurrentMonth', 'ERROR', 'Teacher roster URL not found',
         'Teacher: ' + firstName + ' ' + lastName, '');

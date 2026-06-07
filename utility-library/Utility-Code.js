@@ -33,13 +33,13 @@ var HISTORICAL_DATA_MODE = false;  // 👈 Just change this one line!
 var SHEET_MAP = {
   // Teacher Interest Workbook
   teacherResponses: {
-    name: 'Teacher Responses'
+    name: 'New Teacher Responses'
   },
   teacherFieldMap: {
     name: 'TeacherFieldMap'
   },
   teacherReturningResponses: {
-  name: 'Returning Teacher Responses'
+    name: 'Returning Teacher Responses'
   },
   teacherReturningFieldMap: {
     name: 'Returning Teacher FieldMap'
@@ -74,7 +74,7 @@ var SHEET_MAP = {
     name: 'Rates'
   },
   programList: {
-    name: 'Program List'
+    name: 'Programs List'
   },
   packages: {
     name: 'Packages'
