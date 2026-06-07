@@ -1,10 +1,10 @@
 ================================================================================
-RESPONSES FUNCTION DIRECTORY
+REGISTRATION FUNCTION DIRECTORY
 ================================================================================
     Total Functions: 75
     Most Recent version: 118
 
-    This directory provides a quick reference for all functions in Responses script.
+    This directory provides a quick reference for all functions in Registration script.
     Parameters marked with ? are optional.
 
     Format: functionName(param1, param2, ...) -> ReturnType
@@ -151,7 +151,7 @@ RESPONSES FUNCTION DIRECTORY
 
     applyTeacherDropdownToCurrentSemester() -> void
         UI-triggered function that applies the teacher dropdown to the current semester
-        form responses sheet.
+        form registration sheet.
         Category: UI
         Local functions used: applyTeacherDropdownToSheet(), getActiveTeachersForDropdown()
         Utility functions used: UtilityScriptLibrary.getCurrentSemesterName(), UtilityScriptLibrary.debugLog()
@@ -171,7 +171,7 @@ RESPONSES FUNCTION DIRECTORY
         Utility functions used: None
 
     backfillParentIds() -> void
-        One-time utility to backfill Parent ID values into the form responses sheet
+        One-time utility to backfill Parent ID values into the form registration sheet
         and the billing sheet for existing records. Reads Parent ID from the Contacts
         sheet and writes it back to matching rows.
         Category: HELPERS
@@ -285,7 +285,7 @@ RESPONSES FUNCTION DIRECTORY
 
     findMostRecentRosterSheet(spreadsheet) -> Sheet | null
         Returns the most recent semester roster sheet from a teacher workbook. Local
-        version scoped to Responses.
+        version scoped to Registration.
         Category: DATA_LOOKUP
         Local functions used: None
         Utility functions used: None
@@ -383,7 +383,7 @@ RESPONSES FUNCTION DIRECTORY
     getTeacherInfoByDisplayName(displayName) -> Object | null
         Looks up a teacher in the Teacher Roster Lookup sheet by display name. Returns
         an object with teacherId, rosterUrl, firstName, lastName, status. Local version
-        scoped to Responses.
+        scoped to Registration.
         Category: DATA_LOOKUP
         Local functions used: None
         Utility functions used: UtilityScriptLibrary.getSheet(), UtilityScriptLibrary.debugLog()
@@ -391,7 +391,7 @@ RESPONSES FUNCTION DIRECTORY
     getTeacherInfoByFullName(firstName, lastName) -> Object | null
         Looks up a teacher in the Teacher Roster Lookup sheet by first and last name
         (case-insensitive). Returns an object with teacher fields. Local version scoped
-        to Responses.
+        to Registration.
         Category: DATA_LOOKUP
         Local functions used: None
         Utility functions used: UtilityScriptLibrary.getSheet(), UtilityScriptLibrary.debugLog()
@@ -518,7 +518,7 @@ RESPONSES FUNCTION DIRECTORY
         Utility functions used: UtilityScriptLibrary.debugLog()
 
     refreshCurrentSemesterTeacherDropdown() -> void
-        Refreshes the teacher dropdown on the current semester form responses sheet.
+        Refreshes the teacher dropdown on the current semester form registration sheet.
         Category: UI
         Local functions used: applyTeacherDropdownToCurrentSemester()
         Utility functions used: UtilityScriptLibrary.debugLog()

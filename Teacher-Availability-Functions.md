@@ -1,10 +1,10 @@
 ================================================================================
-TEACHER RESPONSES FUNCTION DIRECTORY
+TEACHER AVAILABILITY FUNCTION DIRECTORY
 ================================================================================
     Total Functions: 16
     Most Recent version: 17
 
-    This directory provides a quick reference for all functions in TeacherResponses script.
+    This directory provides a quick reference for all functions in Teacher Availability script.
     Parameters marked with ? are optional.
 
     Format: functionName(param1, param2, ...) -> ReturnType
