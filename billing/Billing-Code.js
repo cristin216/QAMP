@@ -2110,6 +2110,48 @@ function buildMissingDocumentSentence(billingData) {
   }
 }
 
+function buildNewStudentMap(currentSemester) {
+  try {
+    var contactsSS = UtilityScriptLibrary.getWorkbook('contacts');
+    var studentsSheet = contactsSS.getSheetByName('Students');
+    if (!studentsSheet) {
+      UtilityScriptLibrary.debugLog('buildNewStudentMap', 'ERROR', 'Students sheet not found', '', '');
+      return {};
+    }
+
+    var data = studentsSheet.getDataRange().getValues();
+    var norm = UtilityScriptLibrary.normalizeHeader;
+    var headers = data[0];
+    var studentIdCol = -1;
+    var enrollmentTermCol = -1;
+
+    for (var i = 0; i < headers.length; i++) {
+      var h = norm(headers[i]);
+      if (h === norm('Student ID')) studentIdCol = i;
+      else if (h === norm('First Enrollment Term')) enrollmentTermCol = i;
+    }
+
+    if (studentIdCol === -1 || enrollmentTermCol === -1) {
+      UtilityScriptLibrary.debugLog('buildNewStudentMap', 'ERROR', 'Required columns not found', '', '');
+      return {};
+    }
+
+    var map = {};
+    for (var i = 1; i < data.length; i++) {
+      var id = String(data[i][studentIdCol] || '').trim();
+      if (id) map[id] = (data[i][enrollmentTermCol] === currentSemester);
+    }
+
+    UtilityScriptLibrary.debugLog('buildNewStudentMap', 'INFO', 'Built new student map',
+      'Count: ' + Object.keys(map).length + ', Semester: ' + currentSemester, '');
+    return map;
+
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('buildNewStudentMap', 'ERROR', 'Failed to build map', '', error.message);
+    return {};
+  }
+}
+
 function buildPastVlookupFormula(prevSheetName, prevColIndex, rowNum) {
   // Range starts at col C (index 3), so VLOOKUP index = prevColIndex - 2
   var lookupIndex = prevColIndex - 2;
@@ -3568,61 +3610,22 @@ function createSingleRegistrationPacketWithSelection(studentData, billingData, p
   }
 }
 
-function determineIfNewStudent(studentId, currentSemester) {
+function determineIfNewStudent(studentId, currentSemester, newStudentMap) {
+  // If a pre-built map is provided, use it directly
+  if (newStudentMap) {
+    var result = newStudentMap.hasOwnProperty(studentId) ? newStudentMap[studentId] : true;
+    UtilityScriptLibrary.debugLog('determineIfNewStudent', 'DEBUG', 'Lookup from map',
+      'Student: ' + studentId + ', IsNew: ' + result, '');
+    return result;
+  }
+
+  // Fallback: build the map on the fly (for callers outside the generation loop)
   try {
-    // Get the contacts workbook to check First Enrollment Term
-    var contactsSS = UtilityScriptLibrary.getWorkbook('contacts');
-    var studentsSheet = contactsSS.getSheetByName('students');
-    
-    if (!studentsSheet) {
-      UtilityScriptLibrary.debugLog("determineIfNewStudent", "ERROR", "Students sheet not found", "", "");
-      return true; // Default to new student if we can't determine
-    }
-    
-    var data = studentsSheet.getDataRange().getValues();
-    var headers = data[0];
-    var norm = UtilityScriptLibrary.normalizeHeader;
-    
-    // Find column indices
-    var studentIdCol = -1;
-    var enrollmentTermCol = -1;
-    
-    for (var i = 0; i < headers.length; i++) {
-      var normalizedHeader = norm(headers[i]);
-      if (normalizedHeader === norm('Student ID')) {
-        studentIdCol = i;
-      } else if (normalizedHeader === norm('First Enrollment Term')) {
-        enrollmentTermCol = i;
-      }
-    }
-    
-    if (studentIdCol === -1 || enrollmentTermCol === -1) {
-      UtilityScriptLibrary.debugLog("determineIfNewStudent", "ERROR", "Required columns not found", 
-                    "StudentID col: " + studentIdCol + ", Enrollment col: " + enrollmentTermCol, "");
-      return true; // Default to new student
-    }
-    
-    // Find the student's first enrollment term
-    for (var i = 1; i < data.length; i++) {
-      if (data[i][studentIdCol] === studentId) {
-        var firstEnrollmentTerm = data[i][enrollmentTermCol];
-        var isNew = (firstEnrollmentTerm === currentSemester);
-        
-        UtilityScriptLibrary.debugLog("determineIfNewStudent", "DEBUG", "Student enrollment check", 
-                      "First term: " + firstEnrollmentTerm + ", Current: " + currentSemester + ", Is new: " + isNew, "");
-        
-        return isNew;
-      }
-    }
-    
-    // Student not found, assume new
-    UtilityScriptLibrary.debugLog("determineIfNewStudent", "WARN", "Student not found in contacts", "ID: " + studentId, "");
-    return true;
-    
+    var map = buildNewStudentMap(currentSemester);
+    return map.hasOwnProperty(studentId) ? map[studentId] : true;
   } catch (error) {
-    UtilityScriptLibrary.debugLog("determineIfNewStudent", "ERROR", "Error determining student status", 
-                  "", error.message);
-    return true; // Default to new student on error
+    UtilityScriptLibrary.debugLog('determineIfNewStudent', 'ERROR', 'Error determining student status', '', error.message);
+    return true;
   }
 }
 
@@ -3657,173 +3660,130 @@ function executeDocumentGeneration() {
   try {
     var properties = PropertiesService.getScriptProperties();
     var selectedTypesJson = properties.getProperty('selectedDocTypes');
-    var billingSheetName = properties.getProperty('currentBillingSheet');
-    
-    UtilityScriptLibrary.debugLog("executeDocumentGeneration", "DEBUG", "Retrieved billing sheet name", 
-                  "Name: '" + billingSheetName + "'", "");
-    
+    var billingSheetName  = properties.getProperty('currentBillingSheet');
+    var checkedOnly       = properties.getProperty('checkedOnly') === 'true';
+
+    UtilityScriptLibrary.debugLog('executeDocumentGeneration', 'DEBUG', 'Starting generation',
+      'Sheet: ' + billingSheetName + ', Checked only: ' + checkedOnly, '');
+
     if (!selectedTypesJson || !billingSheetName) {
       throw new Error('Missing generation data in properties');
     }
-    
+
     var selectedTypes = JSON.parse(selectedTypesJson);
-    
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var norm = UtilityScriptLibrary.normalizeHeader;
+
+    var ss           = SpreadsheetApp.getActiveSpreadsheet();
     var billingSheet = ss.getSheetByName(billingSheetName);
-    
-    if (!billingSheet) {
-      throw new Error('Billing sheet not found: ' + billingSheetName);
-    }
-    
-    UtilityScriptLibrary.debugLog("executeDocumentGeneration", "DEBUG", "Calling getCurrentSemesterFromBillingMetadata", 
-                  "With sheet name: '" + billingSheetName + "'", "");
-    
-    var currentSemester = getCurrentSemesterFromBillingMetadata(billingSheetName);
-    var headerMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
-    var data = billingSheet.getDataRange().getValues();
-    
-    var results = {
-      generated: 0,
-      skipped: 0,
-      errors: 0
-    };
-    
-    var studentIdColIndex = headerMap[UtilityScriptLibrary.normalizeHeader('Student ID')] - 1;
-    
+    if (!billingSheet) throw new Error('Billing sheet not found: ' + billingSheetName);
+
+    var currentSemester   = getCurrentSemesterFromBillingMetadata(billingSheetName);
+    var headerMap         = UtilityScriptLibrary.getHeaderMap(billingSheet);
+    var data              = billingSheet.getDataRange().getValues();
+
+    // Resolve once before the loop
+    var destinationFolder = getStudentDocumentsFolder(billingSheetName);
+    var newStudentMap     = buildNewStudentMap(currentSemester);
+
+    var studentIdColIndex = headerMap[norm('Student ID')] - 1;
+    var getDocsCol        = headerMap[norm('Get Documents')];  // may be undefined
+
+    var results = { generated: 0, skipped: 0, errors: 0 };
+
     for (var i = 1; i < data.length; i++) {
       try {
-        var studentId = data[i][studentIdColIndex];
-        if (!studentId) {
-          continue;
-        }
-        
-        var needsAnyDocs = false;
-        for (var j = 0; j < selectedTypes.length; j++) {
-          var existingDocId = getDocIdFromBillingSheet(studentId, selectedTypes[j], billingSheet, headerMap);
-          if (!existingDocId) {
-            needsAnyDocs = true;
-            break;
-          }
-        }
-        
-        if (!needsAnyDocs) {
+        var row       = data[i];
+        var studentId = String(row[studentIdColIndex] || '').trim();
+        if (!studentId) continue;
+
+        // Checkbox filter
+        if (checkedOnly && (!getDocsCol || row[getDocsCol - 1] !== true)) {
           results.skipped++;
           continue;
         }
-        
-        var studentData = extractStudentDataFromBillingRow(data[i], headerMap);
-        var billingData = extractBillingDataFromRow(data[i], headerMap, billingSheet);
-        
-        if (!studentData || !studentData.studentId) {
-          continue;
-        }
-        
+
+        var studentData = extractStudentDataFromBillingRow(row, headerMap);
+        if (!studentData || !studentData.studentId) continue;
+
+        var billingData    = extractBillingDataFromRow(row, headerMap);
         var deliveryMethods = determinePacketVersions(billingData.deliveryPreference);
-        
-        // Pre-check: Determine if any core documents (invoice, agreement, media release) are needed
-        var needsInvoice = shouldGenerateInvoice(billingData);
-        var needsAgreement = shouldIncludeAgreement(studentData.studentId, billingSheet, headerMap);
-        var needsMediaRelease = shouldIncludeMediaRelease(studentData.studentId, billingSheet, headerMap);
-        var needsAnyCoreDoc = needsInvoice || needsAgreement || needsMediaRelease;
-        
+
+        // All need checks read directly from the already-fetched row
+        var needsInvoice      = shouldGenerateInvoice(billingData);
+        var needsAgreement    = !billingData.agreementForm;
+        var needsMediaRelease = !billingData.mediaRelease;
+        var needsAnyCoreDoc   = needsInvoice || needsAgreement || needsMediaRelease;
+
+        var rowNumber = i + 1;
+
         for (var j = 0; j < selectedTypes.length; j++) {
           var docType = selectedTypes[j];
-          var existingDocId = getDocIdFromBillingSheet(studentData.studentId, docType, billingSheet, headerMap);
-          
-          if (!existingDocId) {
-            // Skip invoice generation if there are no line items
-            if (docType === 'invoice' && !needsInvoice) {
-              UtilityScriptLibrary.debugLog("executeDocumentGeneration", "INFO", "Skipping invoice - no line items", 
-                            "Student: " + studentData.firstName + " " + studentData.lastName + 
-                            ", Balance: " + billingData.currentBalance + 
-                            ", Programs: " + (billingData.programTotals ? billingData.programTotals.programs.length : 0), "");
+
+          if (getDocIdFromRow(row, docType, headerMap)) {
+            results.skipped++;
+            continue;
+          }
+
+          if (docType === 'invoice'       && !needsInvoice)      { results.skipped++; continue; }
+          if (docType === 'agreement'     && !needsAgreement)     { results.skipped++; continue; }
+          if (docType === 'media release' && !needsMediaRelease)  { results.skipped++; continue; }
+          if (docType === 'welcome letter'&& !needsAnyCoreDoc)    { results.skipped++; continue; }
+
+          for (var k = 0; k < deliveryMethods.length; k++) {
+            var generateResult = generateDocumentForStudent(
+              studentData, billingData, docType, deliveryMethods[k],
+              currentSemester, billingSheetName, billingSheet, headerMap,
+              rowNumber, newStudentMap, destinationFolder
+            );
+
+            if (generateResult.success && !generateResult.alreadyExists) {
+              results.generated++;
+              UtilityScriptLibrary.debugLog('executeDocumentGeneration', 'SUCCESS', 'Generated document',
+                studentData.firstName + ' ' + studentData.lastName + ', Type: ' + docType, '');
+            } else if (generateResult.alreadyExists) {
               results.skipped++;
-              continue;
-            }
-            
-            // Skip agreement if student already has one on file
-            if (docType === 'agreement' && !needsAgreement) {
-              UtilityScriptLibrary.debugLog("executeDocumentGeneration", "INFO", "Skipping agreement - already on file", 
-                            "Student: " + studentData.firstName + " " + studentData.lastName, "");
-              results.skipped++;
-              continue;
-            }
-            
-            // Skip media release if student already has one on file
-            if (docType === 'media release' && !needsMediaRelease) {
-              UtilityScriptLibrary.debugLog("executeDocumentGeneration", "INFO", "Skipping media release - already on file", 
-                            "Student: " + studentData.firstName + " " + studentData.lastName, "");
-              results.skipped++;
-              continue;
-            }
-            
-            // Skip welcome letter if no core documents are needed
-            if (docType === 'welcome letter' && !needsAnyCoreDoc) {
-              UtilityScriptLibrary.debugLog("executeDocumentGeneration", "INFO", "Skipping welcome letter - no core documents needed", 
-                            "Student: " + studentData.firstName + " " + studentData.lastName + 
-                            ", Invoice: " + needsInvoice + ", Agreement: " + needsAgreement + ", Media: " + needsMediaRelease, "");
-              results.skipped++;
-              continue;
-            }
-            
-            for (var k = 0; k < deliveryMethods.length; k++) {
-              var deliveryMethod = deliveryMethods[k];
-              
-              var generateResult = generateDocumentForStudent(
-                studentData,
-                billingData,
-                docType,
-                deliveryMethod,
-                currentSemester,
-                billingSheetName,
-                billingSheet,
-                headerMap
-              );
-              
-              if (generateResult.success && !generateResult.alreadyExists) {
-                results.generated++;
-                UtilityScriptLibrary.debugLog("executeDocumentGeneration", "SUCCESS", "Generated document", 
-                              "Student: " + studentData.firstName + " " + studentData.lastName + ", Type: " + docType, "");
-              } else if (generateResult.alreadyExists) {
-                results.skipped++;
-              } else {
-                results.errors++;
-                UtilityScriptLibrary.debugLog("executeDocumentGeneration", "ERROR", "Failed to generate", 
-                              "Student: " + studentData.firstName + " " + studentData.lastName + ", Type: " + docType, 
-                              generateResult.error || "Unknown error");
-              }
+            } else {
+              results.errors++;
+              UtilityScriptLibrary.debugLog('executeDocumentGeneration', 'ERROR', 'Failed to generate',
+                studentData.firstName + ' ' + studentData.lastName + ', Type: ' + docType,
+                generateResult.error || 'Unknown error');
             }
           }
         }
-        
+
+        // Clear checkbox for this row immediately after processing
+        if (checkedOnly && getDocsCol && row[getDocsCol - 1] === true) {
+          billingSheet.getRange(rowNumber, getDocsCol).setValue(false);
+        }
+
       } catch (studentError) {
         results.errors++;
-        UtilityScriptLibrary.debugLog("executeDocumentGeneration", "ERROR", "Error processing student row " + (i + 1), 
-                      "", studentError.message);
+        UtilityScriptLibrary.debugLog('executeDocumentGeneration', 'ERROR',
+          'Error processing row ' + (i + 1), '', studentError.message);
       }
     }
-    
+
+    // Clean up triggers and properties
     var triggers = ScriptApp.getProjectTriggers();
     for (var i = 0; i < triggers.length; i++) {
       if (triggers[i].getHandlerFunction() === 'executeDocumentGeneration') {
         ScriptApp.deleteTrigger(triggers[i]);
       }
     }
-    
     properties.deleteProperty('selectedDocTypes');
     properties.deleteProperty('currentBillingSheet');
-    
+    properties.deleteProperty('checkedOnly');
+
     SpreadsheetApp.getActive().toast(
       'Generated: ' + results.generated + ' | Skipped: ' + results.skipped + ' | Errors: ' + results.errors,
-      'Generation Complete',
-      10
+      'Generation Complete', 10
     );
-    
-    UtilityScriptLibrary.debugLog("executeDocumentGeneration", "INFO", "Document generation completed", 
-                  "Generated: " + results.generated + ", Skipped: " + results.skipped + ", Errors: " + results.errors);
-    
+
+    UtilityScriptLibrary.debugLog('executeDocumentGeneration', 'INFO', 'Generation completed',
+      'Generated: ' + results.generated + ', Skipped: ' + results.skipped + ', Errors: ' + results.errors, '');
+
   } catch (error) {
-    UtilityScriptLibrary.debugLog("executeDocumentGeneration", "ERROR", "Error executing generation", "", error.message);
+    UtilityScriptLibrary.debugLog('executeDocumentGeneration', 'ERROR', 'Generation failed', '', error.message);
     SpreadsheetApp.getActive().toast('Error: ' + error.message, 'Generation Failed', 5);
   }
 }
@@ -4675,81 +4635,43 @@ function generateCalendarForSemester(semesterName, startDate, endDate) {
   }).data;
 }
 
-function generateDocumentForStudent(studentData, billingData, templateType, deliveryMethod, currentSemester, billingSheetName, billingSheet, headerMap) {
+function generateDocumentForStudent(studentData, billingData, templateType, deliveryMethod, currentSemester, billingSheetName, billingSheet, headerMap, rowNumber, newStudentMap, destinationFolder) {
   try {
     var documentTypeDisplay = templateType.charAt(0).toUpperCase() + templateType.slice(1);
-    
-    UtilityScriptLibrary.debugLog("generateDocumentForStudent", "INFO", "Generating " + documentTypeDisplay, 
-                  "Student: " + studentData.firstName + " " + studentData.lastName + ", Type: " + templateType, "");
-    
-    var templateKey = selectDocumentTemplate(templateType, studentData, deliveryMethod, currentSemester, billingData);
-    var variables = buildTemplateVariables(studentData, billingData, templateType);
-    var fileName = buildDocumentFileName(studentData, billingData, templateType, deliveryMethod);
-    
-    UtilityScriptLibrary.debugLog("generateDocumentForStudent", "DEBUG", "Getting destination folder", 
-                  "Billing sheet name: " + billingSheetName, "");
-    
-    var destinationFolder = getStudentDocumentsFolder(billingSheetName);
-    
-    UtilityScriptLibrary.debugLog("generateDocumentForStudent", "DEBUG", "Template variables built", 
-                  "Variables count: " + Object.keys(variables).length + ", Template: " + templateKey, "");
-    
+
+    UtilityScriptLibrary.debugLog('generateDocumentForStudent', 'INFO', 'Generating ' + documentTypeDisplay,
+      'Student: ' + studentData.firstName + ' ' + studentData.lastName + ', Type: ' + templateType, '');
+
+    var templateKey = selectDocumentTemplate(templateType, studentData, deliveryMethod, currentSemester, billingData, newStudentMap);
+    var variables   = buildTemplateVariables(studentData, billingData, templateType);
+    var fileName    = buildDocumentFileName(studentData, billingData, templateType, deliveryMethod);
+
+    UtilityScriptLibrary.debugLog('generateDocumentForStudent', 'DEBUG', 'Template variables built',
+      'Variables count: ' + Object.keys(variables).length + ', Template: ' + templateKey, '');
+
+    destinationFolder = destinationFolder || getStudentDocumentsFolder(billingSheetName);
+
     if (UtilityScriptLibrary.documentAlreadyExists(fileName, destinationFolder)) {
-      return {
-        success: true,
-        message: documentTypeDisplay + " already exists",
-        fileName: fileName,
-        alreadyExists: true,
-        templateUsed: templateKey
-      };
+      return { success: true, message: documentTypeDisplay + ' already exists', fileName: fileName, alreadyExists: true, templateUsed: templateKey };
     }
-    
-    UtilityScriptLibrary.debugLog("generateDocumentForStudent", "DEBUG", "Calling generateDocumentFromTemplate", 
-                  "Template: " + templateKey + ", File: " + fileName, "");
-    
-    var result = UtilityScriptLibrary.generateDocumentFromTemplate(
-      templateKey,
-      variables,
-      fileName,
-      destinationFolder
-    );
-    
-    UtilityScriptLibrary.debugLog("generateDocumentForStudent", "DEBUG", "generateDocumentFromTemplate returned", 
-                  "Success: " + result.success + ", Has error: " + (result.error ? "Yes" : "No"), 
-                  result.error || "");
-    
+
+    var result = UtilityScriptLibrary.generateDocumentFromTemplate(templateKey, variables, fileName, destinationFolder);
+
     if (result.success) {
-      UtilityScriptLibrary.debugLog("generateDocumentForStudent", "SUCCESS", documentTypeDisplay + " generated", 
-                    "File: " + fileName, "");
-      
-      updateDocIdInBillingSheet(studentData.studentId, templateType, result.fileId, result.url, billingSheet, headerMap);
-      
-      return {
-        success: true,
-        fileId: result.fileId,
-        url: result.url,
-        fileName: fileName,
-        templateUsed: templateKey
-      };
+      UtilityScriptLibrary.debugLog('generateDocumentForStudent', 'SUCCESS', documentTypeDisplay + ' generated',
+        'File: ' + fileName, '');
+      updateDocIdInBillingSheet(rowNumber, templateType, result.fileId, result.url, billingSheet, headerMap);
+      return { success: true, fileId: result.fileId, url: result.url, fileName: fileName, templateUsed: templateKey };
     } else {
-      UtilityScriptLibrary.debugLog("generateDocumentForStudent", "ERROR", "Document generation failed", 
-                    "Template: " + templateKey + ", File: " + fileName, 
-                    result.error || "No error message returned");
-      
-      return {
-        success: false,
-        error: result.error,
-        templateUsed: templateKey
-      };
+      UtilityScriptLibrary.debugLog('generateDocumentForStudent', 'ERROR', 'Document generation failed',
+        'Template: ' + templateKey + ', File: ' + fileName, result.error || 'No error message returned');
+      return { success: false, error: result.error, templateUsed: templateKey };
     }
-    
+
   } catch (error) {
-    UtilityScriptLibrary.debugLog("generateDocumentForStudent", "ERROR", "Failed to generate " + templateType, 
-                  "Method: " + deliveryMethod, error.message + " | " + error.stack);
-    return {
-      success: false,
-      error: error.message
-    };
+    UtilityScriptLibrary.debugLog('generateDocumentForStudent', 'ERROR', 'Failed to generate ' + templateType,
+      'Method: ' + deliveryMethod, error.message + ' | ' + error.stack);
+    return { success: false, error: error.message };
   }
 }
 
@@ -5068,20 +4990,52 @@ function generateRegistrationPacketForStudentWithSelection(studentData, billingD
 
 function generateRegistrationPacketsForBillingCycle() {
   try {
+    var ui = SpreadsheetApp.getUi();
     var billingSheet = SpreadsheetApp.getActiveSheet();
     var billingSheetName = billingSheet.getName();
-    
-    UtilityScriptLibrary.debugLog("generateRegistrationPacketsForBillingCycle", "INFO", "Starting batch packet generation", 
-                  "Sheet: " + billingSheetName, "");
-    
-    // Store the billing sheet name for later use
-    PropertiesService.getScriptProperties().setProperty('currentBillingSheet', billingSheetName);
-    
-    // Show document selection dialog
+
+    UtilityScriptLibrary.debugLog('generateRegistrationPacketsForBillingCycle', 'INFO',
+      'Starting packet generation', 'Sheet: ' + billingSheetName, '');
+
+    var response = ui.alert(
+      'Generate Documents',
+      'YES = Create All (every student on this sheet)\nNO = Create Checked Only ("Get Documents" column)\n\nWhich would you like?',
+      ui.ButtonSet.YES_NO_CANCEL
+    );
+
+    if (response === ui.Button.CANCEL || response === ui.Button.CLOSE) return;
+
+    var checkedOnly = (response === ui.Button.NO);
+
+    if (checkedOnly) {
+      var norm = UtilityScriptLibrary.normalizeHeader;
+      var headerMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
+      var getDocsCol = headerMap[norm('Get Documents')];
+      if (!getDocsCol) {
+        ui.alert('Error', '"Get Documents" column not found on this sheet.', ui.ButtonSet.OK);
+        return;
+      }
+      var data = billingSheet.getDataRange().getValues();
+      var checkedCount = 0;
+      for (var i = 1; i < data.length; i++) {
+        if (data[i][getDocsCol - 1] === true) checkedCount++;
+      }
+      if (checkedCount === 0) {
+        ui.alert('No rows have "Get Documents" checked.');
+        return;
+      }
+    }
+
+    PropertiesService.getScriptProperties().setProperties({
+      'currentBillingSheet': billingSheetName,
+      'checkedOnly': checkedOnly ? 'true' : 'false'
+    });
+
     showSimpleDocumentSelectionDialog();
-    
+
   } catch (error) {
-    UtilityScriptLibrary.debugLog("generateRegistrationPacketsForBillingCycle", "ERROR", "Failed to start generation", "", error.message);
+    UtilityScriptLibrary.debugLog('generateRegistrationPacketsForBillingCycle', 'ERROR',
+      'Failed to start generation', '', error.message);
     SpreadsheetApp.getUi().alert('Error starting packet generation: ' + error.message);
   }
 }
@@ -5505,6 +5459,14 @@ function getDocIdFromBillingSheet(studentId, docType, billingSheet, headerMap) {
     }
   }
   return null;
+}
+
+function getDocIdFromRow(row, docType, headerMap) {
+  var columnName = getDocIdColumnName(docType);
+  if (!columnName) return null;
+  var docIdCol = headerMap[UtilityScriptLibrary.normalizeHeader(columnName)];
+  if (!docIdCol) return null;
+  return row[docIdCol - 1] || null;
 }
 
 function getDocumentSelectionHtml() {
@@ -7166,32 +7128,20 @@ function populateLetterType(newRow, context, sourceType, prevRow) {
 
 function processDocumentSelection(selectedTypes) {
   try {
-    UtilityScriptLibrary.debugLog("processDocumentSelection", "INFO", "Document selection received", 
-                  "Selected: " + selectedTypes.join(', '), "");
-    
-    // Get and store the current billing sheet name
-    var billingSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-    var billingSheetName = billingSheet.getName();
-    
-    UtilityScriptLibrary.debugLog("processDocumentSelection", "DEBUG", "Storing billing sheet name", 
-                  "Name: '" + billingSheetName + "'", "");
-    
-    // Store both the selection and sheet name for the background process
-    PropertiesService.getScriptProperties().setProperties({
-      'selectedDocTypes': JSON.stringify(selectedTypes),
-      'currentBillingSheet': billingSheetName
-    });
-    
-    // Create a trigger to run the actual processing in 1 second
+    UtilityScriptLibrary.debugLog('processDocumentSelection', 'INFO', 'Document selection received',
+      'Selected: ' + selectedTypes.join(', '), '');
+
+    PropertiesService.getScriptProperties().setProperty('selectedDocTypes', JSON.stringify(selectedTypes));
+
     ScriptApp.newTrigger('executeDocumentGeneration')
       .timeBased()
       .after(1000)
       .create();
-    
+
     return { success: true };
-    
+
   } catch (error) {
-    UtilityScriptLibrary.debugLog("processDocumentSelection", "ERROR", "Error processing selection", "", error.message);
+    UtilityScriptLibrary.debugLog('processDocumentSelection', 'ERROR', 'Error processing selection', '', error.message);
     throw error;
   }
 }
@@ -8473,67 +8423,49 @@ function runWeeklyLessonReconciliation(customDate) {
   }
 }
 
-function selectDocumentTemplate(templateType, studentData, deliveryMethod, currentSemester, billingData) {
+function selectDocumentTemplate(templateType, studentData, deliveryMethod, currentSemester, billingData, newStudentMap) {
   if (templateType === 'welcome letter') {
     var letterType = billingData && billingData.letterType ? billingData.letterType.toLowerCase().trim() : '';
-    
-    // If letterType is 'revised', use it exactly - no auto-detection
+
     if (letterType === 'revised') {
-      var suffix = deliveryMethod === 'print' ? 'Print' : 'Email';
-      return 'revisedInvoice' + suffix;
+      return 'revisedInvoice' + (deliveryMethod === 'print' ? 'Print' : 'Email');
     }
-    
-    // For all other cases, verify conditions and auto-detect
-    // Check if missing document letter should be used
+
     if (shouldUseMissingDocumentLetter(billingData)) {
       letterType = 'missing';
-      billingData.letterType = 'missing';  // FIX: Update billingData so buildTemplateVariables knows
-      UtilityScriptLibrary.debugLog('selectDocumentTemplate', 'INFO', 'Auto-detected missing document condition', 
-                'Student: ' + studentData.studentId, '');
+      billingData.letterType = 'missing';
+      UtilityScriptLibrary.debugLog('selectDocumentTemplate', 'INFO', 'Auto-detected missing document condition',
+        'Student: ' + studentData.studentId, '');
     }
-    
-    // Now apply the determined letter type
-    if (letterType === 'second') {
-      var suffix = deliveryMethod === 'print' ? 'Print' : 'Email';
-      return 'secondInvoice' + suffix;
-    } else if (letterType === 'missing') {
-      var suffix = deliveryMethod === 'print' ? 'Print' : 'Email';
-      return 'missingDocument' + suffix;
-    }
-    
-    // Handle welcome vs returning letter types
-    var isNewStudent = (letterType === 'welcome');
-    var isReturningStudent = (letterType === 'returning');
-    
-    // If no letter type set, fall back to checking enrollment
-    if (!letterType || (letterType !== 'welcome' && letterType !== 'returning')) {
-      isNewStudent = determineIfNewStudent(studentData.studentId, currentSemester);
-      isReturningStudent = !isNewStudent;
-    }
-    
-    var isAdult = UtilityScriptLibrary.determineIfStudentIsAdult(studentData);
-    var baseKey;
-    
-    if (isNewStudent) {
-      baseKey = isAdult ? 'newAdult' : 'newFamily';
-    } else if (isReturningStudent) {
-      baseKey = isAdult ? 'returningAdult' : 'returningFamily';
+
+    if (letterType === 'second') return 'secondInvoice'  + (deliveryMethod === 'print' ? 'Print' : 'Email');
+    if (letterType === 'missing') return 'missingDocument' + (deliveryMethod === 'print' ? 'Print' : 'Email');
+
+    var isNewStudent;
+    if (letterType === 'welcome') {
+      isNewStudent = true;
+    } else if (letterType === 'returning') {
+      isNewStudent = false;
     } else {
-      // Fallback
-      baseKey = isAdult ? 'newAdult' : 'newFamily';
+      isNewStudent = determineIfNewStudent(studentData.studentId, currentSemester, newStudentMap);
     }
-    
-    var suffix = deliveryMethod === 'print' ? 'Print' : 'Email';
+
+    var isAdult  = UtilityScriptLibrary.determineIfStudentIsAdult(studentData);
+    var suffix   = deliveryMethod === 'print' ? 'Print' : 'Email';
+    var baseKey  = isNewStudent
+      ? (isAdult ? 'newAdult'       : 'newFamily')
+      : (isAdult ? 'returningAdult' : 'returningFamily');
+
     return baseKey + suffix;
+
   } else if (templateType === 'agreement') {
     return 'agreement';
   } else if (templateType === 'media release') {
-    var isAdult = UtilityScriptLibrary.determineIfStudentIsAdult(studentData);
-    return isAdult ? 'mediaReleaseAdult' : 'mediaReleaseChild';
+    return UtilityScriptLibrary.determineIfStudentIsAdult(studentData) ? 'mediaReleaseAdult' : 'mediaReleaseChild';
   } else if (templateType === 'invoice') {
     return 'invoice';
   }
-  
+
   throw new Error('Unknown template type: ' + templateType);
 }
 
@@ -8775,59 +8707,37 @@ function shouldUseMissingDocumentLetter(billingData) {
 
 function showSimpleDocumentSelectionDialog() {
   try {
-    // Define the standard document types that are always available
     var availableDocuments = [
-      {
-        name: 'Welcome Letter',
-        type: 'welcome letter',
-        description: 'Introductory letter with program information'
-      },
-      {
-        name: 'Invoice',
-        type: 'invoice', 
-        description: 'Billing statement with payment details'
-      },
-      {
-        name: 'Agreement',
-        type: 'agreement',
-        description: 'Terms and conditions that need to be signed'
-      },
-      {
-        name: 'Media Release',
-        type: 'media release',
-        description: 'Permission form for using photos/videos'
-      }
+      { name: 'Welcome Letter', type: 'welcome letter', description: 'Introductory letter with program information' },
+      { name: 'Invoice',        type: 'invoice',        description: 'Billing statement with payment details' },
+      { name: 'Agreement',      type: 'agreement',      description: 'Terms and conditions that need to be signed' },
+      { name: 'Media Release',  type: 'media release',  description: 'Permission form for using photos/videos' }
     ];
-    
+
     var html = HtmlService.createTemplate(getDocumentSelectionHtml());
     html.documentsNeededJson = Utilities.jsonStringify(availableDocuments);
-    
+
     var htmlOutput = html.evaluate()
       .setWidth(500)
       .setHeight(400)
       .setTitle('Select Documents to Generate');
-    
+
     SpreadsheetApp.getUi().showModalDialog(htmlOutput, 'Document Selection');
-    
     return { showingDialog: true };
-    
+
   } catch (error) {
-    UtilityScriptLibrary.debugLog("showSimpleDocumentSelectionDialog", "ERROR", "Error showing dialog", "", error.message);
-    
-    // Fallback: generate all document types
-    var allDocTypes = ['welcome letter', 'invoice', 'agreement', 'media release'];
-    
-    PropertiesService.getScriptProperties().setProperties({
-      'documentSelection': JSON.stringify(allDocTypes),
-      'selectionTimestamp': new Date().getTime().toString()
-    });
-    
-    continuePacketGeneration();
-    
-    return { 
-      generateAll: true, 
-      selectedTypes: allDocTypes
-    };
+    UtilityScriptLibrary.debugLog('showSimpleDocumentSelectionDialog', 'ERROR', 'Error showing dialog', '', error.message);
+
+    // Fallback: queue all doc types and fire the trigger directly
+    PropertiesService.getScriptProperties().setProperty('selectedDocTypes',
+      JSON.stringify(['welcome letter', 'invoice', 'agreement', 'media release']));
+
+    ScriptApp.newTrigger('executeDocumentGeneration')
+      .timeBased()
+      .after(1000)
+      .create();
+
+    return { generateAll: true };
   }
 }
 
@@ -9258,34 +9168,24 @@ function updateCumulativeTracking(billingSheetName) {
   }
 }
 
-function updateDocIdInBillingSheet(studentId, docType, fileId, docUrl, billingSheet, headerMap) {
+function updateDocIdInBillingSheet(rowNumber, docType, fileId, docUrl, billingSheet, headerMap) {
   try {
     var columnName = getDocIdColumnName(docType);
-    var studentIdCol = headerMap[UtilityScriptLibrary.normalizeHeader('Student ID')];
     var docIdCol = headerMap[UtilityScriptLibrary.normalizeHeader(columnName)];
-    
-    if (!studentIdCol || !docIdCol) {
-      UtilityScriptLibrary.debugLog("updateDocIdInBillingSheet", "ERROR", "Columns not found", 
-                    "StudentID col: " + studentIdCol + ", DocID col: " + docIdCol + ", ColumnName: " + columnName, "");
+
+    if (!docIdCol) {
+      UtilityScriptLibrary.debugLog('updateDocIdInBillingSheet', 'ERROR', 'Doc ID column not found',
+        'DocType: ' + docType + ', ColumnName: ' + columnName, '');
       return;
     }
-    
-    var data = billingSheet.getDataRange().getValues();
-    for (var i = 1; i < data.length; i++) {
-      if (data[i][studentIdCol - 1] === studentId) {
-        billingSheet.getRange(i + 1, docIdCol).setFormula('=HYPERLINK("' + docUrl + '", "' + fileId + '")');
-        UtilityScriptLibrary.debugLog("updateDocIdInBillingSheet", "INFO", "Updated doc ID", 
-                      "Student: " + studentId + ", DocType: " + docType + ", FileID: " + fileId, "");
-        return;
-      }
-    }
-    
-    UtilityScriptLibrary.debugLog("updateDocIdInBillingSheet", "ERROR", "Student not found", 
-                  "StudentID: " + studentId, "");
-    
+
+    billingSheet.getRange(rowNumber, docIdCol).setFormula('=HYPERLINK("' + docUrl + '", "' + fileId + '")');
+    UtilityScriptLibrary.debugLog('updateDocIdInBillingSheet', 'INFO', 'Updated doc ID',
+      'Row: ' + rowNumber + ', DocType: ' + docType + ', FileID: ' + fileId, '');
+
   } catch (error) {
-    UtilityScriptLibrary.debugLog("updateDocIdInBillingSheet", "ERROR", "Error updating doc ID", 
-                  "StudentID: " + studentId + ", DocType: " + docType, error.message);
+    UtilityScriptLibrary.debugLog('updateDocIdInBillingSheet', 'ERROR', 'Error updating doc ID',
+      'Row: ' + rowNumber + ', DocType: ' + docType, error.message);
   }
 }
 
