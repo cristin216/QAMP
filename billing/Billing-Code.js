@@ -282,7 +282,6 @@ function runBillingCycleAutomation() {
           UtilityScriptLibrary.debugLog('runBillingCycleAutomation', 'INFO',
             'Appended future semester students', 'Count: ' + futureAdded, '');
           applyMultiStudentDiscount(newBillingSheet);
-          populateAllCumulativeColumns();
           applyBillingConditionalFormatting(newBillingSheet);
         }
       }
@@ -672,7 +671,7 @@ function addLateRegistrationsToBillingCycle() {
 
   var confirm = ui.alert(
     'Add Late Registrations',
-    'Check for new form submissions not yet in billing cycle "' + billingCycleName + '"?',
+    'Check for new registrations (form and re-registration) not yet in billing cycle "' + billingCycleName + '"?',
     ui.ButtonSet.YES_NO
   );
   if (confirm !== ui.Button.YES) return null;
@@ -681,7 +680,7 @@ function addLateRegistrationsToBillingCycle() {
   var programConfig = loadProgramConfig(ss);
   var context = buildBillingContext(new Date(), semesterName, billingCycleName, programConfig);
 
-  // Locate previous billing cycle for prevHeaderMap
+  // Locate previous billing cycle
   var metaSheet = ss.getSheetByName('Billing Metadata');
   var metaData = metaSheet.getDataRange().getValues();
   var metaHeaderMap = UtilityScriptLibrary.getHeaderMap(metaSheet);
@@ -698,9 +697,10 @@ function addLateRegistrationsToBillingCycle() {
   var prevHeaderMap = previousSheetName
     ? UtilityScriptLibrary.getHeaderMap(ss.getSheetByName(previousSheetName))
     : {};
-  context.prevHeaderMap = prevHeaderMap;
+  context.prevHeaderMap     = prevHeaderMap;
+  context.previousSheetName = previousSheetName;
 
-  // Collect existing student IDs from billing sheet
+  // Collect existing student IDs
   var billingData = billingSheet.getDataRange().getValues();
   var billingHeaderMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
   var studentIdCol = billingHeaderMap[UtilityScriptLibrary.normalizeHeader('Student ID')];
@@ -726,9 +726,20 @@ function addLateRegistrationsToBillingCycle() {
     }
   }
 
+  // Append from reregistration sheet
+  var reregResult = loadReregistrationData();
+  context.reregMap   = reregResult.map;
+  context.reregSheet = reregResult.sheet;
+
+  if (context.reregMap && Object.keys(context.reregMap).length > 0) {
+    var overwroteIds = applyReregistrationOverwrites(billingSheet, context.reregMap, existingIds);
+    var appendedIds  = appendReregistrationNewStudents(billingSheet, context.reregMap, overwroteIds, context);
+    markReregistrationProcessed(context.reregSheet, appendedIds);
+    added += Object.keys(appendedIds).length;
+  }
+
   if (added > 0) {
     applyMultiStudentDiscount(billingSheet);
-    populateAllCumulativeColumns();
     applyBillingConditionalFormatting(billingSheet);
   }
 
@@ -897,6 +908,7 @@ function appendReregistrationNewStudents(billingSheet, reregMap, overwroteIds, c
 
       billingSheet.getRange(nextRow, 1, 1, totalCols).setValues([newRow]);
       appendedIds[entry.studentId] = true;
+      populateCumulativeColumnsForRow(billingSheet, nextRow, entry.studentId, context);
 
       UtilityScriptLibrary.debugLog('appendReregistrationNewStudents', 'INFO',
         'Appended re-registration student',
@@ -950,6 +962,7 @@ function appendStudentsFromContext(billingSheet, context, existingIds) {
     var result = buildBillingRowFromForm(newStudentMap[studentId].row, null, context, nextRow);
     billingSheet.appendRow(result.newRow);
     formatRow(billingSheet, nextRow, result.quantityCols, result.currencyCols);
+    populateCumulativeColumnsForRow(billingSheet, nextRow, studentId, context);
     existingIds[studentId] = true;
     UtilityScriptLibrary.debugLog('appendStudentsFromContext', 'INFO',
       'Appended student from ' + context.semesterName,
@@ -1143,35 +1156,6 @@ function applyBillingConditionalFormatting(billingSheet) {
 
   UtilityScriptLibrary.debugLog('applyBillingConditionalFormatting', 'SUCCESS',
     'Conditional formatting applied', '', '');
-}
-
-function applyCumulativeHistory(newRow, studentId, context, currencyCols) {
-  var cumulativeHistory = getCumulativeHistory(studentId);
-
-  if (!cumulativeHistory) {
-    UtilityScriptLibrary.debugLog("applyCumulativeHistory", "DEBUG", "No cumulative history found",
-                  "Student ID: " + studentId, "");
-    return;
-  }
-
-  var h    = context.headerMap;
-  var norm = UtilityScriptLibrary.normalizeHeader;
-
-  var pastCumTaughtCol = h[norm("Past Cumulative Hours Taught")];
-  var pastCumBilledCol = h[norm("Past Cumulative Hours Billed")];
-  var pastBalanceCol   = h[norm("Past Balance")];
-
-  if (pastCumTaughtCol) newRow[pastCumTaughtCol - 1] = cumulativeHistory.cumulativeHoursTaught;
-  if (pastCumBilledCol) newRow[pastCumBilledCol - 1] = cumulativeHistory.cumulativeHoursBilled;
-  if (pastBalanceCol)   {
-    newRow[pastBalanceCol - 1] = cumulativeHistory.lastBalance;
-    UtilityScriptLibrary.addToCurrencyCols(currencyCols, pastBalanceCol);
-  }
-
-  UtilityScriptLibrary.debugLog("applyCumulativeHistory", "INFO", "Applied cumulative history",
-                "Student ID: " + studentId + ", Taught: " + cumulativeHistory.cumulativeHoursTaught +
-                ", Billed: " + cumulativeHistory.cumulativeHoursBilled +
-                ", Balance: " + cumulativeHistory.lastBalance, "");
 }
 
 function applyLateFeeToRow(newRow, context, currencyCols, pastBalanceValue) {
@@ -1557,17 +1541,10 @@ function buildBillingRowFromForm(formRow, prevRow, context, rowIndex) {
   setPastColumnFormulas(newRow, context, rowIndex, currencyCols);
   applyLateFeeToRow(newRow, context, currencyCols, pastBalanceValue);
 
-  if (!prevRow) {
-    var studentIdForHistory = get('Student ID') !== -1 ? formRow[get('Student ID')] : null;
-    if (studentIdForHistory) {
-      applyCumulativeHistory(newRow, studentIdForHistory, context, currencyCols);
-    }
-  }
-
   addInvoiceTotalFormula(newRow, context, rowIndex, currencyCols);
   populateCurrentBalanceFormula(newRow, context, rowIndex);
 
-  return { newRow: newRow, quantityCols: quantityCols, currencyCols: currencyCols };
+  return { newRow: newRow, quantityCols: quantityCols, currencyCols: currencyCols, studentId: String(get('Student ID') !== -1 ? formRow[get('Student ID')] : '') };
 }
 
 function buildBillingRowFromPrevious(prevRow, context, rowIndex) {
@@ -1623,7 +1600,8 @@ function buildBillingRowFromPrevious(prevRow, context, rowIndex) {
 
   populateLetterType(newRow, context, 'previous', prevRow);
 
-  return { newRow: newRow, quantityCols: quantityCols, currencyCols: currencyCols };
+  return { newRow: newRow, quantityCols: quantityCols, currencyCols: currencyCols, studentId: studentId };
+  
 }
 
 function buildCarryoverStudents(previousData, existingStudentIds, context, allStudents, startingRowIndex) {
@@ -4545,7 +4523,6 @@ function finalizeBillingSheet(billingSheet, context, formStudentIdsMap) {
   }
 
   context.processedReregIds = processedReregIds;
-  populateAllCumulativeColumns();
   applyBillingConditionalFormatting(billingSheet);
 }
 
@@ -6821,84 +6798,6 @@ function parseMonthYear(monthStr) {
   return new Date(year, months[month], 1);
 }
 
-function populateAllCumulativeColumns() {
-  try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var currentSheet = ss.getActiveSheet();
-    var headerMap = UtilityScriptLibrary.getHeaderMap(currentSheet);
-
-    var lastRow = currentSheet.getLastRow();
-    if (lastRow < 2) {
-      UtilityScriptLibrary.debugLog('populateAllCumulativeColumns', 'WARNING', 'No data rows found, skipping', '', '');
-      return;
-    }
-
-    var studentIdCol                   = headerMap[UtilityScriptLibrary.normalizeHeader('Student ID')];
-    var currentHoursTaughtThisCycleCol = headerMap[UtilityScriptLibrary.normalizeHeader('Current Hours Taught This Billing Cycle')];
-    var lessonHoursCol                 = headerMap[UtilityScriptLibrary.normalizeHeader('Lesson Hours')];
-    var pastCumTaughtCol               = headerMap[UtilityScriptLibrary.normalizeHeader('Past Cumulative Hours Taught')];
-    var pastCumBilledCol               = headerMap[UtilityScriptLibrary.normalizeHeader('Past Cumulative Hours Billed')];
-    var currentCumTaughtCol            = headerMap[UtilityScriptLibrary.normalizeHeader('Current Cumulative Hours Taught')];
-    var currentCumBilledCol            = headerMap[UtilityScriptLibrary.normalizeHeader('Current Cumulative Hours Billed')];
-    var hoursRemainingCol              = headerMap[UtilityScriptLibrary.normalizeHeader('Hours Remaining')];
-    var lessonLengthCol                = headerMap[UtilityScriptLibrary.normalizeHeader('Lesson Length')];
-    var lessonsRemainingCol            = headerMap[UtilityScriptLibrary.normalizeHeader('Lessons Remaining')];
-
-    if (!studentIdCol || !currentHoursTaughtThisCycleCol || !lessonHoursCol ||
-        !pastCumTaughtCol || !pastCumBilledCol || !currentCumTaughtCol ||
-        !currentCumBilledCol || !hoursRemainingCol) {
-      UtilityScriptLibrary.debugLog('populateAllCumulativeColumns', 'WARNING', 'Required columns not found, skipping', '', '');
-      return;
-    }
-
-    var numDataRows = lastRow - 1;
-    var dataRange = currentSheet.getRange(2, 1, numDataRows, currentSheet.getLastColumn());
-    var data = dataRange.getValues();
-
-    for (var i = 0; i < data.length; i++) {
-      var rowIndex = i + 2;
-      var studentId = data[i][studentIdCol - 1];
-      if (!studentId) continue;
-
-      var pastTaughtCell    = UtilityScriptLibrary.columnToLetter(pastCumTaughtCol) + rowIndex;
-      var currentTaughtCell = UtilityScriptLibrary.columnToLetter(currentHoursTaughtThisCycleCol) + rowIndex;
-      var pastBilledCell    = UtilityScriptLibrary.columnToLetter(pastCumBilledCol) + rowIndex;
-      var lessonHoursCell   = UtilityScriptLibrary.columnToLetter(lessonHoursCol) + rowIndex;
-
-      var currentCumTaughtFormula = '=' + pastTaughtCell + ' + ' + currentTaughtCell;
-      currentSheet.getRange(rowIndex, currentCumTaughtCol).setFormula(currentCumTaughtFormula);
-      currentSheet.getRange(rowIndex, currentCumTaughtCol).setNumberFormat('0.00');
-
-      var currentCumBilledFormula = '=' + pastBilledCell + ' + ' + lessonHoursCell;
-      currentSheet.getRange(rowIndex, currentCumBilledCol).setFormula(currentCumBilledFormula);
-      currentSheet.getRange(rowIndex, currentCumBilledCol).setNumberFormat('0.00');
-
-      var currentCumTaughtCell = UtilityScriptLibrary.columnToLetter(currentCumTaughtCol) + rowIndex;
-      var currentCumBilledCell = UtilityScriptLibrary.columnToLetter(currentCumBilledCol) + rowIndex;
-      var hoursRemainingFormula = '=' + currentCumBilledCell + ' - ' + currentCumTaughtCell;
-      currentSheet.getRange(rowIndex, hoursRemainingCol).setFormula(hoursRemainingFormula);
-      currentSheet.getRange(rowIndex, hoursRemainingCol).setNumberFormat('0.00');
-
-      if (lessonsRemainingCol && lessonLengthCol) {
-        var hoursRemainingCell   = UtilityScriptLibrary.columnToLetter(hoursRemainingCol) + rowIndex;
-        var lessonLengthCell     = UtilityScriptLibrary.columnToLetter(lessonLengthCol) + rowIndex;
-        var lessonsRemainingFormula = '=IF(' + lessonLengthCell + '>0,' +
-          hoursRemainingCell + '/(' + lessonLengthCell + '/60),"")';
-        currentSheet.getRange(rowIndex, lessonsRemainingCol).setFormula(lessonsRemainingFormula);
-        currentSheet.getRange(rowIndex, lessonsRemainingCol).setNumberFormat('0.00');
-      }
-    }
-
-    UtilityScriptLibrary.debugLog('populateAllCumulativeColumns', 'SUCCESS',
-      'Cumulative columns populated', 'Rows processed: ' + data.length, '');
-
-  } catch (error) {
-    UtilityScriptLibrary.debugLog('populateAllCumulativeColumns', 'ERROR',
-      'Failed to populate cumulative columns', '', error.message);
-    throw error;
-  }
-}
-
 function populateBillingSheet(context, carryOverData) {
   try {
     UtilityScriptLibrary.debugLog('populateBillingSheet', 'INFO', 'Starting', '', '');
@@ -6912,7 +6811,7 @@ function populateBillingSheet(context, carryOverData) {
     buildCarryoverStudents(carryOverData.rowsToCarry, existingIds, context, [], formResult.nextRowIndex);
 
     var allStudents = formResult.students || [];
-    writeAndFormatRows(billingSheet, allStudents);
+    writeAndFormatRows(billingSheet, allStudents, context);
 
     var formStudentIdsMap = {};
     for (var i = 0; i < formResult.formStudentIds.length; i++) {
@@ -6943,7 +6842,7 @@ function populateBillingSheetContinuingSemester(context, billingSheet, existingS
     UtilityScriptLibrary.debugLog('populateBillingSheetContinuingSemester', 'INFO', 'Built all students',
       'Total: ' + allStudents.length, '');
 
-    writeAndFormatRows(billingSheet, allStudents);
+    writeAndFormatRows(billingSheet, allStudents, context);
 
     var formStudentIdsMap = {};
     for (var fi = 0; fi < formResult.formStudentIds.length; fi++) {
@@ -6954,6 +6853,108 @@ function populateBillingSheetContinuingSemester(context, billingSheet, existingS
 
   } catch (error) {
     UtilityScriptLibrary.debugLog('populateBillingSheetContinuingSemester', 'ERROR', 'Failed', '', error.message);
+    throw error;
+  }
+}
+
+function populateCumulativeColumnsForRow(billingSheet, rowIndex, studentId, context) {
+  try {
+    var norm      = UtilityScriptLibrary.normalizeHeader;
+    var colLetter = UtilityScriptLibrary.columnToLetter;
+    var headerMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
+
+    var pastCumTaughtCol    = headerMap[norm('Past Cumulative Hours Taught')];
+    var pastCumBilledCol    = headerMap[norm('Past Cumulative Hours Billed')];
+    var pastBalanceCol      = headerMap[norm('Past Balance')];
+    var curTaughtCycleCol   = headerMap[norm('Current Hours Taught This Billing Cycle')];
+    var lessonHoursCol      = headerMap[norm('Lesson Hours')];
+    var currentCumTaughtCol = headerMap[norm('Current Cumulative Hours Taught')];
+    var currentCumBilledCol = headerMap[norm('Current Cumulative Hours Billed')];
+    var hoursRemainingCol   = headerMap[norm('Hours Remaining')];
+    var lessonLengthCol     = headerMap[norm('Lesson Length')];
+    var lessonsRemainingCol = headerMap[norm('Lessons Remaining')];
+
+    var prevSheetName = context.previousSheetName;
+    var prevHeaderMap = context.prevHeaderMap || {};
+    var source = 'blank';
+
+    // Check if student exists in previous billing sheet
+    var foundInPrev = false;
+    if (prevSheetName) {
+      var ss        = SpreadsheetApp.getActiveSpreadsheet();
+      var prevSheet = ss.getSheetByName(prevSheetName);
+      if (prevSheet) {
+        var prevHdrMap = UtilityScriptLibrary.getHeaderMap(prevSheet);
+        var prevSidCol = prevHdrMap[UtilityScriptLibrary.normalizeHeader('Student ID')];
+        if (prevSidCol) {
+          var prevData = prevSheet.getDataRange().getValues();
+          for (var i = 1; i < prevData.length; i++) {
+            if (String(prevData[i][prevSidCol - 1] || '').trim() === studentId) {
+              foundInPrev = true;
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    if (foundInPrev) {
+      source = 'vlookup';
+      var prevTaughtIdx  = prevHeaderMap[norm('Current Cumulative Hours Taught')];
+      var prevBilledIdx  = prevHeaderMap[norm('Current Cumulative Hours Billed')];
+      var prevBalanceIdx = prevHeaderMap[norm('Current Balance')];
+
+      if (pastCumTaughtCol && prevTaughtIdx)
+        billingSheet.getRange(rowIndex, pastCumTaughtCol)
+          .setFormula(buildPastVlookupFormula(prevSheetName, prevTaughtIdx, rowIndex))
+          .setNumberFormat('0.00');
+      if (pastCumBilledCol && prevBilledIdx)
+        billingSheet.getRange(rowIndex, pastCumBilledCol)
+          .setFormula(buildPastVlookupFormula(prevSheetName, prevBilledIdx, rowIndex))
+          .setNumberFormat('0.00');
+      if (pastBalanceCol && prevBalanceIdx)
+        billingSheet.getRange(rowIndex, pastBalanceCol)
+          .setFormula(buildPastVlookupFormula(prevSheetName, prevBalanceIdx, rowIndex));
+
+    } else {
+      var history = getCumulativeHistory(studentId);
+      if (history) {
+        source = 'tracking';
+        if (pastCumTaughtCol) billingSheet.getRange(rowIndex, pastCumTaughtCol).setValue(history.cumulativeHoursTaught).setNumberFormat('0.00');
+        if (pastCumBilledCol) billingSheet.getRange(rowIndex, pastCumBilledCol).setValue(history.cumulativeHoursBilled).setNumberFormat('0.00');
+        if (pastBalanceCol)   billingSheet.getRange(rowIndex, pastBalanceCol).setValue(history.lastBalance);
+      }
+      // else: leave blank
+    }
+
+    // Always write sum formulas
+    if (currentCumTaughtCol && pastCumTaughtCol && curTaughtCycleCol)
+      billingSheet.getRange(rowIndex, currentCumTaughtCol)
+        .setFormula('=' + colLetter(pastCumTaughtCol) + rowIndex + '+' + colLetter(curTaughtCycleCol) + rowIndex)
+        .setNumberFormat('0.00');
+
+    if (currentCumBilledCol && pastCumBilledCol && lessonHoursCol)
+      billingSheet.getRange(rowIndex, currentCumBilledCol)
+        .setFormula('=' + colLetter(pastCumBilledCol) + rowIndex + '+' + colLetter(lessonHoursCol) + rowIndex)
+        .setNumberFormat('0.00');
+
+    if (hoursRemainingCol && currentCumBilledCol && currentCumTaughtCol)
+      billingSheet.getRange(rowIndex, hoursRemainingCol)
+        .setFormula('=' + colLetter(currentCumBilledCol) + rowIndex + '-' + colLetter(currentCumTaughtCol) + rowIndex)
+        .setNumberFormat('0.00');
+
+    if (lessonsRemainingCol && hoursRemainingCol && lessonLengthCol)
+      billingSheet.getRange(rowIndex, lessonsRemainingCol)
+        .setFormula('=IF(' + colLetter(lessonLengthCol) + rowIndex + '>0,' +
+          colLetter(hoursRemainingCol) + rowIndex + '/(' + colLetter(lessonLengthCol) + rowIndex + '/60),"")')
+        .setNumberFormat('0.00');
+
+    UtilityScriptLibrary.debugLog('populateCumulativeColumnsForRow', 'INFO',
+      'Cumulative columns populated', 'Student ID: ' + studentId + ', Row: ' + rowIndex + ', Source: ' + source, '');
+
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('populateCumulativeColumnsForRow', 'ERROR',
+      'Failed', 'Student ID: ' + studentId + ', Row: ' + rowIndex, error.message);
     throw error;
   }
 }
@@ -9888,15 +9889,17 @@ function verifyRatesEnhanced() {
   }
 }
 
-function writeAndFormatRows(billingSheet, allStudents) {
+function writeAndFormatRows(billingSheet, allStudents, context) {
   if (allStudents.length === 0) return;
-  
-  // Write all rows in batch
+
   var allRows = allStudents.map(function(s) { return s.newRow; });
   billingSheet.getRange(2, 1, allRows.length, allRows[0].length).setValues(allRows);
-  
-  // Format all rows
+
   for (var i = 0; i < allStudents.length; i++) {
-    formatRow(billingSheet, i + 2, allStudents[i].quantityCols, allStudents[i].currencyCols);
+    var rowIndex = i + 2;
+    formatRow(billingSheet, rowIndex, allStudents[i].quantityCols, allStudents[i].currencyCols);
+    if (allStudents[i].studentId) {
+      populateCumulativeColumnsForRow(billingSheet, rowIndex, allStudents[i].studentId, context);
+    }
   }
 }
