@@ -88,7 +88,7 @@ var SHEET_MAP = {
   reregistrationQueue: {
     name: 'Reregistration Queue'
   },
-  // Form Responses Workbook
+  // Registration Workbook
   calendar: {
     name: 'Calendar'
   },
@@ -101,6 +101,10 @@ var SHEET_MAP = {
   // Payments Workbook
   ledgerTemplate: {
     name: 'Ledger Template'
+  },
+  // Scheduling Workbook
+  teacherPreferences: {
+    name: 'Teacher Preferences'
   }
 };
 
@@ -2973,7 +2977,8 @@ function inferWorkbookKey(sheetKey) {
     calendar: 'formResponses',
     fieldMap: 'formResponses',
     teacherRosterLookup: 'formResponses',
-    ledgerTemplate: 'payments'
+    ledgerTemplate: 'payments',
+    teacherPreferences: 'scheduling'
   };
   return keyToWorkbook[sheetKey];
 }
