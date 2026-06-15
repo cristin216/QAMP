@@ -8031,12 +8031,14 @@ function renameLatestFormSheet(semesterName) {
     var hasTeacher = false;
     var hasStudentId = false;
     var hasParentId = false;
+    var hasTeacherAssignmentSent = false;
 
     for (var i = 0; i < currentHeaders.length; i++) {
       var normalizedHeader = UtilityScriptLibrary.normalizeHeader(currentHeaders[i]);
       if (normalizedHeader === 'teacher') hasTeacher = true;
       if (normalizedHeader === 'studentid') hasStudentId = true;
       if (normalizedHeader === 'parentid') hasParentId = true;
+      if (normalizedHeader === 'teacherassignmentsent') hasTeacherAssignmentSent = true;
     }
 
     if (!hasTeacher) {
@@ -8057,6 +8059,12 @@ function renameLatestFormSheet(semesterName) {
       UtilityScriptLibrary.debugLog('renameLatestFormSheet', 'INFO', 'Added Parent ID column at end', '', '');
     }
 
+    if (!hasTeacherAssignmentSent) {
+      lastCol = latestSheet.getLastColumn();
+      latestSheet.getRange(1, lastCol + 1).setValue('Teacher Assignment Sent');
+      UtilityScriptLibrary.debugLog('renameLatestFormSheet', 'INFO', 'Added Teacher Assignment Sent column at end', '', '');
+    }
+
     latestSheet.setName(semesterName);
 
     UtilityScriptLibrary.debugLog('renameLatestFormSheet', 'INFO', 'Sheet renamed',
@@ -8067,7 +8075,8 @@ function renameLatestFormSheet(semesterName) {
       newName: semesterName,
       teacherAdded: !hasTeacher,
       studentIdAdded: !hasStudentId,
-      parentIdAdded: !hasParentId
+      parentIdAdded: !hasParentId,
+      teacherAssignmentSentAdded: !hasTeacherAssignmentSent
     };
 
   }, 'Form response sheet renamed to ' + semesterName, 'renameLatestFormSheet', {
