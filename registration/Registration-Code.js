@@ -1,10 +1,10 @@
 /*
 ================================================================================
-RESPONSES CODE
+REGISTRATION CODE
 ================================================================================
-Version: 118
+Version: 119
 Total Functions: 75
-Documentation: See Responses-Functions.md
+Documentation: See Registration-Functions.md
 ================================================================================
 */
 
@@ -202,6 +202,7 @@ function onOpen() {
     .addItem('Refresh Teacher Dropdown', 'refreshCurrentSemesterTeacherDropdown')
     .addItem('Update Roster Groups', 'updateAllTeacherGroupAssignments')
     .addItem('Process Teacher Assignments', 'processPendingAssignments')
+    .addItem('Send Teacher Assignment Emails', 'sendTeacherAssignmentEmailsUI')
     .addItem('Reassign Student to Different Teacher', 'reassignStudentToNewTeacher')
     .addItem('Clear Reports', 'clearReports')
     .addItem('Verify by Drive ID', 'verifyByDriveIdWithPrompt')
@@ -2159,6 +2160,47 @@ function getOrCreateRosterFromTemplate(teacherInfo, rosterFolder, year, semester
   }
 }
 
+function getTeacherContactForAssignmentEmail(teacherId) {
+  try {
+    var norm = UtilityScriptLibrary.normalizeHeader;
+    var sheet = UtilityScriptLibrary.getSheet('teachersAndAdmin');
+    var headerMap = UtilityScriptLibrary.getHeaderMap(sheet);
+
+    var idCol        = headerMap[norm('Teacher ID')];
+    var firstCol     = headerMap[norm('First Name')];
+    var lastCol      = headerMap[norm('Last Name')];
+    var salutCol     = headerMap[norm('Salutation')];
+    var emailCol     = headerMap[norm('Email')];
+
+    if (!idCol || !firstCol || !lastCol || !emailCol) {
+      UtilityScriptLibrary.debugLog('getTeacherContactForAssignmentEmail', 'ERROR',
+        'Required columns not found in Teachers and Admin', '', '');
+      return null;
+    }
+
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][idCol - 1]).trim() === String(teacherId).trim()) {
+        return {
+          firstName:  String(data[i][firstCol - 1]  || '').trim(),
+          lastName:   String(data[i][lastCol - 1]   || '').trim(),
+          salutation: salutCol ? String(data[i][salutCol - 1] || '').trim() : '',
+          email:      String(data[i][emailCol - 1]  || '').trim()
+        };
+      }
+    }
+
+    UtilityScriptLibrary.debugLog('getTeacherContactForAssignmentEmail', 'WARNING',
+      'Teacher ID not found', teacherId, '');
+    return null;
+
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('getTeacherContactForAssignmentEmail', 'ERROR',
+      'Failed', teacherId, error.message);
+    return null;
+  }
+}
+
 function getYearRosterFolders(previousYear, newYear) {
   var rostersFolder = UtilityScriptLibrary.getRosterFolder();
   var previousFolder = null;
@@ -3188,6 +3230,274 @@ function selectStudents(oldTeacherDisplay) {
     UtilityScriptLibrary.debugLog('selectStudents', 'ERROR', 'Failed', oldTeacherDisplay, error.message);
     SpreadsheetApp.getUi().alert('Error', 'Step 2 failed: ' + error.message, SpreadsheetApp.getUi().ButtonSet.OK);
   }
+}
+
+function sendTeacherAssignmentEmailsUI() {
+  var ui = SpreadsheetApp.getUi();
+
+  // Get current semester from Calendar D2
+  var calendarSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Calendar');
+  if (!calendarSheet) {
+    ui.alert('Calendar sheet not found.');
+    return;
+  }
+  var currentSemester = String(calendarSheet.getRange(2, 4).getValue()).trim();
+  if (!currentSemester) {
+    ui.alert('No current semester defined in Calendar D2.');
+    return;
+  }
+
+  // Get active teachers for dropdown
+  var teachers = getActiveTeachersForDropdown();
+  if (!teachers || teachers.length === 0) {
+    ui.alert('No active teachers found.');
+    return;
+  }
+
+  // Prompt for teacher selection
+  var teacherList = teachers.map(function(name, i) { return (i + 1) + '. ' + name; }).join('\n');
+  var response = ui.prompt(
+    'Send Teacher Assignment Emails',
+    'Enter the number of the teacher to send for:\n\n' + teacherList,
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (response.getSelectedButton() !== ui.Button.OK) return;
+
+  var selection = parseInt(response.getResponseText().trim(), 10);
+  if (isNaN(selection) || selection < 1 || selection > teachers.length) {
+    ui.alert('Invalid selection.');
+    return;
+  }
+
+  var selectedDisplayName = teachers[selection - 1];
+  var teacherInfo = UtilityScriptLibrary.getTeacherInfoByDisplayName(selectedDisplayName);
+  if (!teacherInfo || !teacherInfo.teacherId) {
+    ui.alert('Could not resolve teacher ID for: ' + selectedDisplayName);
+    return;
+  }
+
+  // Look up teacher contact info (name + email) from Teachers and Admin
+  var teacherContact = getTeacherContactForAssignmentEmail(teacherInfo.teacherId);
+  if (!teacherContact) {
+    ui.alert('Could not find contact info for teacher: ' + selectedDisplayName);
+    return;
+  }
+  if (!teacherContact.email) {
+    ui.alert('No email address on file for ' + selectedDisplayName + '. Please add one before sending.');
+    return;
+  }
+
+  // Get form sheet for current semester
+  var formSS = UtilityScriptLibrary.getWorkbook('formResponses');
+  var formSheet = formSS.getSheetByName(currentSemester);
+  UtilityScriptLibrary.debugLog('sendTeacherAssignmentEmailsUI', 'DEBUG',
+    'Pre-fieldmap checkpoint', 
+    'formSheet: ' + (formSheet ? formSheet.getName() : 'NOT FOUND') + ', currentSemester: ' + currentSemester, '');
+  if (!formSheet) {
+    ui.alert('Form sheet not found for semester: ' + currentSemester);
+    return;
+  }
+
+  var norm = UtilityScriptLibrary.normalizeHeader;
+  var formHeaderMap = UtilityScriptLibrary.getHeaderMap(formSheet);
+
+  var teacherCol       = formHeaderMap[norm('Teacher')];
+  var studentIdCol     = formHeaderMap[norm('Student ID')];
+  var parentIdCol      = formHeaderMap[norm('Parent ID')];
+  var sentCol          = formHeaderMap[norm('Teacher Assignment Sent')];
+  var fieldMapSheet = UtilityScriptLibrary.getSheet('fieldMap');
+  if (!fieldMapSheet) {
+    ui.alert('FieldMap sheet not found.');
+    return;
+  }
+  var fieldMap = UtilityScriptLibrary.getFieldMappingFromSheet(fieldMapSheet);
+
+  // Resolve instrument and student first name columns via internal field names
+  var instrumentCol   = null;
+  var studentFirstCol = null;
+  for (var normHeader in formHeaderMap) {
+    var internalName = fieldMap[normHeader];
+    if (internalName === 'Instrument')        instrumentCol   = formHeaderMap[normHeader];
+    if (internalName === 'Student First Name') studentFirstCol = formHeaderMap[normHeader];
+  }
+  UtilityScriptLibrary.debugLog('sendTeacherAssignmentEmailsUI', 'DEBUG',
+    'Column resolution', 
+    'instrumentCol: ' + instrumentCol + ', studentFirstCol: ' + studentFirstCol, '');
+    UtilityScriptLibrary.debugLog('sendTeacherAssignmentEmailsUI', 'DEBUG',
+    'Column check', 
+    'teacherCol: ' + teacherCol + ', studentIdCol: ' + studentIdCol + ', parentIdCol: ' + parentIdCol + ', sentCol: ' + sentCol, '');
+    if (!teacherCol || !studentIdCol || !parentIdCol) {
+    ui.alert('Required columns missing from form sheet. Please check Teacher, Student ID, and Parent ID columns.');
+    return;
+  }
+  if (!sentCol) {
+    ui.alert('Teacher Assignment Sent column not found. Please add it to the form sheet before running.');
+    return;
+  }
+
+  // Build parent lookup
+  var parentsSheet = UtilityScriptLibrary.getSheet('parents');
+  var parentHeaderMap = UtilityScriptLibrary.getHeaderMap(parentsSheet);
+  var parentsData = parentsSheet.getDataRange().getValues();
+  var pIdCol        = parentHeaderMap[norm('Parent ID')];
+  var pFirstCol     = parentHeaderMap[norm('Parent First Name')];
+  var pLastCol      = parentHeaderMap[norm('Parent Last Name')];
+  var pSalutCol     = parentHeaderMap[norm('Salutation')];
+  var pEmailCol     = parentHeaderMap[norm('Email')];
+
+  var parentMap = {};
+  for (var p = 1; p < parentsData.length; p++) {
+    var pid = String(parentsData[p][pIdCol - 1] || '').trim();
+    if (pid) {
+      parentMap[pid] = {
+        firstName:  String(parentsData[p][pFirstCol - 1]  || '').trim(),
+        lastName:   String(parentsData[p][pLastCol - 1]   || '').trim(),
+        salutation: String(parentsData[p][pSalutCol - 1]  || '').trim(),
+        email:      String(parentsData[p][pEmailCol - 1]  || '').trim()
+      };
+    }
+  }
+
+  // Resolve teacher ID from display name on the form
+  // Form stores display name in Teacher column, not ID
+  var formData = formSheet.getDataRange().getValues();
+  var pendingByParent = {}; // key: parentId, value: { parentData, students: [{firstName, instrument, rowIndex}] }
+
+  for (var i = 1; i < formData.length; i++) {
+    var row = formData[i];
+    var rowTeacherRaw  = String(row[teacherCol - 1] || '').trim();
+    var rowStudentId   = String(row[studentIdCol - 1] || '').trim();
+    var rowParentId    = String(row[parentIdCol - 1] || '').trim();
+    var rowSent        = row[sentCol - 1];
+
+    if (!rowTeacherRaw || !rowStudentId || !rowParentId) continue;
+    if (rowSent) continue; // already sent
+
+    // Resolve teacher ID from display name
+    var rowTeacherInfo = UtilityScriptLibrary.getTeacherInfoByDisplayName(rowTeacherRaw);
+    if (!rowTeacherInfo || rowTeacherInfo.teacherId !== teacherInfo.teacherId) continue;
+
+    var parentData = parentMap[rowParentId];
+    if (!parentData) {
+      UtilityScriptLibrary.debugLog('sendTeacherAssignmentEmailsUI', 'WARNING',
+        'Parent not found — skipping row', 'Row: ' + (i + 1) + ', Parent ID: ' + rowParentId, '');
+      continue;
+    }
+    if (!parentData.email) {
+      UtilityScriptLibrary.debugLog('sendTeacherAssignmentEmailsUI', 'WARNING',
+        'Parent has no email — skipping row', 'Row: ' + (i + 1) + ', Parent ID: ' + rowParentId, '');
+      continue;
+    }
+
+    var studentFirst = studentFirstCol ? String(row[studentFirstCol - 1] || '').trim() : rowStudentId;
+    var instrument   = instrumentCol   ? String(row[instrumentCol - 1]   || '').trim() : '';
+
+    if (!pendingByParent[rowParentId]) {
+      pendingByParent[rowParentId] = {
+        parentData: parentData,
+        students: [],
+        rowIndices: []
+      };
+    }
+    pendingByParent[rowParentId].students.push({ firstName: studentFirst, instrument: instrument });
+    pendingByParent[rowParentId].rowIndices.push(i + 1); // 1-based sheet row
+  }
+
+  var parentIds = Object.keys(pendingByParent);
+  if (parentIds.length === 0) {
+    ui.alert('No unsent assignments found for ' + selectedDisplayName + '.');
+    return;
+  }
+
+  var confirm = ui.alert(
+    'Send Teacher Assignment Emails',
+    'Ready to send to ' + parentIds.length + ' parent(s) for teacher ' + selectedDisplayName + '. Continue?',
+    ui.ButtonSet.YES_NO
+  );
+  if (confirm !== ui.Button.YES) return;
+
+  var sent = 0;
+  var failed = 0;
+  var timestamp = UtilityScriptLibrary.formatDateFlexible(new Date(), 'MM/dd/yy');
+
+  for (var k = 0; k < parentIds.length; k++) {
+    var parentId = parentIds[k];
+    var entry    = pendingByParent[parentId];
+    var parent   = entry.parentData;
+
+    try {
+      var greeting = (parent.salutation && parent.lastName)
+        ? 'Dear ' + parent.salutation + ' ' + parent.lastName
+        : 'Dear ' + parent.firstName;
+
+      // Build student name + instrument string
+      var allSameInstrument = true;
+      var firstInstrument = entry.students[0].instrument;
+      for (var s = 1; s < entry.students.length; s++) {
+        if (entry.students[s].instrument !== firstInstrument) {
+          allSameInstrument = false;
+          break;
+        }
+      }
+
+      var studentString;
+      if (allSameInstrument) {
+        var names = entry.students.map(function(stu) { return stu.firstName; });
+        var nameList = names.length === 1
+          ? names[0]
+          : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+        studentString = nameList + ' will be taking ' + firstInstrument + ' lessons';
+      } else {
+        var parts = entry.students.map(function(stu) {
+          return stu.firstName + (stu.instrument ? ' (' + stu.instrument + ')' : '');
+        });
+        var partList = parts.length === 1
+          ? parts[0]
+          : parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1];
+        studentString = partList + ' will be taking lessons';
+      }
+
+      var teacherAddressName = (teacherContact.salutation && teacherContact.lastName)
+        ? teacherContact.salutation + ' ' + teacherContact.lastName
+        : teacherContact.firstName;
+
+      var subject = 'Your QAMP Teacher Assignment \u2013 ' + currentSemester;
+      var body =
+        greeting + ',\n\n' +
+        'We\'re excited to let you know that ' + studentString + ' with ' +
+        teacherContact.firstName + ' ' + teacherContact.lastName + ' this ' + currentSemester + '.\n\n' +
+        'You can reach ' + teacherAddressName + ' at ' + teacherContact.email + '. ' +
+        'They will be in touch with you soon to arrange lesson times.\n\n' +
+        'If you have any questions in the meantime, please don\'t hesitate to reach out at admin@quakermusic.org.\n\n' +
+        'We look forward to a wonderful semester!\n\n' +
+        'Warm regards,\n' +
+        'Cristin Kalinowski\n' +
+        'Quaker Arts Music Program';
+
+      UtilityScriptLibrary.sendEmail(parent.email, subject, body);
+
+      // Write timestamp to Teacher Assignment Sent column for each row
+      for (var r = 0; r < entry.rowIndices.length; r++) {
+        formSheet.getRange(entry.rowIndices[r], sentCol).setValue(timestamp);
+      }
+
+      sent++;
+      UtilityScriptLibrary.debugLog('sendTeacherAssignmentEmailsUI', 'INFO',
+        'Email sent', 'Parent ID: ' + parentId + ', Email: ' + parent.email, '');
+
+    } catch (emailError) {
+      failed++;
+      UtilityScriptLibrary.debugLog('sendTeacherAssignmentEmailsUI', 'ERROR',
+        'Email failed', 'Parent ID: ' + parentId, emailError.message);
+    }
+  }
+
+  var resultMsg = 'Done. Sent: ' + sent;
+  if (failed > 0) resultMsg += ', Failed: ' + failed + '. Check debug log for details.';
+  ui.alert(resultMsg);
+
+  UtilityScriptLibrary.debugLog('sendTeacherAssignmentEmailsUI', 'SUCCESS',
+    'Batch complete', 'Sent: ' + sent + ', Failed: ' + failed, '');
 }
 
 function setupCompleteRosterWorkbook(spreadsheet, teacher, year, semesterName, registrationTimestamp) {
