@@ -125,77 +125,6 @@ function authorizeScript() {
   }
 }
 
-function handleFormEdit(e) {
-  if (!e) {
-    UtilityScriptLibrary.debugLog('handleFormEdit', 'WARNING', 'Called without event object', '', '');
-    return;
-  }
-
-  var sheet = e.source.getActiveSheet();
-  var sheetName = sheet.getName();
-  var editedRow = e.range.getRow();
-  var editedCol = e.range.getColumn();
-
-  // Get current semester from Calendar D2
-  var calendarSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Calendar');
-  if (!calendarSheet) {
-    UtilityScriptLibrary.debugLog('handleFormEdit', 'ERROR', 'Calendar sheet not found', '', '');
-    return;
-  }
-
-  var currentSemester = calendarSheet.getRange(2, 4).getValue();
-  if (!currentSemester || String(currentSemester).trim() === '') {
-    UtilityScriptLibrary.debugLog('handleFormEdit', 'WARNING', 'No current semester in Calendar D2', '', '');
-    return;
-  }
-
-  // Only process if sheet matches current semester
-  if (sheetName !== String(currentSemester).trim()) {
-    return;
-  }
-
-  // Get Teacher column from headerMap
-  var headerMap = UtilityScriptLibrary.getHeaderMap(sheet);
-  var teacherCol = headerMap[UtilityScriptLibrary.normalizeHeader('Teacher')];
-
-  if (!teacherCol) {
-    UtilityScriptLibrary.debugLog('handleFormEdit', 'ERROR', 'Teacher column not found in sheet', sheetName, '');
-    return;
-  }
-
-  if (editedCol !== teacherCol) return;
-  if (editedRow < 2) return;
-
-  if (!shouldProcessEdit(e, headerMap)) {
-    return;
-  }
-
-  var lock = LockService.getScriptLock();
-  try {
-    lock.waitLock(30000);
-  } catch (error) {
-    UtilityScriptLibrary.debugLog('handleFormEdit', 'WARNING', 'Could not obtain lock - another execution in progress', 'Sheet: ' + sheetName + ', Row: ' + editedRow, '');
-    return;
-  }
-
-  try {
-    UtilityScriptLibrary.debugLog('handleFormEdit', 'INFO', 'Processing row', 'Sheet: ' + sheetName + ', Row: ' + editedRow, '');
-
-    processSingleRow(sheet, editedRow, headerMap);
-
-    Browser.msgBox("🎉 Student successfully added! You can add the next student now.");
-
-    UtilityScriptLibrary.debugLog('handleFormEdit', 'SUCCESS', 'Completed', 'Sheet: ' + sheetName + ', Row: ' + editedRow, '');
-
-  } catch (error) {
-    UtilityScriptLibrary.debugLog('handleFormEdit', 'ERROR', 'Failed', 'Sheet: ' + sheetName + ', Row: ' + editedRow, error.message);
-    Browser.msgBox("Error processing student: " + error.message);
-    throw error;
-  } finally {
-    lock.releaseLock();
-  }
-}
-
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('QAMP Tools')
@@ -245,6 +174,7 @@ function addCarryoverStudentsToNewRoster(spreadsheet, newRosterSheet, currentSem
       return 0;
     }
 
+    var excludedStatuses = ['transferred', 'dropped'];
     var studentsToCarryOver = [];
     for (var i = 1; i < data.length; i++) {
       var row = data[i];
@@ -252,7 +182,7 @@ function addCarryoverStudentsToNewRoster(spreadsheet, newRosterSheet, currentSem
       var lessonsRemaining = parseFloat(row[lessonsRemainingCol - 1]) || 0;
       var studentId = row[studentIdCol - 1];
 
-      if (status && ['active', 'carryover', 'transferred'].indexOf(status.toString().toLowerCase()) !== -1 && lessonsRemaining > 0 && studentId) {
+      if (status && excludedStatuses.indexOf(status.toString().toLowerCase()) === -1 && studentId) {
         studentsToCarryOver.push({
           rowIndex: i + 1,
           rowData: row,
@@ -263,7 +193,7 @@ function addCarryoverStudentsToNewRoster(spreadsheet, newRosterSheet, currentSem
     }
 
     if (studentsToCarryOver.length === 0) {
-      UtilityScriptLibrary.debugLog('addCarryoverStudentsToNewRoster', 'INFO', 'No active students with lessons remaining to carry over', previousRosterSheetName, '');
+      UtilityScriptLibrary.debugLog('addCarryoverStudentsToNewRoster', 'INFO', 'No eligible students to carry over (all transferred, dropped, or missing data)', previousRosterSheetName, '');
       return 0;
     }
 
@@ -312,10 +242,6 @@ function addCarryoverStudentsToNewRoster(spreadsheet, newRosterSheet, currentSem
         var targetRow = newRosterSheet.getLastRow() + 1;
         newRosterSheet.getRange(targetRow, 1, 1, newRowData.length).setValues([newRowData]);
         newRosterSheet.getRange(targetRow, 1).insertCheckboxes().setValue(false);
-        newRosterSheet.getRange(targetRow, 1, 1, 23)
-          .setBackground(UtilityScriptLibrary.STYLES.WARNING.background)
-          .setFontColor(UtilityScriptLibrary.STYLES.WARNING.text)
-          .setFontWeight('bold');
 
         addedCount++;
         UtilityScriptLibrary.debugLog('addCarryoverStudentsToNewRoster', 'DEBUG', 'Added carryover student',
@@ -661,9 +587,7 @@ function addStudentToSemesterRoster(workbook, formData, studentId, semesterName)
         phone:             formData['Phone'] || '',
         email:             formData['Email'] || '',
         additionalContacts: formData['Additional contacts'] || '',
-        hoursRemaining:    0,
-        lessonsRemaining:  0,
-        systemComment:     'Added: ' + UtilityScriptLibrary.formatDateFlexible(new Date(), 'M/d')
+        systemComment:     'Added: ' + UtilityScriptLibrary.formatDateFlexible(new Date(), 'M/d') + '. Lesson balance will populate on next reconciliation.'
       };
 
       addStudentToRosterFromData(rosterSheet, studentInfo, headerMap);
@@ -1116,8 +1040,6 @@ function convertCarryoverToActive(rosterSheet, studentId, formData, headerMap) {
       throw new Error('Could not find student row for ID: ' + studentId);
     }
 
-    var newLessonsRegistered = parseInt(formData['Lesson Quantity']) || 0;
-
     var lessonLength = 30;
     if (formData['Qty60']) lessonLength = 60;
     else if (formData['Qty45']) lessonLength = 45;
@@ -1136,8 +1058,6 @@ function convertCarryoverToActive(rosterSheet, studentId, formData, headerMap) {
       'phone':            formData['Phone'] || '',
       'email':            formData['Email'] || '',
       'additionalcontacts': formData['Additional contacts'] || '',
-      'hoursremaining':   0,
-      'lessonsremaining': 0,
       'status':           'active'
     };
 
@@ -1150,7 +1070,7 @@ function convertCarryoverToActive(rosterSheet, studentId, formData, headerMap) {
     if (systemCommentsCol) {
       var oldComments = data[studentRow - 1][systemCommentsCol - 1] || '';
       rosterSheet.getRange(studentRow, systemCommentsCol).setValue(
-        'Re-registered on ' + UtilityScriptLibrary.formatDateFlexible(new Date(), 'M/d/yy') + ' with ' + newLessonsRegistered + ' lessons. ' + oldComments
+        'Re-registered on ' + UtilityScriptLibrary.formatDateFlexible(new Date(), 'M/d/yy') + '. Lesson balance will update on next reconciliation. ' + oldComments
       );
     }
 
@@ -1163,7 +1083,7 @@ function convertCarryoverToActive(rosterSheet, studentId, formData, headerMap) {
     rowRange.setFontColor('#000000').setFontWeight('normal');
 
     UtilityScriptLibrary.debugLog('convertCarryoverToActive', 'SUCCESS', 'Converted',
-      'Student: ' + studentId + ', Lessons: ' + newLessonsRegistered + ', Length: ' + lessonLength, '');
+      'Student: ' + studentId + ', Length: ' + lessonLength, '');
 
   } catch (error) {
     UtilityScriptLibrary.debugLog('convertCarryoverToActive', 'ERROR', 'Failed', studentId, error.message);
@@ -3643,61 +3563,22 @@ function setupRosterTemplateFormatting(sheet) {
     UtilityScriptLibrary.setupRosterTemplateProtection(sheet);
     sheet.setFrozenRows(1);
 
+    var carryoverRange = sheet.getRange(2, 1, maxRows - 1, sheet.getLastColumn());
+    var carryoverRule = SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied('=$T2="carryover"')
+      .setBackground(UtilityScriptLibrary.STYLES.WARNING.background)
+      .setFontColor(UtilityScriptLibrary.STYLES.WARNING.text)
+      .setRanges([carryoverRange])
+      .build();
+
+    var existingRules = sheet.getConditionalFormatRules();
+    existingRules.push(carryoverRule);
+    sheet.setConditionalFormatRules(existingRules);
+
     UtilityScriptLibrary.debugLog('setupRosterTemplateFormatting', 'SUCCESS', 'Formatting applied', sheet.getName(), '');
 
   } catch (error) {
     UtilityScriptLibrary.debugLog('setupRosterTemplateFormatting', 'ERROR', 'Failed', sheet.getName(), error.message);
-  }
-}
-
-function shouldProcessEdit(e, headerMap) {
-  try {
-    var teacherCol = headerMap[UtilityScriptLibrary.normalizeHeader('Teacher')];
-    var idCol = headerMap[UtilityScriptLibrary.normalizeHeader('Student ID')];
-    var parentIdCol = headerMap[UtilityScriptLibrary.normalizeHeader('Parent ID')];
-
-    UtilityScriptLibrary.debugLog('shouldProcessEdit', 'DEBUG', 'Checking edit',
-      'Teacher col: ' + teacherCol + ', Student ID col: ' + idCol + ', Edited col: ' + e.range.getColumn(), '');
-
-    if (e.range.getColumn() === idCol) {
-      UtilityScriptLibrary.debugLog('shouldProcessEdit', 'DEBUG', 'Edit was to Student ID column - ignoring', '', '');
-      return false;
-    }
-
-    if (e.range.getColumn() === parentIdCol) {
-      UtilityScriptLibrary.debugLog('shouldProcessEdit', 'DEBUG', 'Edit was to Parent ID column - ignoring', '', '');
-      return false;
-    }
-
-    if (e.range.getColumn() !== teacherCol) {
-      UtilityScriptLibrary.debugLog('shouldProcessEdit', 'DEBUG', 'Edit was not to Teacher column - ignoring', '', '');
-      return false;
-    }
-
-    var editedRow = e.range.getRow();
-    var sheet = e.range.getSheet();
-    var studentIdValue = sheet.getRange(editedRow, idCol).getValue();
-    var teacherValue = sheet.getRange(editedRow, teacherCol).getValue();
-
-    UtilityScriptLibrary.debugLog('shouldProcessEdit', 'DEBUG', 'Cell values',
-      'Student ID: "' + String(studentIdValue) + '", Teacher: "' + String(teacherValue) + '"', '');
-
-    if (!teacherValue || String(teacherValue).trim() === '') {
-      UtilityScriptLibrary.debugLog('shouldProcessEdit', 'DEBUG', 'Teacher field is empty - skipping', '', '');
-      return false;
-    }
-
-    if (studentIdValue && String(studentIdValue).trim() !== '') {
-      UtilityScriptLibrary.debugLog('shouldProcessEdit', 'DEBUG', 'Student ID already exists - skipping', '', '');
-      return false;
-    }
-
-    UtilityScriptLibrary.debugLog('shouldProcessEdit', 'DEBUG', 'Edit validation passed - processing row ' + editedRow, '', '');
-    return true;
-
-  } catch (error) {
-    UtilityScriptLibrary.debugLog('shouldProcessEdit', 'ERROR', 'Failed', '', error.message);
-    return false;
   }
 }
 

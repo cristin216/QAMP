@@ -9248,6 +9248,67 @@ function updateLastReconciliationDate(billingSheet, studentDataCurrentThrough) {
     'Updated last reconciliation dates', updatedCount + ' students updated', '');
 }
 
+function updateRosterBalancesForSemester(teacherSS, studentBalances, semesterName) {
+  // Extract season from semester name (e.g., "Spring 2025" -> "Spring")
+  var season = UtilityScriptLibrary.extractSeasonFromSemester(semesterName);
+  if (!season) {
+    UtilityScriptLibrary.debugLog("updateRosterBalancesForSemester", "WARNING",
+                                  "Could not extract season from semester", semesterName, "");
+    return;
+  }
+
+  var rosterSheetName = season + ' Roster';
+  var rosterSheet = teacherSS.getSheetByName(rosterSheetName);
+
+  if (!rosterSheet) {
+    UtilityScriptLibrary.debugLog("updateRosterBalancesForSemester", "INFO",
+                                  "Roster sheet not found, skipping", rosterSheetName, "");
+    return;
+  }
+
+  var headerMap = UtilityScriptLibrary.getHeaderMap(rosterSheet);
+  var dataRange = rosterSheet.getRange(2, 1, Math.max(rosterSheet.getLastRow() - 1, 1), rosterSheet.getLastColumn());
+  var data = dataRange.getValues();
+
+  // Get column indices
+  var studentIdCol = headerMap[UtilityScriptLibrary.normalizeHeader('Student ID')] - 1;
+  var hoursRemainingCol = headerMap[UtilityScriptLibrary.normalizeHeader('Hours Remaining')] - 1;
+  var lessonsRemainingCol = headerMap[UtilityScriptLibrary.normalizeHeader('Lessons Remaining')] - 1;
+
+  if (studentIdCol === undefined || hoursRemainingCol === undefined || lessonsRemainingCol === undefined) {
+    throw new Error('Required roster columns not found in ' + rosterSheetName);
+  }
+
+  // Create lookup map for quick access
+  var balanceMap = {};
+  for (var i = 0; i < studentBalances.length; i++) {
+    var balance = studentBalances[i];
+    balanceMap[balance.studentId] = balance;
+  }
+
+  // Update roster rows
+  var updatedCount = 0;
+  for (var i = 0; i < data.length; i++) {
+    var row = data[i];
+    var studentId = row[studentIdCol];
+
+    if (studentId && balanceMap[studentId]) {
+      var balance = balanceMap[studentId];
+      data[i][hoursRemainingCol] = balance.hoursRemaining;
+      data[i][lessonsRemainingCol] = balance.lessonsRemaining;
+      updatedCount++;
+    }
+  }
+
+  // Write updated data back to roster sheet
+  if (updatedCount > 0) {
+    dataRange.setValues(data);
+    UtilityScriptLibrary.debugLog("updateRosterBalancesForSemester", "SUCCESS",
+                                  "Updated roster balances",
+                                  rosterSheetName + " - " + updatedCount + " students", "");
+  }
+}
+
 function updateSheetStudentWarnings(sheet, warningStudentMap, formattedDate) {
   var data = sheet.getDataRange().getValues();
   if (data.length < 2) {
@@ -9353,61 +9414,11 @@ function updateSheetStudentWarnings(sheet, warningStudentMap, formattedDate) {
 }
 
 function updateTeacherRosterBalances(teacherSS, studentBalances, currentSemester) {
-  // Extract season from semester name (e.g., "Spring 2025" -> "Spring")
-  var season = UtilityScriptLibrary.extractSeasonFromSemester(currentSemester);
-  if (!season) {
-    throw new Error('Could not extract season from semester: ' + currentSemester);
-  }
-  
-  var rosterSheetName = season + ' Roster';
-  var rosterSheet = teacherSS.getSheetByName(rosterSheetName);
-  
-  if (!rosterSheet) {
-    UtilityScriptLibrary.debugLog("updateTeacherRosterBalances", "WARNING", 
-                                  "Roster sheet not found", rosterSheetName, "");
-    return;
-  }
-  
-  var headerMap = UtilityScriptLibrary.getHeaderMap(rosterSheet);
-  var dataRange = rosterSheet.getRange(2, 1, Math.max(rosterSheet.getLastRow() - 1, 1), rosterSheet.getLastColumn());
-  var data = dataRange.getValues();
-  
-  // Get column indices
-  var studentIdCol = headerMap[UtilityScriptLibrary.normalizeHeader('Student ID')] - 1;
-  var hoursRemainingCol = headerMap[UtilityScriptLibrary.normalizeHeader('Hours Remaining')] - 1;
-  var lessonsRemainingCol = headerMap[UtilityScriptLibrary.normalizeHeader('Lessons Remaining')] - 1;
-  
-  if (studentIdCol === undefined || hoursRemainingCol === undefined || lessonsRemainingCol === undefined) {
-    throw new Error('Required roster columns not found');
-  }
-  
-  // Create lookup map for quick access
-  var balanceMap = {};
-  for (var i = 0; i < studentBalances.length; i++) {
-    var balance = studentBalances[i];
-    balanceMap[balance.studentId] = balance;
-  }
-  
-  // Update roster rows
-  var updatedCount = 0;
-  for (var i = 0; i < data.length; i++) {
-    var row = data[i];
-    var studentId = row[studentIdCol];
-    
-    if (studentId && balanceMap[studentId]) {
-      var balance = balanceMap[studentId];
-      data[i][hoursRemainingCol] = balance.hoursRemaining;
-      data[i][lessonsRemainingCol] = balance.lessonsRemaining;
-      updatedCount++;
-    }
-  }
-  
-  // Write updated data back to roster sheet
-  if (updatedCount > 0) {
-    dataRange.setValues(data);
-    UtilityScriptLibrary.debugLog("updateTeacherRosterBalances", "SUCCESS", 
-                                  "Updated roster balances", 
-                                  rosterSheetName + " - " + updatedCount + " students", "");
+  updateRosterBalancesForSemester(teacherSS, studentBalances, currentSemester);
+
+  var nextSemester = UtilityScriptLibrary.getNextSemester(currentSemester);
+  if (nextSemester) {
+    updateRosterBalancesForSemester(teacherSS, studentBalances, nextSemester);
   }
 }
 
