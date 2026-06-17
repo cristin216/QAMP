@@ -43,7 +43,8 @@ function setupScriptProperties() {
     'SCHEDULING_WEBAPP_URL':                'your-url-here',
     'ROOM_1_CALENDAR_ID':                   'your-id-here',
     'ROOM_2_CALENDAR_ID':                   'your-id-here',
-    'ROOM_3_CALENDAR_ID':                   'your-id-here'
+    'ROOM_3_CALENDAR_ID':                   'your-id-here',
+    'MAINTENANCE_EMAIL':                    'your-email-here'
   });
 
   Logger.log('Properties set. Delete the contents of this function now.');
@@ -54,11 +55,12 @@ function getConfig() {
 
   // Scheduling values are environment-independent
   var scheduling = {
-    schedulingId:       props.getProperty('SCHEDULING_ID'),
+    schedulingId:        props.getProperty('SCHEDULING_ID'),
     schedulingWebAppUrl: props.getProperty('SCHEDULING_WEBAPP_URL'),
-    room1CalendarId:    props.getProperty('ROOM_1_CALENDAR_ID'),
-    room2CalendarId:    props.getProperty('ROOM_2_CALENDAR_ID'),
-    room3CalendarId:    props.getProperty('ROOM_3_CALENDAR_ID')
+    room1CalendarId:     props.getProperty('ROOM_1_CALENDAR_ID'),
+    room2CalendarId:     props.getProperty('ROOM_2_CALENDAR_ID'),
+    room3CalendarId:     props.getProperty('ROOM_3_CALENDAR_ID'),
+    maintenanceEmail:    props.getProperty('MAINTENANCE_EMAIL')
   };
 
   return {
@@ -78,7 +80,8 @@ function getConfig() {
       schedulingWebAppUrl:        scheduling.schedulingWebAppUrl,
       room1CalendarId:            scheduling.room1CalendarId,
       room2CalendarId:            scheduling.room2CalendarId,
-      room3CalendarId:            scheduling.room3CalendarId
+      room3CalendarId:            scheduling.room3CalendarId,
+      maintenanceEmail:           scheduling.maintenanceEmail
     },
     prod: {
       receiptsFolderId:           props.getProperty('PROD_RECEIPTS_FOLDER_ID'),
@@ -96,7 +99,8 @@ function getConfig() {
       schedulingWebAppUrl:        scheduling.schedulingWebAppUrl,
       room1CalendarId:            scheduling.room1CalendarId,
       room2CalendarId:            scheduling.room2CalendarId,
-      room3CalendarId:            scheduling.room3CalendarId
+      room3CalendarId:            scheduling.room3CalendarId,
+      maintenanceEmail:           scheduling.maintenanceEmail
     }
   };
 }
