@@ -864,7 +864,8 @@ function createGroupSections(sheet, groupEntries) {
         '',                                           // H - Invoice Date (empty)
         '',                                           // I - Payment Date (empty)
         '',                                           // J - Invoice Number (empty)
-        ''                                            // K - Admin Comments (empty)
+        '',                                           // K - Admin Comments (empty)
+        ''                                            // L - Calendar Event ID (empty)
       ];
       
       sheet.getRange(startRow, 1, 1, headerData.length).setValues([headerData]);
@@ -877,6 +878,8 @@ function createGroupSections(sheet, groupEntries) {
       
       // Add green border between Comments (F) and Admin Review Date (G)
       headerRange.getCell(1, 6).setBorder(null, null, null, true, null, null, STYLES.HEADER.background, SpreadsheetApp.BorderStyle.SOLID_THICK);
+      
+      protectStudentHeaderRow(sheet, startRow);
       
       // Create 5 lesson rows for this group (same as students)
       for (var j = 1; j <= 5; j++) {
@@ -893,7 +896,8 @@ function createGroupSections(sheet, groupEntries) {
           '',                                         // H - Invoice Date
           '',                                         // I - Payment Date
           '',                                         // J - Invoice Number
-          ''                                          // K - Admin Comments
+          '',                                         // K - Admin Comments
+          ''                                          // L - Calendar Event ID
         ];
         
         sheet.getRange(rowNum, 1, 1, lessonData.length).setValues([lessonData]);
@@ -928,7 +932,7 @@ function createLessonRows(sheet, student, startRow, numRows) {
     // Extract numeric lesson length
     var numericLessonLength = extractNumericLessonLength(student.lessonLength);
     
-    // Pre-fill lesson row data (11 columns now - includes Admin Review Date)
+    // Pre-fill lesson row data (12 columns now - includes Calendar Event ID)
     var lessonData = [
       student.id || '',                    // A - Student ID
       (student.lastName || '') + ', ' + (student.firstName || ''), // B - Student Name
@@ -940,7 +944,8 @@ function createLessonRows(sheet, student, startRow, numRows) {
       '',                                  // H - Invoice Date (admin fills)
       '',                                  // I - Payment Date (admin fills)
       '',                                  // J - Invoice Number (admin fills)
-      ''                                   // K - Admin Comments (admin fills)
+      '',                                  // K - Admin Comments (admin fills)
+      ''                                   // L - Calendar Event ID (scheduling script fills)
     ];
     
     sheet.getRange(rowNum, 1, 1, lessonData.length).setValues([lessonData]);
@@ -995,7 +1000,7 @@ function createMonthlyAttendanceSheet(workbook, monthName, rosterData) {
 
 function createSignOffRow(sheet) {
   try {
-    var numCols = 11;
+    var numCols = 12;
 
     // Set entire row to white base
     sheet.getRange(2, 1, 1, numCols).setBackground('#ffffff')
@@ -1051,7 +1056,7 @@ function createStudentHeader(sheet, student, row) {
     (student.lastName || '') + ', ' + (student.firstName || '') + ' - ' + (student.instrument || ''),
     monthName,
     lessonLengthForHeader,
-    '', '', '', '', '', '', ''  // E-K
+    '', '', '', '', '', '', '', ''  // E-L
   ];
   
   sheet.getRange(row, 1, 1, headerData.length).setValues([headerData]);
@@ -1840,14 +1845,14 @@ function formatAttendanceSheet(sheet) {
       .build();
     sheet.getRange(3, 5, maxRows - 2, 1).setDataValidation(statusRule);
 
-    // Protect admin columns G-K with warning
-    var adminRange = sheet.getRange(1, 7, maxRows, 5);
+    // Protect admin columns G-L with warning
+    var adminRange = sheet.getRange(1, 7, maxRows, 6);
     var protection = adminRange.protect();
     protection.setDescription('Admin columns - automated data');
     protection.setWarningOnly(true);
 
     // Text wrapping for all columns
-    sheet.getRange(1, 1, maxRows, 11).setWrap(true);
+    sheet.getRange(1, 1, maxRows, 12).setWrap(true);
 
     debugLog('formatAttendanceSheet', 'INFO', 'Attendance sheet formatted', '', '');
 
@@ -2429,6 +2434,73 @@ function getMostRecentRateColumn(headers) {
   }
 
   return bestColIndex;
+}
+
+function getNextSemester(currentSemesterName) {
+  try {
+    var semesterMetadataSheet = getSheet('semesterMetadata');
+    if (!semesterMetadataSheet) {
+      return null;
+    }
+    
+    var data = semesterMetadataSheet.getDataRange().getValues();
+    var headers = data[0];
+    
+    // Find columns
+    var nameCol = -1, startCol = -1;
+    for (var i = 0; i < headers.length; i++) {
+      var header = normalizeHeader(headers[i]);
+      if (header.indexOf('semester') !== -1 || header.indexOf('name') !== -1) {
+        nameCol = i;
+      } else if (header.indexOf('start') !== -1) {
+        startCol = i;
+      }
+    }
+    
+    if (nameCol === -1 || startCol === -1) {
+      return null;
+    }
+    
+    // Build array of semesters with start dates
+    var semesters = [];
+    for (var i = 1; i < data.length; i++) {
+      var row = data[i];
+      if (row[nameCol] && row[startCol]) {
+        semesters.push({
+          name: row[nameCol],
+          startDate: new Date(row[startCol])
+        });
+      }
+    }
+    
+    // Sort by start date
+    semesters.sort(function(a, b) {
+      return a.startDate - b.startDate;
+    });
+    
+    // Find current semester and return next one
+    for (var i = 0; i < semesters.length; i++) {
+      if (semesters[i].name === currentSemesterName) {
+        if (i < semesters.length - 1) {
+          debugLog("getNextSemester", "INFO", 
+                   "Found next semester", 
+                   "Current: " + currentSemesterName + ", Next: " + semesters[i+1].name, "");
+          return semesters[i+1].name;
+        } else {
+          debugLog("getNextSemester", "INFO", 
+                   "No next semester (last semester)", 
+                   currentSemesterName, "");
+          return null;
+        }
+      }
+    }
+    
+    return null;
+    
+  } catch (error) {
+    debugLog("getNextSemester", "ERROR", "Error finding next semester", "", error.message);
+    return null;
+  }
 }
 
 function getRateSummary() {
@@ -3500,7 +3572,7 @@ function protectAttendanceSheet(sheet) {
     protectSheetRanges(sheet, {
       warningOnly: false,
       ranges: [
-        { range: sheet.getRange(1, 1, 1, 11),      description: 'Header row - do not edit' },
+        { range: sheet.getRange(1, 1, 1, 12),      description: 'Header row - do not edit' },
         { range: sheet.getRange(2, 1),              description: 'Sign-off label - do not edit' },
         { range: sheet.getRange(2, 4, 1, 8),        description: 'Sign-off row - do not edit' },
         { range: sheet.getRange(1, 1, maxRows, 1),  description: 'Student ID column - do not edit' },
@@ -3573,7 +3645,7 @@ function protectStudentHeaderRow(sheet, row) {
     protectSheetRanges(sheet, {
       warningOnly: false,
       ranges: [
-        { range: sheet.getRange(row, 1, 1, 11), description: 'Student header row - do not edit' }
+        { range: sheet.getRange(row, 1, 1, 12), description: 'Student header row - do not edit' }
       ]
     });
     debugLog('protectStudentHeaderRow', 'INFO', 'Protected student header row', 'Row: ' + row, '');
@@ -3631,7 +3703,8 @@ function setupAttendanceHeaders(sheet) {
     'Invoice Date',        // H
     'Payment Date',        // I
     'Invoice Number',      // J
-    'Admin Comments'       // K
+    'Admin Comments',      // K
+    'Calendar Event ID'    // L
   ];
   
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
