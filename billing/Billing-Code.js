@@ -4463,9 +4463,9 @@ function extractStudentDataFromBillingRow(row, headerMap) {
     firstName: row[headerMap[norm("Student First Name")] - 1] || '',
     lastName: row[headerMap[norm("Student Last Name")] - 1] || '',
     studentId: row[headerMap[norm("Student ID")] - 1] || '',
-    age: row[headerMap[norm("Age")] - 1] || '',
+    age: getStudentAgeById(row[headerMap[norm("Student ID")] - 1] || ''),
     instrument: row[headerMap[norm("Instrument")] - 1] || '',
-    teacher: row[headerMap[norm("Teacher")] - 1] || '',
+    teacher: row[headerMap[norm("Teacher ID")] - 1] || '',   // <-- was "Teacher", now "Teacher ID"
     lessonLength: row[headerMap[norm("Lesson Length")] - 1] || '',
     lessonQuantity: lessonQtyValue || ''
   };
@@ -4997,47 +4997,54 @@ function generateRegistrationPacketsForBillingCycle() {
     UtilityScriptLibrary.debugLog('generateRegistrationPacketsForBillingCycle', 'INFO',
       'Starting packet generation', 'Sheet: ' + billingSheetName, '');
 
-    var response = ui.alert(
-      'Generate Documents',
-      'YES = Create All (every student on this sheet)\nNO = Create Checked Only ("Get Documents" column)\n\nWhich would you like?',
-      ui.ButtonSet.YES_NO_CANCEL
-    );
+    var htmlOutput = HtmlService.createHtmlOutput(
+      '<div style="font-family:Arial,sans-serif;padding:8px;">' +
+      '<p>Which students would you like to generate documents for?</p>' +
+      '<button onclick="google.script.run.withSuccessHandler(google.script.host.close).generatePacketsChoice(\'all\')" style="margin:4px;padding:8px 16px;">All</button>' +
+      '<button onclick="google.script.run.withSuccessHandler(google.script.host.close).generatePacketsChoice(\'selected\')" style="margin:4px;padding:8px 16px;">Selected</button>' +
+      '<button onclick="google.script.host.close()" style="margin:4px;padding:8px 16px;">Cancel</button>' +
+      '</div>'
+    ).setWidth(320).setHeight(120);
 
-    if (response === ui.Button.CANCEL || response === ui.Button.CLOSE) return;
-
-    var checkedOnly = (response === ui.Button.NO);
-
-    if (checkedOnly) {
-      var norm = UtilityScriptLibrary.normalizeHeader;
-      var headerMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
-      var getDocsCol = headerMap[norm('Get Documents')];
-      if (!getDocsCol) {
-        ui.alert('Error', '"Get Documents" column not found on this sheet.', ui.ButtonSet.OK);
-        return;
-      }
-      var data = billingSheet.getDataRange().getValues();
-      var checkedCount = 0;
-      for (var i = 1; i < data.length; i++) {
-        if (data[i][getDocsCol - 1] === true) checkedCount++;
-      }
-      if (checkedCount === 0) {
-        ui.alert('No rows have "Get Documents" checked.');
-        return;
-      }
-    }
-
-    PropertiesService.getScriptProperties().setProperties({
-      'currentBillingSheet': billingSheetName,
-      'checkedOnly': checkedOnly ? 'true' : 'false'
-    });
-
-    showSimpleDocumentSelectionDialog();
+    ui.showModalDialog(htmlOutput, 'Generate Documents');
 
   } catch (error) {
-    UtilityScriptLibrary.debugLog('generateRegistrationPacketsForBillingCycle', 'ERROR',
-      'Failed to start generation', '', error.message);
-    SpreadsheetApp.getUi().alert('Error starting packet generation: ' + error.message);
+    UtilityScriptLibrary.debugLog('generateRegistrationPacketsForBillingCycle', 'ERROR', 'Failed', '', error.message);
+    SpreadsheetApp.getUi().alert('❌ Error: ' + error.message);
   }
+}
+// Keep generateRegistrationPacketsForBillingCycle and generatePacketsChoice together in this order for html
+function generatePacketsChoice(choice) {
+  var ui = SpreadsheetApp.getUi();
+  var billingSheet = SpreadsheetApp.getActiveSheet();
+  var billingSheetName = billingSheet.getName();
+  var checkedOnly = (choice === 'selected');
+
+  if (checkedOnly) {
+    var norm = UtilityScriptLibrary.normalizeHeader;
+    var headerMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
+    var getDocsCol = headerMap[norm('Get Documents')];
+    if (!getDocsCol) {
+      ui.alert('Error', '"Get Documents" column not found on this sheet.', ui.ButtonSet.OK);
+      return;
+    }
+    var data = billingSheet.getDataRange().getValues();
+    var checkedCount = 0;
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][getDocsCol - 1] === true) checkedCount++;
+    }
+    if (checkedCount === 0) {
+      ui.alert('No rows have "Get Documents" checked.');
+      return;
+    }
+  }
+
+  PropertiesService.getScriptProperties().setProperties({
+    'currentBillingSheet': billingSheetName,
+    'checkedOnly': checkedOnly ? 'true' : 'false'
+  });
+
+  showSimpleDocumentSelectionDialog();
 }
 
 function getActivePrograms() {
@@ -5936,6 +5943,45 @@ function getRateMap(context) {
   // Use Utility function to build rate map
   context.rateMap = UtilityScriptLibrary.buildRateMapFromSheet(rateSheet, rateHeaders, bestColIndex);
   return context.rateMap;
+}
+
+function getStudentAgeById(studentId) {
+  try {
+    if (!studentId || String(studentId).trim() === '') {
+      UtilityScriptLibrary.debugLog('getStudentAgeById', 'WARNING', 'No Student ID provided', '', '');
+      return 'Child';
+    }
+
+    var norm = UtilityScriptLibrary.normalizeHeader;
+    var studentsSheet = UtilityScriptLibrary.getSheet('students');
+    var headerMap = UtilityScriptLibrary.getHeaderMap(studentsSheet);
+
+    var studentIdCol = headerMap[norm('Student ID')];
+    var ageCol = headerMap[norm('Age')];
+
+    if (!studentIdCol || !ageCol) {
+      UtilityScriptLibrary.debugLog('getStudentAgeById', 'ERROR', 'Required columns not found in students sheet', '', '');
+      return 'Child';
+    }
+
+    var data = studentsSheet.getDataRange().getValues();
+    var targetId = String(studentId).trim();
+
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][studentIdCol - 1]).trim() === targetId) {
+        var age = String(data[i][ageCol - 1] || '').trim();
+        UtilityScriptLibrary.debugLog('getStudentAgeById', 'SUCCESS', 'Age resolved', targetId + ' -> ' + age, '');
+        return (age.toLowerCase() === 'adult') ? 'Adult' : 'Child';
+      }
+    }
+
+    UtilityScriptLibrary.debugLog('getStudentAgeById', 'WARNING', 'Student ID not found in students sheet', targetId, '');
+    return 'Child';
+
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('getStudentAgeById', 'ERROR', 'Failed', studentId, error.message);
+    return 'Child';
+  }
 }
 
 function getStudentBalancesFromBilling(billingSheet, teacherId) {
