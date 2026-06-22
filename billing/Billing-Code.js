@@ -5071,13 +5071,12 @@ function getActivePrograms() {
   return activePrograms;
 }
 
-function getBillingSheet(paymentDate, activeSheetName, shouldLog) {
+function getBillingSheet(paymentDate, shouldLog) {
   var monthNames = UtilityScriptLibrary.getMonthNames();
 
   if (shouldLog) {
     UtilityScriptLibrary.debugLog('getBillingSheet', 'INFO', 'Looking for billing sheet',
-      'paymentDate: ' + paymentDate + ', activeSheetName: ' + activeSheetName,
-      'shouldLog: ' + (shouldLog ? 'YES' : 'NO'));
+      'paymentDate: ' + paymentDate, 'shouldLog: ' + (shouldLog ? 'YES' : 'NO'));
   }
 
   var billingSS = UtilityScriptLibrary.getWorkbook('billing');
@@ -5094,9 +5093,8 @@ function getBillingSheet(paymentDate, activeSheetName, shouldLog) {
   var billingMonthCol = headerMap[norm('Billing Month')];
   var paymentStartCol = headerMap[norm('Payment Starting Date')];
   var paymentEndCol = headerMap[norm('Payment Ending Date')];
-  var semesterNameCol = headerMap[norm('Semester Name')];
 
-  if (!billingMonthCol || !paymentStartCol || !paymentEndCol || !semesterNameCol) {
+  if (!billingMonthCol || !paymentStartCol || !paymentEndCol) {
     UtilityScriptLibrary.debugLog('getBillingSheet', 'ERROR', 'Required columns not found in Billing Metadata', '', '');
     return null;
   }
@@ -5112,15 +5110,14 @@ function getBillingSheet(paymentDate, activeSheetName, shouldLog) {
 
     var paymentStartDate = new Date(row[paymentStartCol - 1]);
     var paymentEndDate = new Date(row[paymentEndCol - 1]);
-    var semesterName = row[semesterNameCol - 1];
 
-    UtilityScriptLibrary.debugLog('getBillingSheet', 'DEBUG', 'Checking row',
-      'paymentDate: ' + paymentDate + ' in range [' + paymentStartDate + ' to ' + paymentEndDate + ']? ' +
-      (paymentDate >= paymentStartDate && paymentDate <= paymentEndDate) +
-      ', semesterName: \'' + semesterName + '\' === \'' + activeSheetName + '\'? ' + (semesterName === activeSheetName), '');
+    if (shouldLog) {
+      UtilityScriptLibrary.debugLog('getBillingSheet', 'DEBUG', 'Checking row',
+        'paymentDate: ' + paymentDate + ' in range [' + paymentStartDate + ' to ' + paymentEndDate + ']? ' +
+        (paymentDate >= paymentStartDate && paymentDate <= paymentEndDate), '');
+    }
 
-    if (paymentDate >= paymentStartDate && paymentDate <= paymentEndDate &&
-        semesterName === activeSheetName) {
+    if (paymentDate >= paymentStartDate && paymentDate <= paymentEndDate) {
 
       UtilityScriptLibrary.debugLog('getBillingSheet', 'DEBUG', 'Date match found, looking for sheet',
         'Sheet name to find: ' + billingMonth, '');
@@ -5141,7 +5138,7 @@ function getBillingSheet(paymentDate, activeSheetName, shouldLog) {
   }
 
   UtilityScriptLibrary.debugLog('getBillingSheet', 'WARNING', 'No matching billing sheet found',
-    'paymentDate: ' + paymentDate + ', semester: ' + activeSheetName, '');
+    'paymentDate: ' + paymentDate, '');
   return null;
 }
 
@@ -7489,7 +7486,7 @@ function processPaymentReconciliationForRow(rowData, paymentSheet, rowNumber, st
     UtilityScriptLibrary.debugLog('processPaymentReconciliationForRow', 'DEBUG', 'Getting billing sheet',
       'Date: ' + paymentDate + ', Payment sheet: ' + paymentSheet.getName(), '');
 
-    var billingInfo = getBillingSheet(paymentDate, paymentSheet.getName(), true);
+    var billingInfo = getBillingSheet(paymentDate, true);
     if (!billingInfo || !billingInfo.sheet) {
       UtilityScriptLibrary.debugLog('processPaymentReconciliationForRow', 'WARNING', 'No billing sheet found',
         'billingInfo null: ' + (billingInfo === null), '');
@@ -8136,26 +8133,17 @@ function runPaymentsReconciliation() {
     UtilityScriptLibrary.debugLog('runPaymentsReconciliation', 'INFO', 'Starting payments reconciliation', '', '');
 
     var paymentsSS = UtilityScriptLibrary.getWorkbook('payments');
-    var currentSemester = UtilityScriptLibrary.getCurrentSemesterName(new Date());
-    var paymentSheet = paymentsSS.getSheetByName(currentSemester);
 
-    if (!paymentSheet) {
-      throw new Error('Payment sheet not found for semester: ' + currentSemester);
+    var currentSemester = UtilityScriptLibrary.getCurrentSemesterName(new Date());
+    if (!currentSemester) {
+      throw new Error('Could not determine current semester.');
     }
 
-    var headerMap = UtilityScriptLibrary.getHeaderMap(paymentSheet);
-    var data = paymentSheet.getDataRange().getValues();
+    var nextSemester = UtilityScriptLibrary.getNextSemester(currentSemester);
+    var semesterNames = nextSemester ? [currentSemester, nextSemester] : [currentSemester];
 
-    var studentIdCol  = headerMap[UtilityScriptLibrary.normalizeHeader('Student ID')];
-    var lastNameCol   = headerMap[UtilityScriptLibrary.normalizeHeader('Student Last Name')];
-    var firstNameCol  = headerMap[UtilityScriptLibrary.normalizeHeader('Student First Name')];
-    var amountCol     = headerMap[UtilityScriptLibrary.normalizeHeader('Amount Paid')];
-    var dateCol       = headerMap[UtilityScriptLibrary.normalizeHeader('Date')];
-    var invoiceCol    = headerMap[UtilityScriptLibrary.normalizeHeader('Invoice Number')];
-    var agreementCol  = headerMap[UtilityScriptLibrary.normalizeHeader('Agreement Form Received')];
-    var mediaCol      = headerMap[UtilityScriptLibrary.normalizeHeader('Media Release Response')];
-    var reconciledCol = headerMap[UtilityScriptLibrary.normalizeHeader('Reconciled')];
-    var commentsCol   = headerMap[UtilityScriptLibrary.normalizeHeader('System Comments')];
+    UtilityScriptLibrary.debugLog('runPaymentsReconciliation', 'INFO', 'Semesters to process',
+      semesterNames.join(', '), '');
 
     var contactsSS = UtilityScriptLibrary.getWorkbook('contacts');
     var studentsSheet = contactsSS.getSheetByName('Students');
@@ -8173,101 +8161,134 @@ function runPaymentsReconciliation() {
       details: []
     };
 
-    for (var i = 1; i < data.length; i++) {
-      var rowData = data[i];
-      var rowNumber = i + 1;
+    var foundAnyPaymentSheet = false;
 
-      if (reconciledCol && rowData[reconciledCol - 1] === true) continue;
+    for (var s = 0; s < semesterNames.length; s++) {
+      var semesterName = semesterNames[s];
+      var paymentSheet = paymentsSS.getSheetByName(semesterName);
 
-      var hasPaymentData = rowData[amountCol - 1] && rowData[dateCol - 1];
-      var hasAgreement = rowData[agreementCol - 1] === true;
-      var hasMediaResponse = rowData[mediaCol - 1] && String(rowData[mediaCol - 1]).trim() !== '';
-      var hasFormsData = hasAgreement || hasMediaResponse;
+      if (!paymentSheet) {
+        UtilityScriptLibrary.debugLog('runPaymentsReconciliation', 'WARNING',
+          'No payments tab found for semester', semesterName, '');
+        continue;
+      }
 
-      if (!hasPaymentData && !hasFormsData) continue;
+      foundAnyPaymentSheet = true;
 
-      var paymentSuccess = false;
-      var formsSuccess = false;
-      var errorMessages = [];
-      var studentIdForRow = rowData[studentIdCol - 1] || null;
-      var invoiceNumber = rowData[invoiceCol - 1] || null;
+      var headerMap = UtilityScriptLibrary.getHeaderMap(paymentSheet);
+      var data = paymentSheet.getDataRange().getValues();
 
-      if (hasPaymentData) {
-        try {
-          var paymentResult = processPaymentReconciliationForRow(
-            rowData, paymentSheet, rowNumber,
-            studentIdForRow, invoiceNumber,
-            amountCol, dateCol, lastNameCol, firstNameCol
-          );
+      var studentIdCol  = headerMap[UtilityScriptLibrary.normalizeHeader('Student ID')];
+      var lastNameCol   = headerMap[UtilityScriptLibrary.normalizeHeader('Student Last Name')];
+      var firstNameCol  = headerMap[UtilityScriptLibrary.normalizeHeader('Student First Name')];
+      var amountCol     = headerMap[UtilityScriptLibrary.normalizeHeader('Amount Paid')];
+      var dateCol       = headerMap[UtilityScriptLibrary.normalizeHeader('Date')];
+      var invoiceCol    = headerMap[UtilityScriptLibrary.normalizeHeader('Invoice Number')];
+      var agreementCol  = headerMap[UtilityScriptLibrary.normalizeHeader('Agreement Form Received')];
+      var mediaCol      = headerMap[UtilityScriptLibrary.normalizeHeader('Media Release Response')];
+      var reconciledCol = headerMap[UtilityScriptLibrary.normalizeHeader('Reconciled')];
+      var commentsCol   = headerMap[UtilityScriptLibrary.normalizeHeader('System Comments')];
 
-          if (paymentResult.success) {
-            paymentSuccess = true;
-            results.paymentsProcessed++;
-            results.details.push(paymentResult.message);
-            if (paymentResult.studentId && !studentIdForRow) studentIdForRow = paymentResult.studentId;
-            if (paymentResult.invoiceNumber && !invoiceNumber) invoiceNumber = paymentResult.invoiceNumber;
-          } else {
-            errorMessages.push('Payment: ' + paymentResult.message);
+      for (var i = 1; i < data.length; i++) {
+        var rowData = data[i];
+        var rowNumber = i + 1;
+
+        if (reconciledCol && rowData[reconciledCol - 1] === true) continue;
+
+        var hasPaymentData = rowData[amountCol - 1] && rowData[dateCol - 1];
+        var hasAgreement = rowData[agreementCol - 1] === true;
+        var hasMediaResponse = rowData[mediaCol - 1] && String(rowData[mediaCol - 1]).trim() !== '';
+        var hasFormsData = hasAgreement || hasMediaResponse;
+
+        if (!hasPaymentData && !hasFormsData) continue;
+
+        var paymentSuccess = false;
+        var formsSuccess = false;
+        var errorMessages = [];
+        var studentIdForRow = rowData[studentIdCol - 1] || null;
+        var invoiceNumber = rowData[invoiceCol - 1] || null;
+
+        if (hasPaymentData) {
+          try {
+            var paymentResult = processPaymentReconciliationForRow(
+              rowData, paymentSheet, rowNumber,
+              studentIdForRow, invoiceNumber,
+              amountCol, dateCol, lastNameCol, firstNameCol
+            );
+
+            if (paymentResult.success) {
+              paymentSuccess = true;
+              results.paymentsProcessed++;
+              results.details.push(paymentResult.message);
+              if (paymentResult.studentId && !studentIdForRow) studentIdForRow = paymentResult.studentId;
+              if (paymentResult.invoiceNumber && !invoiceNumber) invoiceNumber = paymentResult.invoiceNumber;
+            } else {
+              errorMessages.push('Payment: ' + paymentResult.message);
+              results.paymentsErrors++;
+            }
+          } catch (error) {
+            errorMessages.push('Payment: ' + error.message);
             results.paymentsErrors++;
           }
-        } catch (error) {
-          errorMessages.push('Payment: ' + error.message);
-          results.paymentsErrors++;
+        } else {
+          paymentSuccess = true;
         }
-      } else {
-        paymentSuccess = true;
-      }
 
-      if (hasFormsData) {
-        try {
-          var formsResult = processFormsReconciliationForRow(
-            rowData, studentsSheet, studentIdForRow,
-            hasAgreement, hasMediaResponse,
-            studentIdCol, agreementCol, mediaCol
-          );
+        if (hasFormsData) {
+          try {
+            var formsResult = processFormsReconciliationForRow(
+              rowData, studentsSheet, studentIdForRow,
+              hasAgreement, hasMediaResponse,
+              studentIdCol, agreementCol, mediaCol
+            );
 
-          if (formsResult.success) {
-            formsSuccess = true;
-            if (formsResult.agreementUpdated) results.agreementUpdates++;
-            if (formsResult.mediaUpdated) results.mediaUpdates++;
-            results.details.push(formsResult.message);
-          } else {
-            errorMessages.push('Forms: ' + formsResult.message);
+            if (formsResult.success) {
+              formsSuccess = true;
+              if (formsResult.agreementUpdated) results.agreementUpdates++;
+              if (formsResult.mediaUpdated) results.mediaUpdates++;
+              results.details.push(formsResult.message);
+            } else {
+              errorMessages.push('Forms: ' + formsResult.message);
+              results.formsErrors++;
+            }
+          } catch (error) {
+            errorMessages.push('Forms: ' + error.message);
             results.formsErrors++;
           }
-        } catch (error) {
-          errorMessages.push('Forms: ' + error.message);
-          results.formsErrors++;
+        } else {
+          formsSuccess = true;
         }
-      } else {
-        formsSuccess = true;
-      }
 
-      var overallSuccess = (paymentSuccess || !hasPaymentData) &&
-                           (formsSuccess || !hasFormsData) &&
-                           errorMessages.length === 0;
+        var overallSuccess = (paymentSuccess || !hasPaymentData) &&
+                             (formsSuccess || !hasFormsData) &&
+                             errorMessages.length === 0;
 
-      if (reconciledCol) {
-        var reconciledCell = paymentSheet.getRange(rowNumber, reconciledCol);
-        reconciledCell.insertCheckboxes();
-        reconciledCell.setValue(overallSuccess);
-      }
+        if (reconciledCol) {
+          var reconciledCell = paymentSheet.getRange(rowNumber, reconciledCol);
+          reconciledCell.insertCheckboxes();
+          reconciledCell.setValue(overallSuccess);
+        }
 
-      if (studentIdCol && studentIdForRow && !rowData[studentIdCol - 1]) {
-        paymentSheet.getRange(rowNumber, studentIdCol).setValue(studentIdForRow);
-      }
+        if (studentIdCol && studentIdForRow && !rowData[studentIdCol - 1]) {
+          paymentSheet.getRange(rowNumber, studentIdCol).setValue(studentIdForRow);
+        }
 
-      if (invoiceCol && invoiceNumber && !rowData[invoiceCol - 1]) {
-        paymentSheet.getRange(rowNumber, invoiceCol).setValue(invoiceNumber);
-      }
+        if (invoiceCol && invoiceNumber && !rowData[invoiceCol - 1]) {
+          paymentSheet.getRange(rowNumber, invoiceCol).setValue(invoiceNumber);
+        }
 
-      if (commentsCol) {
-        if (!overallSuccess && errorMessages.length > 0) {
-          paymentSheet.getRange(rowNumber, commentsCol).setValue(errorMessages.join(' | '));
-        } else if (overallSuccess) {
-          paymentSheet.getRange(rowNumber, commentsCol).clearContent();
+        if (commentsCol) {
+          if (!overallSuccess && errorMessages.length > 0) {
+            paymentSheet.getRange(rowNumber, commentsCol).setValue(errorMessages.join(' | '));
+          } else if (overallSuccess) {
+            paymentSheet.getRange(rowNumber, commentsCol).clearContent();
+          }
         }
       }
+    }
+
+    if (!foundAnyPaymentSheet) {
+      throw new Error('No payment sheets found for semesters: ' + semesterNames.join(', '));
     }
 
     UtilityScriptLibrary.debugLog('runPaymentsReconciliation', 'SUCCESS', 'Payments reconciliation completed',
