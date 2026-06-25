@@ -8499,6 +8499,10 @@ function runWeeklyLessonReconciliation(customDate) {
   }
 }
 
+function runWeeklyLessonReconciliationTrigger() {
+  runWeeklyLessonReconciliation();
+}
+
 function selectDocumentTemplate(templateType, studentData, deliveryMethod, currentSemester, billingData, newStudentMap) {
   if (templateType === 'welcome letter') {
     var letterType = billingData && billingData.letterType ? billingData.letterType.toLowerCase().trim() : '';
