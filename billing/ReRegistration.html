@@ -588,11 +588,35 @@ function buildStudentCard(student, packages, index) {
   warn.textContent = 'Please select a package or indicate not enrolling.';
   body.appendChild(warn);
 
+  // Media release reminder — only shown if we have a current value on file
+  if (student.currentMedia === 'Granted' || student.currentMedia === 'Denied') {
+    body.innerHTML += '<hr class="section-divider">' +
+      '<label style="margin-bottom:8px;">Media Release</label>' +
+      '<div class="info-note" style="margin-bottom:10px;">' +
+        'We currently have <strong>' + esc(student.firstName) + '</strong>\'s media release on file as: <strong>' +
+        esc(student.currentMedia) + '</strong>.' +
+      '</div>' +
+      '<div class="radio-group" style="flex-direction:column; align-items:flex-start; gap:8px;">' +
+        '<label class="radio-option">' +
+          '<input type="radio" name="media-' + index + '" value="keep" onchange="hideMediaWarn(' + index + ')"> ' +
+          'Keep my current media release (' + esc(student.currentMedia) + ')' +
+        '</label>' +
+        '<label class="radio-option">' +
+          '<input type="radio" name="media-' + index + '" value="change" onchange="hideMediaWarn(' + index + ')"> ' +
+          'I would like to change my media release' +
+        '</label>' +
+      '</div>' +
+      '<div class="warning-note" id="media-warn-' + index + '" style="display:none; margin-top:8px;">' +
+        'Please let us know whether to keep or change the media release on file.' +
+      '</div>';
+  }
+
   card.appendChild(body);
 
   // Store student data on card for retrieval
   card.dataset.studentId    = student.studentId;
   card.dataset.studentIndex = index;
+  card.dataset.hasMediaQuestion = (student.currentMedia === 'Granted' || student.currentMedia === 'Denied') ? '1' : '';
 
   // Wire up lesson length change → update prices
   (function(idx, pkgs) {
@@ -603,6 +627,11 @@ function buildStudentCard(student, packages, index) {
   })(index, packages);
 
   return card;
+}
+
+function hideMediaWarn(index) {
+  var warn = document.getElementById('media-warn-' + index);
+  if (warn) warn.style.display = 'none';
 }
 
 function updatePackagePrices(index, packages) {
@@ -652,6 +681,17 @@ function updatePackagePrices(index, packages) {
         continue;
       }
 
+      var mediaReleaseChangeRequested = false;
+      if (card.dataset.hasMediaQuestion === '1') {
+        var mediaSelected = document.querySelector('input[name="media-' + idx + '"]:checked');
+        if (!mediaSelected) {
+          document.getElementById('media-warn-' + idx).style.display = 'block';
+          valid = false;
+          continue;
+        }
+        mediaReleaseChangeRequested = mediaSelected.value === 'change';
+      }
+
       var packageName  = selected.value;
       var lessonCount  = parseInt(selected.dataset.count) || 0;
       var enrollment   = packageName === 'Not Enrolled' ? 'Not Enrolled' : '';
@@ -664,7 +704,8 @@ function updatePackagePrices(index, packages) {
         enrollment:    enrollment,
         grade:         document.getElementById('grade-' + idx).value.trim(),
         school:        document.getElementById('school-' + idx).value.trim(),
-        schoolTeacher: document.getElementById('schoolTeacher-' + idx).value.trim()
+        schoolTeacher: document.getElementById('schoolTeacher-' + idx).value.trim(),
+        mediaReleaseChangeRequested: mediaReleaseChangeRequested
       });
     }
 
