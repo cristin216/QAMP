@@ -2503,6 +2503,12 @@ function getNextSemester(currentSemesterName) {
   }
 }
 
+function getOrCreateSubfolder(parentFolder, folderName) {
+  var folders = parentFolder.getFoldersByName(folderName);
+  if (folders.hasNext()) return folders.next();
+  return parentFolder.createFolder(folderName);
+}
+
 function getRateSummary() {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Rates');
   if (!sheet) return '⚠️ Rates sheet not found.';
