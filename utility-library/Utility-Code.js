@@ -3164,6 +3164,25 @@ function normalizeHeader(header) {
   return str.replace(/["\n\r]+/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
+function ocrPdfPage(pageBlob) {
+  var resource = {
+    name: pageBlob.getName(),
+    mimeType: MimeType.GOOGLE_DOCS
+  };
+  var ocrOptions = {
+    ocr: true,
+    ocrLanguage: 'en'
+  };
+
+  var docFile = Drive.Files.create(resource, pageBlob, ocrOptions);
+  var doc = DocumentApp.openById(docFile.id);
+  var text = doc.getBody().getText();
+
+  DriveApp.getFileById(docFile.id).setTrashed(true);
+
+  return text;
+}
+
 function parseAllPackageQuantities(qty30Package, qty45Package, qty60Package) {
   try {
     return {
@@ -3928,6 +3947,25 @@ function showConfirmationDialog(title, message, details, options) {
     debugLog('showConfirmationDialog', 'ERROR', 'Dialog failed', '', error.message);
     return false;
   }
+}
+
+async function splitPdfIntoSinglePages(pdfBlob) {
+  var sourceBytes = new Uint8Array(pdfBlob.getBytes());
+  var srcDoc = await PDFLib.PDFDocument.load(sourceBytes);
+  var pageCount = srcDoc.getPageCount();
+  var pageBlobs = [];
+
+  for (var i = 0; i < pageCount; i++) {
+    var newDoc = await PDFLib.PDFDocument.create();
+    var copiedPages = await newDoc.copyPages(srcDoc, [i]);
+    newDoc.addPage(copiedPages[0]);
+
+    var pdfBytes = await newDoc.save();
+    var pageBlob = Utilities.newBlob(pdfBytes, 'application/pdf', 'page' + (i + 1) + '.pdf');
+    pageBlobs.push(pageBlob);
+  }
+
+  return pageBlobs;
 }
 
 function styleHeaderRow(sheet, headers) {

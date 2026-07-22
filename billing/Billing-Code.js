@@ -1,3 +1,148 @@
+async function testPdfSplit() {
+  var testFileId = '1kap7e3RypJy5M_tLYQzJ0kQ8W65IUu1t';
+  var file = DriveApp.getFileById(testFileId);
+  var blob = file.getBlob();
+
+  var pages = await UtilityScriptLibrary.splitPdfIntoSinglePages(blob);
+  Logger.log('Split into ' + pages.length + ' page(s)');
+
+  var testFolder = DriveApp.getRootFolder().createFolder('PDF Split Test - ' + new Date().getTime());
+  for (var i = 0; i < pages.length; i++) {
+    testFolder.createFile(pages[i]);
+  }
+  Logger.log('Saved test output to folder: ' + testFolder.getUrl());
+}
+
+function detectFormTypeAndName(ocrText) {
+  var result = {
+    formType: null,
+    studentFirstName: null,
+    studentLastName: null
+  };
+
+  // Form type detection
+  if (/MEDIA CONSENT/i.test(ocrText)) {
+    result.formType = /Parent\/Guardian of/i.test(ocrText) ? 'media release - child' : 'media release - adult';
+  } else if (/AGREEMENT/i.test(ocrText)) {
+    result.formType = 'agreement';
+  }
+
+  // Name extraction — only from the top-of-page greeting line
+  var childMatch = ocrText.match(/Dear Parent\/Guardian of\s+([A-Za-z'-]+)\s+([A-Za-z'-]+)\s*,/i);
+  var adultMatch = ocrText.match(/Dear\s+([A-Za-z'-]+)\s+([A-Za-z'-]+)\s*,/i);
+
+  var nameMatch = childMatch || adultMatch;
+  if (nameMatch) {
+    result.studentFirstName = nameMatch[1];
+    result.studentLastName = nameMatch[2];
+  }
+
+  return result;
+}
+
+async function testDetection() {
+  var testFileId = '1kap7e3RypJy5M_tLYQzJ0kQ8W65IUu1t';
+  var file = DriveApp.getFileById(testFileId);
+  var blob = file.getBlob();
+
+  var pages = await UtilityScriptLibrary.splitPdfIntoSinglePages(blob);
+
+  for (var i = 0; i < pages.length; i++) {
+    var text = UtilityScriptLibrary.ocrPdfPage(pages[i]);
+    var detected = detectFormTypeAndName(text);
+    Logger.log('Page ' + (i + 1) + ': ' + JSON.stringify(detected));
+  }
+}
+
+function findBillingMatchesByName(billingSheet, firstName, lastName) {
+  var norm = UtilityScriptLibrary.normalizeHeader;
+  var headerMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
+
+  var firstNameCol  = headerMap[norm('Student First Name')];
+  var lastNameCol   = headerMap[norm('Student Last Name')];
+  var studentIdCol  = headerMap[norm('Student ID')];
+  var instrumentCol = headerMap[norm('Instrument')];
+
+  if (!firstNameCol || !lastNameCol || !studentIdCol) {
+    throw new Error('Required columns not found in billing sheet for name matching');
+  }
+
+  var data = billingSheet.getDataRange().getValues();
+  var matches = [];
+
+  var targetFirst = String(firstName || '').trim().toLowerCase();
+  var targetLast  = String(lastName || '').trim().toLowerCase();
+
+  for (var i = 1; i < data.length; i++) {
+    var rowFirst = String(data[i][firstNameCol - 1] || '').trim().toLowerCase();
+    var rowLast  = String(data[i][lastNameCol - 1] || '').trim().toLowerCase();
+
+    if (rowFirst === targetFirst && rowLast === targetLast) {
+      matches.push({
+        studentId:  String(data[i][studentIdCol - 1] || '').trim(),
+        rowNumber:  i + 1,
+        firstName:  data[i][firstNameCol - 1],
+        lastName:   data[i][lastNameCol - 1],
+        instrument: instrumentCol ? data[i][instrumentCol - 1] : ''
+      });
+    }
+  }
+
+  return matches;
+}function findBillingMatchesByName(billingSheet, firstName, lastName) {
+  var norm = UtilityScriptLibrary.normalizeHeader;
+  var headerMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
+
+  var firstNameCol  = headerMap[norm('Student First Name')];
+  var lastNameCol   = headerMap[norm('Student Last Name')];
+  var studentIdCol  = headerMap[norm('Student ID')];
+  var instrumentCol = headerMap[norm('Instrument')];
+
+  if (!firstNameCol || !lastNameCol || !studentIdCol) {
+    throw new Error('Required columns not found in billing sheet for name matching');
+  }
+
+  var data = billingSheet.getDataRange().getValues();
+  var matches = [];
+
+  var targetFirst = String(firstName || '').trim().toLowerCase();
+  var targetLast  = String(lastName || '').trim().toLowerCase();
+
+  for (var i = 1; i < data.length; i++) {
+    var rowFirst = String(data[i][firstNameCol - 1] || '').trim().toLowerCase();
+    var rowLast  = String(data[i][lastNameCol - 1] || '').trim().toLowerCase();
+
+    if (rowFirst === targetFirst && rowLast === targetLast) {
+      matches.push({
+        studentId:  String(data[i][studentIdCol - 1] || '').trim(),
+        rowNumber:  i + 1,
+        firstName:  data[i][firstNameCol - 1],
+        lastName:   data[i][lastNameCol - 1],
+        instrument: instrumentCol ? data[i][instrumentCol - 1] : ''
+      });
+    }
+  }
+
+  return matches;
+}
+
+async function testFullPipeline() {
+  var testFileId = '1kap7e3RypJy5M_tLYQzJ0kQ8W65IUu1t';
+  var file = DriveApp.getFileById(testFileId);
+  var blob = file.getBlob();
+
+  var billingSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+
+  var pages = await UtilityScriptLibrary.splitPdfIntoSinglePages(blob);
+
+  for (var i = 0; i < pages.length; i++) {
+    var text = UtilityScriptLibrary.ocrPdfPage(pages[i]);
+    var detected = detectFormTypeAndName(text);
+    var matches = findBillingMatchesByName(billingSheet, detected.studentFirstName, detected.studentLastName);
+
+    Logger.log('Page ' + (i + 1) + ': ' + JSON.stringify(detected) + ' -> ' + matches.length + ' match(es): ' + JSON.stringify(matches));
+  }
+}
 /*
 ================================================================================
 BILLING CODE
@@ -146,6 +291,7 @@ function onOpen() {
     .addItem('Verify Payments (Detailed)', 'verifyPaymentsDetailed')
     .addItem('Build Re-Registration Queue', 'buildReregistrationQueue')
     .addItem('Send Re-Registration Links', 'sendReregistrationLinks')
+    .addItem('Process Signed Forms', 'startSignedFormIntake')
     .addToUi();
 }
 
@@ -2178,6 +2324,25 @@ function buildPastVlookupFormula(prevSheetName, prevColIndex, rowNum) {
   return "=IFNA(VLOOKUP($C" + rowNum + ",'" + prevSheetName + "'!$C:$AZ," + lookupIndex + ",FALSE),\"\")";
 }
 
+function buildSignedFormFilename(studentId, lastName, docType) {
+  var cleanLastName = String(lastName || '').trim().replace(/\s+/g, ' ');
+  var docLabel = docType === 'agreement' ? 'Agreement' : 'MediaRelease';
+  var dateStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
+  return studentId + '_' + cleanLastName + '_' + docLabel + '_' + dateStr + '.pdf';
+}
+
+function getUniqueFilename(baseFilename, folder) {
+  var filename = baseFilename;
+  var namePart = baseFilename.substring(0, baseFilename.lastIndexOf('.pdf'));
+  var counter = 2;
+
+  while (UtilityScriptLibrary.documentAlreadyExists(filename, folder)) {
+    filename = namePart + '-' + counter + '.pdf';
+    counter++;
+  }
+  return filename;
+}
+
 function buildProgramDescription(programTotals, lessonLength) {
   var descriptions = [];
   
@@ -2370,6 +2535,13 @@ function buildReregistrationQueue() {
     'Queue refreshed', newQueueRows.length + ' student(s) awaiting reregistration', '');
 
   ui.alert('✅ Reregistration Queue refreshed: ' + newQueueRows.length + ' student(s) awaiting reregistration.');
+}
+
+function buildSignedFormFilename(studentId, lastName, docType) {
+  var cleanLastName = UtilityScriptLibrary.cleanName(lastName).replace(/\s+/g, ' ');
+  var docLabel = docType === 'agreement' ? 'Agreement' : 'MediaRelease';
+  var dateStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
+  return studentId + '_' + cleanLastName + '_' + docLabel + '_' + dateStr + '.pdf';
 }
 
 function buildTemplateVariables(studentData, billingData, templateType) {
@@ -4463,6 +4635,16 @@ function extractStudentDataFromBillingRow(row, headerMap) {
   };
 }
 
+function fileUnmatchedPage(pageBlob, batchFileName, pageNumber) {
+  var folder = getUnmatchedFolder();
+  var baseFilename = 'UNMATCHED_page' + pageNumber + '_' + batchFileName.replace(/\.pdf$/i, '') + '.pdf';
+  var finalFilename = getUniqueFilename(baseFilename, folder);
+
+  pageBlob.setName(finalFilename);
+  var file = folder.createFile(pageBlob);
+  return file.getId();
+}
+
 function finalizeBillingSheet(billingSheet, context, formStudentIdsMap) {
   var processedReregIds = {};
 
@@ -4478,33 +4660,51 @@ function finalizeBillingSheet(billingSheet, context, formStudentIdsMap) {
   applyBillingConditionalFormatting(billingSheet);
 }
 
-function findBillingRowByStudentId(billingData, studentId, studentIdColIndex) {
-  try {
-    if (!billingData || billingData.length < 2 || studentIdColIndex === -1) {
-      return null;
-    }
-    
-    // Search through billing data (skip header row at index 0)
-    for (var i = 1; i < billingData.length; i++) {
-      var row = billingData[i];
-      var rowStudentId = row[studentIdColIndex];
-      
-      if (rowStudentId === studentId) {
-        UtilityScriptLibrary.debugLog('findBillingRowByStudentId', 'SUCCESS', 'Student found in billing', 
-                     'Student ID: ' + studentId + ', Row: ' + i, '');
-        return i;
-      }
-    }
-    
-    UtilityScriptLibrary.debugLog('findBillingRowByStudentId', 'WARNING', 'Student not found in billing sheet', 
-                 'Student ID: ' + studentId, '');
-    return null;
-    
-  } catch (error) {
-    UtilityScriptLibrary.debugLog('findBillingRowByStudentId', 'ERROR', 'Search failed', 
-                 'Student ID: ' + studentId, error.message);
-    return null;
+function findBillingMatchesByName(billingSheet, firstName, lastName) {
+  var norm = UtilityScriptLibrary.normalizeHeader;
+  var headerMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
+
+  var firstNameCol  = headerMap[norm('Student First Name')];
+  var lastNameCol   = headerMap[norm('Student Last Name')];
+  var studentIdCol  = headerMap[norm('Student ID')];
+  var instrumentCol = headerMap[norm('Instrument')];
+
+  if (!firstNameCol || !lastNameCol || !studentIdCol) {
+    throw new Error('Required columns not found in billing sheet for name matching');
   }
+
+  var data = billingSheet.getDataRange().getValues();
+  var matches = [];
+
+  var targetFirst = UtilityScriptLibrary.cleanName(firstName).toLowerCase();
+  var targetLast  = UtilityScriptLibrary.cleanName(lastName).toLowerCase();
+
+  for (var i = 1; i < data.length; i++) {
+    var rowFirst = UtilityScriptLibrary.cleanName(data[i][firstNameCol - 1]).toLowerCase();
+    var rowLast  = UtilityScriptLibrary.cleanName(data[i][lastNameCol - 1]).toLowerCase();
+
+    if (rowFirst === targetFirst && rowLast === targetLast) {
+      matches.push({
+        studentId:  UtilityScriptLibrary.cleanName(data[i][studentIdCol - 1]),
+        rowNumber:  i + 1,
+        firstName:  data[i][firstNameCol - 1],
+        lastName:   data[i][lastNameCol - 1],
+        instrument: instrumentCol ? data[i][instrumentCol - 1] : ''
+      });
+    }
+  }
+
+  return matches;
+}
+
+function findBillingRowNumberByStudentId_(billingSheet, studentIdCol, studentId) {
+  var data = billingSheet.getRange(2, studentIdCol, billingSheet.getLastRow() - 1, 1).getValues();
+  for (var i = 0; i < data.length; i++) {
+    if (UtilityScriptLibrary.cleanName(data[i][0]) === studentId) {
+      return i + 2;
+    }
+  }
+  return null;
 }
 
 function formatRow(sheet, rowIndex, quantityCols, currencyCols) {
@@ -5061,6 +5261,12 @@ function getActivePrograms() {
   }
 
   return activePrograms;
+}
+
+function getAttachedFolder(docType) {
+  var root = getStudentDocumentsRootFolder();
+  var folderName = docType === 'agreement' ? 'Attached Agreements' : 'Attached Media Releases';
+  return UtilityScriptLibrary.getOrCreateSubfolder(root, folderName);
 }
 
 function getBillingSheet(paymentDate, shouldLog) {
@@ -5724,6 +5930,11 @@ function getFutureSemesterName(currentSemesterName) {
   return null;
 }
 
+function getIncomingFolder() {
+  var root = getStudentDocumentsRootFolder();
+  return UtilityScriptLibrary.getOrCreateSubfolder(root, 'Scanned incoming documents');
+}
+
 function getInvoiceNumber(billingSheet, billingRowIndex) {
   var headerMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
   var norm = UtilityScriptLibrary.normalizeHeader;
@@ -5853,6 +6064,11 @@ function getPreviousSemester(currentSemesterName) {
   }
 }
 
+function getProcessedFolder() {
+  var incoming = getIncomingFolder();
+  return UtilityScriptLibrary.getOrCreateSubfolder(incoming, 'Processed');
+}
+
 function getRateColumnFromMetadata(semesterName) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var metadataSheet = ss.getSheetByName("Semester Metadata");
@@ -5915,6 +6131,72 @@ function getRateMap(context) {
   // Use Utility function to build rate map
   context.rateMap = UtilityScriptLibrary.buildRateMapFromSheet(rateSheet, rateHeaders, bestColIndex);
   return context.rateMap;
+}
+
+function getSignedFormReviewHtml() {
+  return '<!DOCTYPE html><html><head><base target="_top">' +
+    '<style>' +
+    'body { font-family: Arial, sans-serif; font-size: 13px; }' +
+    'table { width: 100%; border-collapse: collapse; }' +
+    'th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #ddd; }' +
+    '.unanswered { background-color: #fff3cd; }' +
+    '#submitBtn { margin-top: 12px; padding: 8px 16px; }' +
+    '#warning { color: #b00; margin-top: 8px; display: none; }' +
+    '</style></head><body>' +
+    '<table id="reviewTable"><thead><tr>' +
+    '<th>Page</th><th>Detected</th><th>Matched To</th><th>Confirm?</th>' +
+    '</tr></thead><tbody></tbody></table>' +
+    '<div id="warning">Please answer Yes or No for every row before submitting.</div>' +
+    '<button id="submitBtn">Process Batch</button>' +
+    '<script>' +
+    'var reviewRows = <?!= reviewRowsJson ?>;' +
+    'var batchFileId = "<?!= batchFileId ?>";' +
+    'var tbody = document.querySelector("#reviewTable tbody");' +
+    'reviewRows.forEach(function(row, idx) {' +
+    '  var tr = document.createElement("tr");' +
+    '  tr.id = "row" + idx;' +
+    '  tr.className = "unanswered";' +
+    '  tr.innerHTML = ' +
+    '    "<td>" + row.pageNumber + "</td>" +' +
+    '    "<td>" + row.formType + "<br>" + row.detectedFirstName + " " + row.detectedLastName + "</td>" +' +
+    '    "<td>" + row.studentId + " — " + row.matchedFirstName + " " + row.matchedLastName + " — " + row.instrument + "</td>" +' +
+    '    "<td>" +' +
+    '      "<label><input type=\\"radio\\" name=\\"decision" + idx + "\\" value=\\"yes\\"> Yes</label> " +' +
+    '      "<label><input type=\\"radio\\" name=\\"decision" + idx + "\\" value=\\"no\\"> No</label>" +' +
+    '    "</td>";' +
+    '  tbody.appendChild(tr);' +
+    '});' +
+    'document.querySelectorAll("input[type=radio]").forEach(function(radio) {' +
+    '  radio.addEventListener("change", function() {' +
+    '    document.getElementById(this.name.replace("decision", "row")).className = "";' +
+    '  });' +
+    '});' +
+    'document.getElementById("submitBtn").addEventListener("click", function() {' +
+    '  var decisions = [];' +
+    '  var allAnswered = true;' +
+    '  reviewRows.forEach(function(row, idx) {' +
+    '    var checked = document.querySelector("input[name=decision" + idx + "]:checked");' +
+    '    if (!checked) { allAnswered = false; return; }' +
+    '    decisions.push({' +
+    '      tempFileId: row.tempFileId,' +
+    '      studentId: row.studentId,' +
+    '      lastName: row.matchedLastName,' +
+    '      formType: row.formType,' +
+    '      confirmed: checked.value === "yes"' +
+    '    });' +
+    '  });' +
+    '  if (!allAnswered) {' +
+    '    document.getElementById("warning").style.display = "block";' +
+    '    return;' +
+    '  }' +
+    '  document.getElementById("submitBtn").disabled = true;' +
+    '  document.getElementById("submitBtn").innerText = "Processing...";' +
+    '  google.script.run' +
+    '    .withSuccessHandler(function() { google.script.host.close(); })' +
+    '    .withFailureHandler(function(err) { alert("Error: " + err.message); })' +
+    '    .submitSignedFormBatch(decisions, batchFileId, "<?!= batchFileName ?>");' +
+    '});' +
+    '</script></body></html>';
 }
 
 function getStudentAgeById(studentId) {
@@ -6035,6 +6317,15 @@ function getStudentDocumentsFolder(monthName) {
   }
 }
 
+function getStudentDocumentsRootFolder() {
+  var mainFolder = UtilityScriptLibrary.getGeneratedDocumentsFolder();
+  var studentFolders = mainFolder.getFoldersByName('Student Documents');
+  if (!studentFolders.hasNext()) {
+    throw new Error('Student Documents folder not found');
+  }
+  return studentFolders.next();
+}
+
 function getStudentRegisteredLessonLength(studentId) {
   try {
     var billingSS = SpreadsheetApp.getActiveSpreadsheet();
@@ -6136,6 +6427,23 @@ function getStudentsNeedingPackets() {
     UtilityScriptLibrary.debugLog("getStudentsNeedingPackets", "ERROR", "Failed to get students", "", error.message);
     throw error;
   }
+}
+
+function getUniqueFilename(baseFilename, folder) {
+  var filename = baseFilename;
+  var namePart = baseFilename.substring(0, baseFilename.lastIndexOf('.pdf'));
+  var counter = 2;
+
+  while (UtilityScriptLibrary.documentAlreadyExists(filename, folder)) {
+    filename = namePart + '-' + counter + '.pdf';
+    counter++;
+  }
+  return filename;
+}
+
+function getUnmatchedFolder() {
+  var root = getStudentDocumentsRootFolder();
+  return UtilityScriptLibrary.getOrCreateSubfolder(root, 'Unmatched');
 }
 
 function handleMonthYearCancel() {
@@ -7520,6 +7828,64 @@ function processPaymentReconciliationForRow(rowData, paymentSheet, rowNumber, st
   }
 }
 
+async function processSignedFormBatch(batchFileId) {
+  var batchFile = DriveApp.getFileById(batchFileId);
+  var billingSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+
+  var pageBlobs = await UtilityScriptLibrary.splitPdfIntoSinglePages(batchFile.getBlob());
+
+  var reviewRows = [];
+
+  for (var i = 0; i < pageBlobs.length; i++) {
+    var text = UtilityScriptLibrary.ocrPdfPage(pageBlobs[i]);
+    var detected = detectFormTypeAndName(text);
+    var matches = findBillingMatchesByName(billingSheet, detected.studentFirstName, detected.studentLastName);
+
+    if (matches.length === 1) {
+      var tempFile = getUnmatchedFolder().createFile(pageBlobs[i]);
+      tempFile.setName('_pending_page' + (i + 1) + '.pdf');
+
+      reviewRows.push({
+        pageNumber: i + 1,
+        tempFileId: tempFile.getId(),
+        formType: detected.formType,
+        detectedFirstName: detected.studentFirstName,
+        detectedLastName: detected.studentLastName,
+        studentId: matches[0].studentId,
+        matchedFirstName: matches[0].firstName,
+        matchedLastName: matches[0].lastName,
+        instrument: matches[0].instrument
+      });
+
+    } else {
+      fileUnmatchedPage(pageBlobs[i], batchFile.getName(), i + 1);
+    }
+  }
+
+  if (reviewRows.length === 0) {
+    UtilityScriptLibrary.showConfirmationDialog(
+      'No matches to confirm',
+      'Every page in this batch went straight to Unmatched (no single-candidate matches found). Batch moved to Processed.',
+      null,
+      { buttonSet: SpreadsheetApp.getUi().ButtonSet.OK, confirmButton: SpreadsheetApp.getUi().Button.OK }
+    );
+    batchFile.moveTo(getProcessedFolder());
+    return;
+  }
+
+  var html = HtmlService.createTemplate(getSignedFormReviewHtml());
+  html.reviewRowsJson = JSON.stringify(reviewRows);
+  html.batchFileId = batchFileId;
+  html.batchFileName = batchFile.getName();
+
+  var htmlOutput = html.evaluate()
+    .setWidth(700)
+    .setHeight(Math.min(600, 120 + reviewRows.length * 60))
+    .setTitle('Confirm Signed Forms — ' + batchFile.getName());
+
+  SpreadsheetApp.getUi().showModalDialog(htmlOutput, 'Confirm Signed Forms');
+}
+
 function processTeacherAttendanceForBilling(teacherSS, targetDate) {
   var studentHoursByMonth = {};
   var studentDataCurrentThrough = {};
@@ -8783,6 +9149,32 @@ function showSimpleDocumentSelectionDialog() {
   }
 }
 
+function startSignedFormIntake() {
+  var incomingFolder = getIncomingFolder();
+  var files = incomingFolder.getFiles();
+
+  var batchFile = null;
+  while (files.hasNext()) {
+    var f = files.next();
+    if (f.getMimeType() === MimeType.PDF) {
+      batchFile = f;
+      break;
+    }
+  }
+
+  if (!batchFile) {
+    UtilityScriptLibrary.showConfirmationDialog(
+      'Nothing to process',
+      'No unprocessed files found in the Incoming folder.',
+      null,
+      { buttonSet: SpreadsheetApp.getUi().ButtonSet.OK, confirmButton: SpreadsheetApp.getUi().Button.OK }
+    );
+    return;
+  }
+
+  processSignedFormBatch(batchFile.getId());
+}
+
 function submitReregistration(data) {
   try {
     UtilityScriptLibrary.debugLog('submitReregistration', 'INFO', 'Starting', 'Parent ID: ' + data.parentId, '');
@@ -8978,6 +9370,41 @@ function submitReregistration(data) {
   }
 }
 
+function submitSignedFormBatch(decisions, batchFileId, batchFileName) {
+  var billingSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  var norm = UtilityScriptLibrary.normalizeHeader;
+  var headerMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
+  var studentIdCol = headerMap[norm('Student ID')];
+
+  for (var i = 0; i < decisions.length; i++) {
+    var d = decisions[i];
+    var pendingFile = DriveApp.getFileById(d.tempFileId);
+
+    if (d.confirmed) {
+      var targetFolder = getAttachedFolder(d.formType);
+      var baseFilename = buildSignedFormFilename(d.studentId, d.lastName, d.formType);
+      var finalFilename = getUniqueFilename(baseFilename, targetFolder);
+
+      pendingFile.setName(finalFilename);
+      pendingFile.moveTo(targetFolder);
+
+      var rowNumber = findBillingRowNumberByStudentId_(billingSheet, studentIdCol, d.studentId);
+      if (rowNumber) {
+        updateBillingIdColumn(billingSheet, rowNumber, d.formType, pendingFile.getId(), finalFilename);
+      }
+
+    } else {
+      var unmatchedFolder = getUnmatchedFolder();
+      var baseUnmatchedName = 'UNMATCHED_' + pendingFile.getName().replace('_pending_', '') + '_' + batchFileName.replace(/\.pdf$/i, '') + '.pdf';
+      var finalUnmatchedName = getUniqueFilename(baseUnmatchedName, unmatchedFolder);
+      pendingFile.setName(finalUnmatchedName);
+      // Already sitting in Unmatched folder from processSignedFormBatch; just needed the proper name
+    }
+  }
+
+  DriveApp.getFileById(batchFileId).moveTo(getProcessedFolder());
+}
+
 function sumPayments(sheet, studentId, startDate, endDate) {
   try {
     UtilityScriptLibrary.debugLog('sumPayments', 'INFO', 'Starting payment sum', 
@@ -9119,6 +9546,22 @@ function updateBillingForStudents(billingSheet, studentHours) {
   }
 
   return updatedCount;
+}
+
+function updateBillingIdColumn(billingSheet, rowNumber, docType, fileId, fileName) {
+  var norm = UtilityScriptLibrary.normalizeHeader;
+  var headerMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
+  var columnName = docType === 'agreement' ? 'Agreement ID' : 'Media Release ID';
+  var col = headerMap[norm(columnName)];
+
+  if (!col) {
+    throw new Error('Column "' + columnName + '" not found in billing sheet');
+  }
+
+  var fileUrl = 'https://drive.google.com/file/d/' + fileId + '/view';
+  var formula = '=HYPERLINK("' + fileUrl + '", "' + fileName.replace(/"/g, '""') + '")';
+
+  billingSheet.getRange(rowNumber, col).setFormula(formula);
 }
 
 function updateCumulativeTracking(billingSheetName) {
