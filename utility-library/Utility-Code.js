@@ -1000,7 +1000,7 @@ function createMonthlyAttendanceSheet(workbook, monthName, rosterData) {
 
 function createSignOffRow(sheet) {
   try {
-    var numCols = 12;
+    var numCols = 11;
 
     // Set entire row to white base
     sheet.getRange(2, 1, 1, numCols).setBackground('#ffffff')
@@ -1013,29 +1013,33 @@ function createSignOffRow(sheet) {
          .setFontWeight('bold')
          .setHorizontalAlignment('right');
 
-    // C2: initials entry cell — plain text, centered, white
+    // C2: initials entry cell — plain text, centered, placeholder value
+    // (gray/italic styling is handled by conditional formatting below)
     sheet.getRange(2, 3)
          .setNumberFormat('@')
          .setHorizontalAlignment('center')
+         .setValue('Initial here when done')
          .clearDataValidations();
 
-    // D2: hint text
-    sheet.getRange(2, 4)
-         .setValue('Initial here when done')
-         .setFontColor('#999999')
-         .setFontStyle('italic')
-         .setFontWeight('normal');
+    var rules = sheet.getConditionalFormatRules();
 
-    // Conditional formatting: yellow when past day 21 and C2 is blank
-    var rule = SpreadsheetApp.newConditionalFormatRule()
-      .whenFormulaSatisfied('=AND(DAY(TODAY())>21,ISBLANK(C2))')
+    // Rule 1 (highest priority): within 8 days of month end and still unsigned -> yellow warning
+    var deadlineRule = SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied('=AND(DAY(TODAY())>DAY(EOMONTH(TODAY(),0))-8,OR(C2="",C2="Initial here when done"))')
       .setBackground('#FFD966')
       .setFontColor('#333333')
-      .setRanges([sheet.getRange(2, 1, 1, numCols)])
+      .setRanges([sheet.getRange(2, 3)])
       .build();
 
-    var rules = sheet.getConditionalFormatRules();
-    rules.push(rule);
+    // Rule 2: blank or still showing placeholder text -> gray italic hint styling
+    var placeholderRule = SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied('=OR(C2="",C2="Initial here when done")')
+      .setFontColor('#999999')
+      .setItalic(true)
+      .setRanges([sheet.getRange(2, 3)])
+      .build();
+
+    rules.push(deadlineRule, placeholderRule);
     sheet.setConditionalFormatRules(rules);
 
     debugLog('createSignOffRow', 'INFO', 'Sign-off row created at row 2', '', '');
