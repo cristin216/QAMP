@@ -1434,6 +1434,35 @@ function applyMultiStudentDiscount(billingSheet) {
   }
 }
 
+function applyRegistrationFeeToRow(newRow, context, currencyCols) {
+  var h    = context.headerMap;
+  var norm = UtilityScriptLibrary.normalizeHeader;
+
+  var regFeeCol = h[norm("Registration Fee")];
+  if (!regFeeCol) return;
+
+  var pkgQtyCol = h[norm("Package Quantity")];
+  if (!pkgQtyCol) return;
+
+  var packageQuantity = parseFloat(newRow[pkgQtyCol - 1]) || 0;
+  if (packageQuantity <= 0) return;
+
+  var feeMap = getRegistrationFeeMap(context);
+  var fee = feeMap[packageQuantity];
+
+  if (fee === undefined) {
+    UtilityScriptLibrary.debugLog('applyRegistrationFeeToRow', 'WARNING',
+      'No active package matches this lesson count — no registration fee applied',
+      'Package Quantity: ' + packageQuantity, '');
+    return;
+  }
+
+  if (fee > 0) {
+    newRow[regFeeCol - 1] = fee;
+    UtilityScriptLibrary.addToCurrencyCols(currencyCols, regFeeCol, "Registration Fee");
+  }
+}
+
 function applyReregistrationOverwrites(billingSheet, reregMap, formStudentIds) {
   try {
     var norm = UtilityScriptLibrary.normalizeHeader;
@@ -1676,6 +1705,7 @@ function buildBillingRowFromForm(formRow, prevRow, context, rowIndex) {
 
   setPastColumnFormulas(newRow, context, rowIndex, currencyCols);
   applyLateFeeToRow(newRow, context, currencyCols, pastBalanceValue);
+  applyRegistrationFeeToRow(newRow, context, currencyCols);
 
   addInvoiceTotalFormula(newRow, context, rowIndex, currencyCols);
   populateCurrentBalanceFormula(newRow, context, rowIndex);
@@ -1730,6 +1760,7 @@ function buildBillingRowFromPrevious(prevRow, context, rowIndex) {
 
   setPastColumnFormulas(newRow, context, rowIndex, currencyCols);
   applyLateFeeToRow(newRow, context, currencyCols, pastBalanceValue);
+  applyRegistrationFeeToRow(newRow, context, currencyCols);
 
   addInvoiceTotalFormula(newRow, context, rowIndex, currencyCols);
   populateCurrentBalanceFormula(newRow, context, rowIndex);
@@ -1737,7 +1768,6 @@ function buildBillingRowFromPrevious(prevRow, context, rowIndex) {
   populateLetterType(newRow, context, 'previous', prevRow);
 
   return { newRow: newRow, quantityCols: quantityCols, currencyCols: currencyCols, studentId: studentId };
-  
 }
 
 function buildCarryoverStudents(previousData, existingStudentIds, context, allStudents, startingRowIndex) {
@@ -1897,6 +1927,11 @@ function buildDynamicAmounts(billingData) {
       amounts.push(UtilityScriptLibrary.formatCurrency(billingData.lateFee));
     }
 
+    // 5. Registration fee
+    if (billingData.registrationFee && billingData.registrationFee > 0) {
+      amounts.push(UtilityScriptLibrary.formatCurrency(billingData.registrationFee));
+    }
+
     UtilityScriptLibrary.debugLog('buildDynamicAmounts', 'INFO', 'Amounts built successfully',
                   'Amount count: ' + amounts.length, '');
 
@@ -2006,6 +2041,11 @@ function buildDynamicLineItems(billingData) {
     // 4. Late fee
     if (billingData.lateFee && billingData.lateFee > 0) {
       lineItems.push('Late Fee');
+    }
+
+    // 5. Registration fee
+    if (billingData.registrationFee && billingData.registrationFee > 0) {
+      lineItems.push('Registration Fee');
     }
 
     UtilityScriptLibrary.debugLog('buildDynamicLineItems', 'INFO', 'Line items built successfully',
@@ -2171,7 +2211,7 @@ function buildInvoiceTotalFormula(headerMap, rowNum) {
     // Add program total columns and static components
     if (normalized.endsWith("total")) {
       parts.push(cellRef);
-    } else if (normalized === "pastbalance" || normalized === "latefee") {
+    } else if (normalized === "pastbalance" || normalized === "latefee" || normalized === "registrationfee") {
       parts.push(cellRef);
     }
   }
@@ -4357,6 +4397,7 @@ function extractBillingDataFromRow(billingRowData, headerMap) {
     lessonLength: billingRowData[headerMap[norm("Lesson Length")] - 1] || '',
     pastBalance: parseFloat(billingRowData[headerMap[norm("Past Balance")] - 1]) || 0,
     lateFee: parseFloat(billingRowData[headerMap[norm("Late Fee")] - 1]) || 0,
+    registrationFee: parseFloat(billingRowData[headerMap[norm("Registration Fee")] - 1]) || 0,
     currentInvoiceTotal: parseFloat(billingRowData[headerMap[norm("Current Invoice Total")] - 1]) || 0,
     paymentReceived: parseFloat(billingRowData[headerMap[norm("Payment Received")] - 1]) || 0,
     credit: parseFloat(billingRowData[headerMap[norm("Credit")] - 1]) || 0,
@@ -6131,6 +6172,56 @@ function getRateMap(context) {
   // Use Utility function to build rate map
   context.rateMap = UtilityScriptLibrary.buildRateMapFromSheet(rateSheet, rateHeaders, bestColIndex);
   return context.rateMap;
+}
+
+function getRegistrationFeeMap(context) {
+  // Check if already cached in context
+  if (context.registrationFeeMap) return context.registrationFeeMap;
+
+  var norm = UtilityScriptLibrary.normalizeHeader;
+  var map = {};
+
+  var packagesSheet = UtilityScriptLibrary.getSheet('packages');
+  if (!packagesSheet) {
+    UtilityScriptLibrary.debugLog('getRegistrationFeeMap', 'WARNING',
+      'Packages sheet not found — no registration fees will be applied', '', '');
+    context.registrationFeeMap = map;
+    return map;
+  }
+
+  var headerMap       = UtilityScriptLibrary.getHeaderMap(packagesSheet);
+  var lessonCountCol  = headerMap[norm('Lesson Count')];
+  var regFeeCol       = headerMap[norm('Registration Fee')];
+  var activeCol       = headerMap[norm('Active')];
+
+  if (!lessonCountCol || !regFeeCol || !activeCol) {
+    UtilityScriptLibrary.debugLog('getRegistrationFeeMap', 'WARNING',
+      'Required columns not found in Packages sheet — no registration fees will be applied', '', '');
+    context.registrationFeeMap = map;
+    return map;
+  }
+
+  var data = packagesSheet.getDataRange().getValues();
+
+  for (var i = 1; i < data.length; i++) {
+    var isActive = data[i][activeCol - 1] === true;
+    if (!isActive) continue;
+
+    var lessonCount = parseFloat(data[i][lessonCountCol - 1]);
+    var fee = parseFloat(data[i][regFeeCol - 1]) || 0;
+
+    if (!isNaN(lessonCount) && lessonCount > 0) {
+      if (map.hasOwnProperty(lessonCount)) {
+        UtilityScriptLibrary.debugLog('getRegistrationFeeMap', 'WARNING',
+          'Duplicate active Lesson Count in Packages sheet — later row overwrites earlier one',
+          'Lesson Count: ' + lessonCount, '');
+      }
+      map[lessonCount] = fee;
+    }
+  }
+
+  context.registrationFeeMap = map;
+  return map;
 }
 
 function getSignedFormReviewHtml() {
