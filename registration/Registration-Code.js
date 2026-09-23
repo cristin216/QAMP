@@ -8,126 +8,11 @@ Documentation: See Registration-Functions.md
 ================================================================================
 */
 
-function backfillParentIds() {
-  var norm = UtilityScriptLibrary.normalizeHeader;
-
-  // === PART 1: Form responses sheet ===
-  var formSS = UtilityScriptLibrary.getWorkbook('formResponses');
-  var formSheet = formSS.getSheetByName('Summer 2026');
-  if (!formSheet) throw new Error('Summer 2026 form sheet not found.');
-
-  var formHeaders = formSheet.getRange(1, 1, 1, formSheet.getLastColumn()).getValues()[0];
-  var formGetCol = function(name) {
-    for (var i = 0; i < formHeaders.length; i++) {
-      if (norm(String(formHeaders[i])) === norm(name)) return i + 1;
-    }
-    return 0;
-  };
-
-  var fStudentIdCol = formGetCol('Student ID');
-  var fParentIdCol  = formGetCol('Parent ID');
-  if (!fStudentIdCol || !fParentIdCol) throw new Error('Student ID or Parent ID column not found in form sheet.');
-
-  // === PART 2: Billing sheet ===
-  var billingSS = UtilityScriptLibrary.getWorkbook('billing');
-  var billingSheet = billingSS.getSheetByName('May 2026');
-  if (!billingSheet) throw new Error('May 2026 billing sheet not found.');
-
-  var billingHeaders = billingSheet.getRange(1, 1, 1, billingSheet.getLastColumn()).getValues()[0];
-  var billGetCol = function(name) {
-    for (var i = 0; i < billingHeaders.length; i++) {
-      if (norm(String(billingHeaders[i])) === norm(name)) return i + 1;
-    }
-    return 0;
-  };
-
-  var bStudentIdCol = billGetCol('Student ID');
-  var bParentIdCol  = billGetCol('Parent ID');
-  if (!bStudentIdCol || !bParentIdCol) throw new Error('Student ID or Parent ID column not found in billing sheet.');
-
-  // === PART 3: Build Student ID -> Parent ID map from contacts ===
-  var contactsSheet = UtilityScriptLibrary.getSheet('students');
-  var contactsData  = contactsSheet.getDataRange().getValues();
-  var contactHeaders = contactsData[0];
-  var cGetCol = function(name) {
-    for (var i = 0; i < contactHeaders.length; i++) {
-      if (norm(String(contactHeaders[i])) === norm(name)) return i + 1;
-    }
-    return 0;
-  };
-
-  var cStudentIdCol = cGetCol('Student ID');
-  var cParentIdCol  = cGetCol('Parent ID');
-  if (!cStudentIdCol || !cParentIdCol) throw new Error('Student ID or Parent ID column not found in contacts sheet.');
-
-  var studentToParent = {};
-  for (var i = 1; i < contactsData.length; i++) {
-    var sid = String(contactsData[i][cStudentIdCol - 1] || '').trim();
-    var pid = String(contactsData[i][cParentIdCol - 1] || '').trim();
-    if (sid && pid) studentToParent[sid] = pid;
-  }
-
-  // === PART 4: Backfill form responses sheet ===
-  var formData = formSheet.getDataRange().getValues();
-  var formUpdated = 0;
-  var formMissed = [];
-  for (var r = 1; r < formData.length; r++) {
-    var sid = String(formData[r][fStudentIdCol - 1] || '').trim();
-    var pid = String(formData[r][fParentIdCol - 1] || '').trim();
-    if (sid && !pid) {
-      var foundPid = studentToParent[sid];
-      if (foundPid) {
-        formSheet.getRange(r + 1, fParentIdCol).setValue(foundPid);
-        formUpdated++;
-      } else {
-        formMissed.push('Row ' + (r + 1) + ': Student ID ' + sid);
-      }
-    }
-  }
-
-  // === PART 5: Backfill billing sheet ===
-  var billingData = billingSheet.getDataRange().getValues();
-  var billUpdated = 0;
-  var billMissed = [];
-  for (var r = 1; r < billingData.length; r++) {
-    var sid = String(billingData[r][bStudentIdCol - 1] || '').trim();
-    var pid = String(billingData[r][bParentIdCol - 1] || '').trim();
-    if (sid && !pid) {
-      var foundPid = studentToParent[sid];
-      if (foundPid) {
-        billingSheet.getRange(r + 1, bParentIdCol).setValue(foundPid);
-        billUpdated++;
-      } else {
-        billMissed.push('Row ' + (r + 1) + ': Student ID ' + sid);
-      }
-    }
-  }
-
-  // === REPORT ===
-  var msg = 'Form sheet: ' + formUpdated + ' updated.\n' +
-            'Billing sheet: ' + billUpdated + ' updated.\n';
-  if (formMissed.length > 0) msg += '\nForm rows with no match:\n' + formMissed.join('\n');
-  if (billMissed.length > 0) msg += '\nBilling rows with no match:\n' + billMissed.join('\n');
-
-  Logger.log(msg);
-  console.log(msg);
-}
-
-function authorizeScript() {
-  // This function just needs to be run once to authorize the script
-  // It accesses the UI which triggers the authorization prompt
-  try {
-    SpreadsheetApp.getUi();
-    SpreadsheetApp.getActiveSpreadsheet();
-    UtilityScriptLibrary.debugLog('authorizeScript', 'SUCCESS', 'Script authorized successfully', '', '');
-  } catch (e) {
-    UtilityScriptLibrary.debugLog('authorizeScript', 'ERROR', 'Authorization error', '', e.message);
-  }
-}
-
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('QAMP Tools')
+    .addItem('Preview Fall 2026 Duplicate Repair', 'previewFall2026DuplicateRepair')
+    .addItem('Execute Fall 2026 Duplicate Repair', 'executeFall2026DuplicateRepair')
     .addItem('Refresh Teacher Dropdown', 'refreshCurrentSemesterTeacherDropdown')
     .addItem('Update Roster Groups', 'updateAllTeacherGroupAssignments')
     .addItem('Process Teacher Assignments', 'processPendingAssignments')
@@ -739,6 +624,18 @@ function applyTeacherDropdownToSheet(sheet) {
   } catch (error) {
     UtilityScriptLibrary.debugLog('applyTeacherDropdownToSheet', 'ERROR', 'Failed to apply teacher dropdown', sheet.getName(), error.message);
     throw error;
+  }
+}
+
+function authorizeScript() {
+  // This function just needs to be run once to authorize the script
+  // It accesses the UI which triggers the authorization prompt
+  try {
+    SpreadsheetApp.getUi();
+    SpreadsheetApp.getActiveSpreadsheet();
+    UtilityScriptLibrary.debugLog('authorizeScript', 'SUCCESS', 'Script authorized successfully', '', '');
+  } catch (e) {
+    UtilityScriptLibrary.debugLog('authorizeScript', 'ERROR', 'Authorization error', '', e.message);
   }
 }
 
