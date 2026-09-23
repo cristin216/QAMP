@@ -818,6 +818,9 @@ function addLateRegistrationsToBillingCycle() {
     if (id) existingIds[id] = true;
   }
 
+  // Update existing rows from current-semester form submissions (new purchases by students already on sheet)
+  var updated = updateExistingRowsFromForm(billingSheet, context, existingIds);
+
   // Append from current semester form sheet
   var added = appendStudentsFromContext(billingSheet, context, existingIds);
 
@@ -838,21 +841,21 @@ function addLateRegistrationsToBillingCycle() {
   context.reregSheet = reregResult.sheet;
 
   if (context.reregMap && Object.keys(context.reregMap).length > 0) {
-    var overwroteIds = applyReregistrationOverwrites(billingSheet, context.reregMap, existingIds);
+    var overwroteIds = applyReregistrationOverwrites(billingSheet, context.reregMap, existingIds, context);
     var appendedIds  = appendReregistrationNewStudents(billingSheet, context.reregMap, overwroteIds, context);
     markReregistrationProcessed(context.reregSheet, appendedIds);
     added += Object.keys(appendedIds).length;
   }
 
-  if (added > 0) {
+  if (added > 0 || updated > 0) {
     applyMultiStudentDiscount(billingSheet);
     applyBillingConditionalFormatting(billingSheet);
   }
 
   UtilityScriptLibrary.debugLog('addLateRegistrationsToBillingCycle', 'INFO',
-    'Late registration complete', 'Added: ' + added, '');
+    'Late registration complete', 'Added: ' + added + ', Updated: ' + updated, '');
 
-  return { added: added };
+  return { added: added, updated: updated };
 }
 
 function addLateRegistrationsUI() {
@@ -860,10 +863,11 @@ function addLateRegistrationsUI() {
     var result = addLateRegistrationsToBillingCycle();
     if (result === null) return;
     var ui = SpreadsheetApp.getUi();
-    if (result.added === 0) {
-      ui.alert('No new registrations found to add to the current billing cycle.');
+    if (result.added === 0 && result.updated === 0) {
+      ui.alert('No new registrations found for the current billing cycle.');
     } else {
-      ui.alert('✅ Added ' + result.added + ' new student(s) to the current billing cycle.');
+      ui.alert('✅ Added ' + result.added + ' new student(s) and updated ' + result.updated +
+        ' existing student(s) in the current billing cycle.');
     }
   } catch (error) {
     UtilityScriptLibrary.debugLog('addLateRegistrationsUI', 'ERROR', 'Failed', '', error.message);
@@ -966,6 +970,7 @@ function appendReregistrationNewStudents(billingSheet, reregMap, overwroteIds, c
 
     var totalCols = billingSheet.getLastColumn();
     var nextRow = billingSheet.getLastRow() + 1;
+    var regFeeCol = headerMap[norm('Registration Fee')];
 
     for (var j = 0; j < toAppend.length; j++) {
       var entry = toAppend[j];
@@ -1009,10 +1014,17 @@ function appendReregistrationNewStudents(billingSheet, reregMap, overwroteIds, c
       setCol('Lesson Price',     entry.lessonPrice);
       setCol('Lesson Hours',     entry.lessonCount * entry.lessonLength / 60);
 
+      // Registration fee (reregistration is a new purchase)
+      var fee = getRegistrationFeeForQuantity(entry.lessonCount, context);
+      if (fee > 0) setCol('Registration Fee', fee);
+
       // Letter type
       setCol('Letter Type', 'returning');
 
       billingSheet.getRange(nextRow, 1, 1, totalCols).setValues([newRow]);
+      if (regFeeCol && fee > 0) {
+        billingSheet.getRange(nextRow, regFeeCol).setNumberFormat('$#,##0.00');
+      }
       appendedIds[entry.studentId] = true;
       populateCumulativeColumnsForRow(billingSheet, nextRow, entry.studentId, context);
 
@@ -1281,23 +1293,7 @@ function applyBillingConditionalFormatting(billingSheet) {
     'Conditional formatting applied', '', '');
 }
 
-function applyLateFeeToRow(newRow, context, currencyCols, pastBalanceValue) {
-  var h    = context.headerMap;
-  var norm = UtilityScriptLibrary.normalizeHeader;
 
-  var lateFeeCol = h[norm("Late Fee")];
-  if (!lateFeeCol) return;
-
-  if ((pastBalanceValue || 0) > 10) {
-    var rateMap       = getRateMap(context);
-    var lateFeeAmount = parseFloat(rateMap["Late Fee"]) || 0;
-
-    if (lateFeeAmount > 0) {
-      newRow[lateFeeCol - 1] = lateFeeAmount;
-      UtilityScriptLibrary.addToCurrencyCols(currencyCols, lateFeeCol, "Late Fee");
-    }
-  }
-}
 
 function applyLetterTypeValidation(billingSheet) {
   try {
@@ -1439,23 +1435,10 @@ function applyRegistrationFeeToRow(newRow, context, currencyCols) {
   var norm = UtilityScriptLibrary.normalizeHeader;
 
   var regFeeCol = h[norm("Registration Fee")];
-  if (!regFeeCol) return;
-
   var pkgQtyCol = h[norm("Package Quantity")];
-  if (!pkgQtyCol) return;
+  if (!regFeeCol || !pkgQtyCol) return;
 
-  var packageQuantity = parseFloat(newRow[pkgQtyCol - 1]) || 0;
-  if (packageQuantity <= 0) return;
-
-  var feeMap = getRegistrationFeeMap(context);
-  var fee = feeMap[packageQuantity];
-
-  if (fee === undefined) {
-    UtilityScriptLibrary.debugLog('applyRegistrationFeeToRow', 'WARNING',
-      'No active package matches this lesson count — no registration fee applied',
-      'Package Quantity: ' + packageQuantity, '');
-    return;
-  }
+  var fee = getRegistrationFeeForQuantity(newRow[pkgQtyCol - 1], context);
 
   if (fee > 0) {
     newRow[regFeeCol - 1] = fee;
@@ -1463,7 +1446,7 @@ function applyRegistrationFeeToRow(newRow, context, currencyCols) {
   }
 }
 
-function applyReregistrationOverwrites(billingSheet, reregMap, formStudentIds) {
+function applyReregistrationOverwrites(billingSheet, reregMap, formStudentIds, context) {
   try {
     var norm = UtilityScriptLibrary.normalizeHeader;
     var headerMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
@@ -1477,8 +1460,10 @@ function applyReregistrationOverwrites(billingSheet, reregMap, formStudentIds) {
     var pkgQtyCol      = headerMap[norm('Package Quantity')];
     var mediaCol       = headerMap[norm('Media Release')];
     var mediaIdCol     = headerMap[norm('Media Release ID')];
+    var regFeeCol      = headerMap[norm('Registration Fee')];
 
     if (!studentIdCol) throw new Error('Student ID column not found in billing sheet');
+    if (!context) throw new Error('Context is required for registration fee lookup');
 
     var data = billingSheet.getDataRange().getValues();
     var processedIds = {};
@@ -1504,6 +1489,15 @@ function applyReregistrationOverwrites(billingSheet, reregMap, formStudentIds) {
       if (lessonHrsCol)   billingSheet.getRange(sheetRow, lessonHrsCol).setValue(
         entry.lessonCount * entry.lessonLength / 60
       );
+
+      // Reregistration is a new purchase: fee is set from the rereg lesson count,
+      // replacing any fee already on the row (e.g. from a same-cycle form submission).
+      if (regFeeCol) {
+        var fee = getRegistrationFeeForQuantity(entry.lessonCount, context);
+        billingSheet.getRange(sheetRow, regFeeCol)
+          .setValue(fee > 0 ? fee : '')
+          .setNumberFormat('$#,##0.00');
+      }
 
       // Media release change requested via reregistration form:
       // clear the on-file flag so the next packet generation includes a fresh blank form.
@@ -1760,7 +1754,8 @@ function buildBillingRowFromPrevious(prevRow, context, rowIndex) {
 
   setPastColumnFormulas(newRow, context, rowIndex, currencyCols);
   applyLateFeeToRow(newRow, context, currencyCols, pastBalanceValue);
-  applyRegistrationFeeToRow(newRow, context, currencyCols);
+  // No registration fee: carryover rows are not new purchases.
+  // A reregistration for this student applies the fee in applyReregistrationOverwrites.
 
   addInvoiceTotalFormula(newRow, context, rowIndex, currencyCols);
   populateCurrentBalanceFormula(newRow, context, rowIndex);
@@ -4690,7 +4685,7 @@ function finalizeBillingSheet(billingSheet, context, formStudentIdsMap) {
   var processedReregIds = {};
 
   if (context.reregMap && Object.keys(context.reregMap).length > 0) {
-    var overwroteIds = applyReregistrationOverwrites(billingSheet, context.reregMap, formStudentIdsMap);
+    var overwroteIds = applyReregistrationOverwrites(billingSheet, context.reregMap, formStudentIdsMap, context);
     var appendedIds  = appendReregistrationNewStudents(billingSheet, context.reregMap, overwroteIds, context);
 
     for (var id in overwroteIds) processedReregIds[id] = true;
@@ -6222,6 +6217,23 @@ function getRegistrationFeeMap(context) {
 
   context.registrationFeeMap = map;
   return map;
+}
+
+function getRegistrationFeeForQuantity(lessonQuantity, context) {
+  var qty = parseFloat(lessonQuantity) || 0;
+  if (qty <= 0) return 0;
+
+  var feeMap = getRegistrationFeeMap(context);
+  var fee = feeMap[qty];
+
+  if (fee === undefined) {
+    UtilityScriptLibrary.debugLog('getRegistrationFeeForQuantity', 'WARNING',
+      'No active package matches this lesson count — no registration fee applied',
+      'Lesson Quantity: ' + qty, '');
+    return 0;
+  }
+
+  return fee;
 }
 
 function getSignedFormReviewHtml() {
@@ -9765,6 +9777,193 @@ function updateDocIdInBillingSheet(rowNumber, docType, fileId, docUrl, billingSh
   } catch (error) {
     UtilityScriptLibrary.debugLog('updateDocIdInBillingSheet', 'ERROR', 'Error updating doc ID',
       'Row: ' + rowNumber + ', DocType: ' + docType, error.message);
+  }
+}
+
+function updateExistingRowsFromForm(billingSheet, context, existingIds) {
+  try {
+    var norm          = UtilityScriptLibrary.normalizeHeader;
+    var get           = context.getColIndex;
+    var formSheet     = context.formSheet;
+    var formData      = formSheet.getDataRange().getValues();
+    var formHeaderMap = UtilityScriptLibrary.getHeaderMap(formSheet);
+
+    var formStudentIdCol = formHeaderMap[norm('Student ID')];
+    var formParentIdCol  = formHeaderMap[norm('Parent ID')];
+    var formTimestampCol = formHeaderMap[norm('Timestamp')];
+    var processedCol     = formHeaderMap[norm('Processed')];
+
+    if (!formStudentIdCol) {
+      UtilityScriptLibrary.debugLog('updateExistingRowsFromForm', 'WARNING',
+        'Student ID column not found on form sheet', context.semesterName, '');
+      return 0;
+    }
+    if (!processedCol) {
+      throw new Error('Processed column not found on form sheet "' + formSheet.getName() +
+        '" — cannot safely update existing rows without it');
+    }
+
+    // Latest unprocessed form row per student already on the billing sheet
+    var updateMap = {};
+    for (var i = 1; i < formData.length; i++) {
+      var row = formData[i];
+      var studentId = String(row[formStudentIdCol - 1] || '').trim();
+      if (!studentId || !existingIds[studentId]) continue;
+      if (row[processedCol - 1] === true) continue;
+
+      var timestamp = formTimestampCol ? row[formTimestampCol - 1] : new Date(0);
+      if (!updateMap[studentId] || timestamp > updateMap[studentId].timestamp) {
+        updateMap[studentId] = { row: row, timestamp: timestamp, sheetRow: i + 1 };
+      }
+    }
+
+    var studentIds = Object.keys(updateMap);
+    if (studentIds.length === 0) {
+      UtilityScriptLibrary.debugLog('updateExistingRowsFromForm', 'INFO',
+        'No existing rows to update', context.semesterName, '');
+      return 0;
+    }
+
+    // Billing sheet columns
+    var headerMap          = UtilityScriptLibrary.getHeaderMap(billingSheet);
+    var studentIdCol       = headerMap[norm('Student ID')];
+    var lessonLenCol       = headerMap[norm('Lesson Length')];
+    var lessonQtyCol       = headerMap[norm('Lesson Quantity')];
+    var pkgQtyCol          = headerMap[norm('Package Quantity')];
+    var regFeeCol          = headerMap[norm('Registration Fee')];
+    var billingParentIdCol = headerMap[norm('Parent ID')];
+    var deliveryPrefCol    = headerMap[norm('Delivery Preference')];
+
+    if (!studentIdCol) throw new Error('Student ID column not found in billing sheet');
+
+    var billingData = billingSheet.getDataRange().getValues();
+    var rowLookup = {};
+    for (var b = 1; b < billingData.length; b++) {
+      var bId = String(billingData[b][studentIdCol - 1] || '').trim();
+      if (bId && rowLookup[bId] === undefined) rowLookup[bId] = b;
+    }
+
+    // Parents lookup (Contacts is source of truth for parent info)
+    var parentsSheet = UtilityScriptLibrary.getSheet('parents');
+    if (!parentsSheet) throw new Error('Parents sheet not found');
+    var parentHdrMap = UtilityScriptLibrary.getHeaderMap(parentsSheet);
+    var parentData   = parentsSheet.getDataRange().getValues();
+    var pIdCol       = parentHdrMap[norm('Parent ID')];
+    if (!pIdCol) throw new Error('Parent ID column not found in Parents sheet');
+
+    var parentLookup = {};
+    for (var p = 1; p < parentData.length; p++) {
+      var pId = String(parentData[p][pIdCol - 1] || '').trim();
+      if (pId) parentLookup[pId] = parentData[p];
+    }
+
+    var contactFieldMap = [
+      { billing: 'Salutation',        contacts: 'Salutation' },
+      { billing: 'Parent First Name', contacts: 'Parent First Name' },
+      { billing: 'Parent Last Name',  contacts: 'Parent Last Name' },
+      { billing: 'Parent Address',    contacts: 'Address Formatted' }
+    ];
+
+    var asText = function(v) {
+      return (v === null || v === undefined) ? '' : String(v).trim();
+    };
+
+    var formDeliveryIdx = get('Delivery Preference');
+    var updatedCount = 0;
+
+    for (var s = 0; s < studentIds.length; s++) {
+      var sid   = studentIds[s];
+      var entry = updateMap[sid];
+      var dataIdx = rowLookup[sid];
+
+      if (dataIdx === undefined) {
+        UtilityScriptLibrary.debugLog('updateExistingRowsFromForm', 'WARNING',
+          'Student in existingIds but row not found on billing sheet — skipping',
+          'Student ID: ' + sid, '');
+        continue;
+      }
+
+      var sheetRow   = dataIdx + 1;
+      var billingRow = billingData[dataIdx];
+      var formRow    = entry.row;
+      var changes    = [];
+
+      // === Lesson purchase fields ===
+      var qty30 = get('Qty30') !== -1 ? formRow[get('Qty30')] : '';
+      var qty45 = get('Qty45') !== -1 ? formRow[get('Qty45')] : '';
+      var qty60 = get('Qty60') !== -1 ? formRow[get('Qty60')] : '';
+
+      var quantities   = UtilityScriptLibrary.parseAllPackageQuantities(qty30, qty45, qty60);
+      var lessonLength = UtilityScriptLibrary.getLessonLengthFromPackages(qty30, qty45, qty60);
+      var fee          = getRegistrationFeeForQuantity(quantities.totalQuantity, context);
+
+      if (lessonLenCol) billingSheet.getRange(sheetRow, lessonLenCol).setValue(lessonLength);
+      if (lessonQtyCol) billingSheet.getRange(sheetRow, lessonQtyCol).setValue(quantities.totalQuantity);
+      if (pkgQtyCol)    billingSheet.getRange(sheetRow, pkgQtyCol).setValue(quantities.totalQuantity);
+      if (regFeeCol) {
+        billingSheet.getRange(sheetRow, regFeeCol)
+          .setValue(fee > 0 ? fee : '')
+          .setNumberFormat('$#,##0.00');
+      }
+
+      // === Parent linkage ===
+      var currentParentId = billingParentIdCol ? asText(billingRow[billingParentIdCol - 1]) : '';
+      var formParentId    = formParentIdCol ? asText(formRow[formParentIdCol - 1]) : '';
+      var parentId        = formParentId || currentParentId;
+
+      if (billingParentIdCol && parentId && parentId !== currentParentId) {
+        billingSheet.getRange(sheetRow, billingParentIdCol).setValue(parentId);
+        changes.push('Parent ID: ' + currentParentId + ' → ' + parentId);
+      }
+
+      // === Parent contact fields from Contacts ===
+      var parentRow = parentId ? parentLookup[parentId] : null;
+      if (!parentRow) {
+        UtilityScriptLibrary.debugLog('updateExistingRowsFromForm', 'WARNING',
+          'Parent not found in Contacts — contact fields not refreshed',
+          'Student ID: ' + sid + ', Parent ID: ' + parentId, '');
+      } else {
+        for (var f = 0; f < contactFieldMap.length; f++) {
+          var m    = contactFieldMap[f];
+          var bCol = headerMap[norm(m.billing)];
+          var cCol = parentHdrMap[norm(m.contacts)];
+          if (!bCol || !cCol) continue;
+
+          var newVal = parentRow[cCol - 1];
+          if (asText(newVal) !== asText(billingRow[bCol - 1])) {
+            billingSheet.getRange(sheetRow, bCol).setValue(newVal);
+            changes.push(m.billing);
+          }
+        }
+      }
+
+      // === Delivery preference from form ===
+      if (deliveryPrefCol && formDeliveryIdx !== -1) {
+        var newPref = formRow[formDeliveryIdx];
+        if (asText(newPref) !== '' && asText(newPref) !== asText(billingRow[deliveryPrefCol - 1])) {
+          billingSheet.getRange(sheetRow, deliveryPrefCol).setValue(newPref);
+          changes.push('Delivery Preference');
+        }
+      }
+
+      formSheet.getRange(entry.sheetRow, processedCol).setValue(true);
+      updatedCount++;
+
+      UtilityScriptLibrary.debugLog('updateExistingRowsFromForm', 'INFO',
+        'Updated existing row from form',
+        'Student ID: ' + sid + ', Row: ' + sheetRow + ', Qty: ' + quantities.totalQuantity +
+        ', Length: ' + lessonLength + ', Fee: ' + fee +
+        ', Contact changes: ' + (changes.length ? changes.join('; ') : 'none'), '');
+    }
+
+    UtilityScriptLibrary.debugLog('updateExistingRowsFromForm', 'INFO',
+      'Update pass complete', 'Count: ' + updatedCount, '');
+
+    return updatedCount;
+
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('updateExistingRowsFromForm', 'ERROR', 'Failed', '', error.message);
+    throw error;
   }
 }
 
