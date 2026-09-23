@@ -1776,16 +1776,12 @@ function findTeacherInRosterLookup(lookupSheet, teacherId) {
 function formatAddress(street, city, zip) {
   var parts = [];
   if (street) parts.push(street);
-  
-  var cityStateZip = [];
-  if (city) cityStateZip.push(city);
-  cityStateZip.push("NY");
-  if (zip) cityStateZip.push(zip);
-  
-  if (cityStateZip.length > 1) {
-    parts.push(cityStateZip.join(', '));
-  }
-  
+
+  var cityState = city ? city + ', NY' : 'NY';
+  var lastLine  = zip ? cityState + ' ' + zip : cityState;
+
+  if (city || zip) parts.push(lastLine);
+
   return parts.join('\n');
 }
 
