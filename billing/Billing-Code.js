@@ -292,6 +292,9 @@ function onOpen() {
     .addItem('Build Re-Registration Queue', 'buildReregistrationQueue')
     .addItem('Send Re-Registration Links', 'sendReregistrationLinks')
     .addItem('Process Signed Forms', 'startSignedFormIntake')
+    .addItem('Audit Lesson Hours', 'auditLessonHoursAgainstBilling')
+    .addItem('Recalculate Hours (Preview)', 'recalculateHoursUI')
+    .addItem('Apply Recalculated Hours', 'applyRecalculatedHoursUI')
     .addToUi();
 }
 
@@ -929,6 +932,56 @@ function addMissingStudentsToAttendanceSheet(sheet, activeStudents) {
   }
 }
 
+function addRosterFolderWorkbooks(workbooks, years) {
+  // Finds each year's roster folder through the Year Metadata sheet (same source Registration uses)
+  var norm = UtilityScriptLibrary.normalizeHeader;
+  var yearSheet = UtilityScriptLibrary.getSheet('yearMetadata');
+  if (!yearSheet) throw new Error('Year Metadata sheet not found');
+
+  var hm          = UtilityScriptLibrary.getHeaderMap(yearSheet);
+  var yearCol     = hm[norm('Year')];
+  var folderIdCol = hm[norm('Roster Folder ID')];
+  if (!yearCol || !folderIdCol) {
+    throw new Error('Year or Roster Folder ID column not found in Year Metadata');
+  }
+
+  var folderIdByYear = {};
+  var data = yearSheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    var y  = String(data[i][yearCol - 1] || '').trim();
+    var id = String(data[i][folderIdCol - 1] || '').trim();
+    if (y && id) folderIdByYear[y] = id;
+  }
+
+  var foundYears = {};
+
+  for (var year in years) {
+    var folderId = folderIdByYear[String(year)];
+    if (!folderId) {
+      UtilityScriptLibrary.debugLog('addRosterFolderWorkbooks', 'WARNING',
+        'No roster folder in Year Metadata', 'Year: ' + year, '');
+      continue;
+    }
+
+    var folder = DriveApp.getFolderById(folderId);
+    foundYears[year] = true;
+
+    var namePattern = new RegExp('^QAMP ' + year + ' ');
+    var files = folder.getFilesByType(MimeType.GOOGLE_SHEETS);
+    while (files.hasNext()) {
+      var file = files.next();
+      var fileName = file.getName();
+      if (!namePattern.test(fileName)) continue;
+      var fileId = file.getId();
+      if (!workbooks[fileId]) {
+        workbooks[fileId] = { fileId: fileId, label: fileName, isActive: false };
+      }
+    }
+  }
+
+  return foundYears;
+}
+
 function appendReregistrationNewStudents(billingSheet, reregMap, overwroteIds, context) {
   try {
     var norm = UtilityScriptLibrary.normalizeHeader;
@@ -1293,7 +1346,54 @@ function applyBillingConditionalFormatting(billingSheet) {
     'Conditional formatting applied', '', '');
 }
 
+function applyHoursChanges(billingSheet, changes) {
+  if (!changes || changes.length === 0) return 0;
 
+  var norm      = UtilityScriptLibrary.normalizeHeader;
+  var headerMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
+  var sheetName = billingSheet.getName();
+  var idCol     = headerMap[norm('Student ID')];
+  var hoursCol  = headerMap[norm('Current Hours Taught This Billing Cycle')];
+  if (!idCol || !hoursCol) {
+    throw new Error('Required billing columns not found in ' + sheetName);
+  }
+
+  var applied = 0;
+  for (var i = 0; i < changes.length; i++) {
+    var c = changes[i];
+    var rowId = String(billingSheet.getRange(c.row, idCol).getValue() || '').trim();
+    if (rowId !== c.studentId) {
+      UtilityScriptLibrary.debugLog('applyHoursChanges', 'WARNING', 'Row moved - change skipped',
+        sheetName + ' row ' + c.row + ': expected ' + c.studentId + ', found ' + rowId, '');
+      continue;
+    }
+    billingSheet.getRange(c.row, hoursCol).setValue(c.newHours > 0 ? c.newHours : '');
+    applied++;
+    UtilityScriptLibrary.debugLog('applyHoursChanges', 'INFO', 'Hours changed',
+      sheetName + ' - ' + c.studentId + ': ' + c.oldHours + ' -> ' + c.newHours, '');
+  }
+
+  if (applied > 0) SpreadsheetApp.flush();
+  return applied;
+}
+
+function applyLateFeeToRow(newRow, context, currencyCols, pastBalanceValue) {
+  var h    = context.headerMap;
+  var norm = UtilityScriptLibrary.normalizeHeader;
+
+  var lateFeeCol = h[norm("Late Fee")];
+  if (!lateFeeCol) return;
+
+  if ((pastBalanceValue || 0) > 10) {
+    var rateMap       = getRateMap(context);
+    var lateFeeAmount = parseFloat(rateMap["Late Fee"]) || 0;
+
+    if (lateFeeAmount > 0) {
+      newRow[lateFeeCol - 1] = lateFeeAmount;
+      UtilityScriptLibrary.addToCurrencyCols(currencyCols, lateFeeCol, "Late Fee");
+    }
+  }
+}
 
 function applyLetterTypeValidation(billingSheet) {
   try {
@@ -1427,6 +1527,118 @@ function applyMultiStudentDiscount(billingSheet) {
   } catch (error) {
     UtilityScriptLibrary.debugLog('applyMultiStudentDiscount', 'ERROR', 'Failed', '', error.message);
     throw error;
+  }
+}
+
+function applyRecalculatedHoursUI() {
+  var ui   = SpreadsheetApp.getUi();
+  var norm = UtilityScriptLibrary.normalizeHeader;
+
+  try {
+    var billingSS = UtilityScriptLibrary.getWorkbook('billing');
+    var preview = billingSS.getSheetByName('Recalculation Preview');
+    if (!preview || preview.getLastRow() < 2) {
+      ui.alert('❌ No recalculation preview found. Run "Recalculate Hours" first.');
+      return;
+    }
+
+    var pMap    = UtilityScriptLibrary.getHeaderMap(preview);
+    var cMonth  = pMap[norm('Month')];
+    var cRow    = pMap[norm('Row')];
+    var cId     = pMap[norm('Student ID')];
+    var cOld    = pMap[norm('Current Hours')];
+    var cNew    = pMap[norm('Recalculated Hours')];
+    var cNote   = pMap[norm('Note')];
+    if (!cMonth || !cRow || !cId || !cOld || !cNew || !cNote) {
+      throw new Error('Recalculation Preview sheet is missing expected columns');
+    }
+
+    var data = preview.getDataRange().getValues();
+    var pending = [];
+    for (var r = 1; r < data.length; r++) {
+      if (String(data[r][cNote - 1]) === 'Will change') pending.push(r);
+    }
+
+    if (pending.length === 0) {
+      ui.alert('No pending changes in the preview.');
+      return;
+    }
+
+    var confirm = ui.alert('Apply Recalculated Hours',
+      'Apply ' + pending.length + ' change(s) from the "Recalculation Preview" sheet?',
+      ui.ButtonSet.YES_NO);
+    if (confirm !== ui.Button.YES) return;
+
+    var sheetCache = {};
+    var applied = 0, skipped = 0;
+    var stamp = UtilityScriptLibrary.formatDateFlexible(new Date(), 'MM/dd/yyyy HH:mm');
+
+    for (var p = 0; p < pending.length; p++) {
+      var r2        = pending[p];
+      var monthName = String(data[r2][cMonth - 1]);
+      var rowNum    = parseInt(data[r2][cRow - 1], 10);
+      var studentId = String(data[r2][cId - 1]).trim();
+      var oldHours  = parseFloat(data[r2][cOld - 1]) || 0;
+      var newHours  = parseFloat(data[r2][cNew - 1]) || 0;
+      var note;
+
+      if (!sheetCache[monthName]) {
+        var sh = billingSS.getSheetByName(monthName);
+        if (sh) {
+          var hm = UtilityScriptLibrary.getHeaderMap(sh);
+          sheetCache[monthName] = {
+            sheet: sh,
+            idCol: hm[norm('Student ID')],
+            hoursCol: hm[norm('Current Hours Taught This Billing Cycle')]
+          };
+        } else {
+          sheetCache[monthName] = { sheet: null };
+        }
+      }
+      var entry = sheetCache[monthName];
+
+      if (!entry.sheet || !entry.idCol || !entry.hoursCol) {
+        note = 'Skipped - billing sheet or columns not found';
+        skipped++;
+      } else {
+        var rowId   = String(entry.sheet.getRange(rowNum, entry.idCol).getValue() || '').trim();
+        var cell    = entry.sheet.getRange(rowNum, entry.hoursCol);
+        var current = parseFloat(cell.getValue()) || 0;
+
+        if (rowId !== studentId) {
+          note = 'Skipped - row now holds ' + (rowId || 'nothing');
+          skipped++;
+        } else if (cell.getFormula()) {
+          note = 'Skipped - cell now contains a formula';
+          skipped++;
+        } else if (Math.abs(current - oldHours) > 0.0001) {
+          note = 'Skipped - value changed since preview (now ' + current + ')';
+          skipped++;
+        } else {
+          cell.setValue(newHours > 0 ? newHours : '');
+          note = 'Applied ' + stamp;
+          applied++;
+          UtilityScriptLibrary.debugLog('applyRecalculatedHoursUI', 'INFO', 'Hours changed',
+            monthName + ' - ' + studentId + ': ' + oldHours + ' -> ' + newHours, '');
+        }
+      }
+
+      preview.getRange(r2 + 1, cNote).setValue(note);
+    }
+
+    SpreadsheetApp.flush();
+
+    UtilityScriptLibrary.debugLog('applyRecalculatedHoursUI', 'SUCCESS', 'Recalculated hours applied',
+      'Applied: ' + applied + ', Skipped: ' + skipped, '');
+
+    ui.alert('Recalculated Hours Applied',
+      'Applied: ' + applied + '\nSkipped: ' + skipped +
+      (skipped > 0 ? '\n\nSee the Note column on the preview sheet for reasons.' : ''),
+      ui.ButtonSet.OK);
+
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('applyRecalculatedHoursUI', 'ERROR', 'Apply failed', '', error.message);
+    ui.alert('❌ Apply failed: ' + error.message);
   }
 }
 
@@ -1570,6 +1782,275 @@ function applyWarningsToTeacherWorkbook(teacherSS, warningStudents, targetDate) 
                                 warningStudents.length + " warning students", "");
 }
 
+function auditLessonHoursAgainstBilling() {
+  var ui = SpreadsheetApp.getUi();
+  var norm = UtilityScriptLibrary.normalizeHeader;
+  var monthNames = UtilityScriptLibrary.getMonthNames();
+  var EPSILON = 0.001;
+
+  try {
+    UtilityScriptLibrary.debugLog('auditLessonHoursAgainstBilling', 'INFO', 'Starting hours audit', '', '');
+
+    // ---- 1. Billing month sheets and the years they cover ----
+    var billingSS = UtilityScriptLibrary.getWorkbook('billing');
+    var monthPattern = new RegExp('^(' + monthNames.join('|') + ') (\\d{4})$');
+    var billingSheets = billingSS.getSheets();
+    var monthKeys = {};
+    var years = {};
+
+    for (var b = 0; b < billingSheets.length; b++) {
+      var match = billingSheets[b].getName().match(monthPattern);
+      if (match) {
+        monthKeys[match[0]] = true;
+        years[match[2]] = true;
+      }
+    }
+
+    // ---- 2. Attendance workbooks: Roster Lookup (any status) plus yearly roster folders ----
+    var sources = getLookupWorkbooks();
+    var workbooks = sources.workbooks;
+    var problems = sources.errors.slice();
+    var coveredYears = {};
+
+    try {
+      coveredYears = addRosterFolderWorkbooks(workbooks, years);
+    } catch (folderError) {
+      problems.push('Roster folders: ' + folderError.message);
+    }
+    for (var yr in years) {
+      if (!coveredYears[yr]) problems.push('No "' + yr + ' Rosters" folder found - ' + yr + ' not audited');
+    }
+
+    var attendance = {};   // monthKey -> studentId -> totals
+    var workbooksRead = 0;
+
+    for (var fid in workbooks) {
+      var wb = workbooks[fid];
+      try {
+        var teacherSS = SpreadsheetApp.openById(wb.fileId);
+        var bookName = teacherSS.getName();
+        var teacherSheets = teacherSS.getSheets();
+        workbooksRead++;
+
+        for (var s = 0; s < teacherSheets.length; s++) {
+          var sheet = teacherSheets[s];
+          if (!UtilityScriptLibrary.isMonthSheet(sheet.getName())) continue;
+
+          var data = sheet.getDataRange().getValues();
+          if (data.length < 2) continue;
+
+          var cols = { studentid: -1, date: -1, length: -1, status: -1, adminreviewdate: -1, invoicedate: -1 };
+          for (var h = 0; h < data[0].length; h++) {
+            var key = norm(data[0][h]);
+            if (cols.hasOwnProperty(key)) cols[key] = h;
+          }
+          if (cols.studentid === -1 || cols.date === -1 || cols.length === -1 ||
+              cols.status === -1 || cols.adminreviewdate === -1) {
+            problems.push(bookName + ' / ' + sheet.getName() + ': missing required columns');
+            continue;
+          }
+
+          var unreadableDates = 0;
+
+          for (var r = 1; r < data.length; r++) {
+            var row        = data[r];
+            var studentId  = String(row[cols.studentid] || '').trim();
+            var lessonDate = row[cols.date];
+            var status     = String(row[cols.status] || '').trim();
+            var hours      = (parseFloat(row[cols.length]) || 0) / 60;
+
+            if (!studentId || studentId.charAt(0) === 'G') continue;
+            if (status !== 'Lesson' && status !== 'No Show') continue;
+            if (hours <= 0) continue;
+
+            if (!UtilityScriptLibrary.isValidDate(lessonDate)) {
+              if (lessonDate !== '' && lessonDate !== null) unreadableDates++;
+              continue;
+            }
+
+            var review  = row[cols.adminreviewdate];
+            var invoice = cols.invoicedate !== -1 ? row[cols.invoicedate] : '';
+            var isReviewed = UtilityScriptLibrary.isValidDate(review) ||
+                             (typeof review === 'string' && review.trim() !== '');
+            var isInvoiced = UtilityScriptLibrary.isValidDate(invoice) ||
+                             (invoice !== '' && invoice !== null && String(invoice).trim() !== '');
+
+            var monthKey = monthNames[lessonDate.getMonth()] + ' ' + lessonDate.getFullYear();
+            monthKeys[monthKey] = true;
+
+            if (!attendance[monthKey]) attendance[monthKey] = {};
+            if (!attendance[monthKey][studentId]) {
+              attendance[monthKey][studentId] = { reviewed: 0, unreviewed: 0, invoicedUnreviewed: 0, teachers: {} };
+            }
+            var entry = attendance[monthKey][studentId];
+            entry.teachers[wb.label] = true;
+
+            if (isReviewed) {
+              entry.reviewed += hours;
+            } else if (isInvoiced) {
+              entry.invoicedUnreviewed += hours;
+            } else {
+              entry.unreviewed += hours;
+            }
+          }
+
+          if (unreadableDates > 0) {
+            problems.push(bookName + ' / ' + sheet.getName() + ': ' + unreadableDates +
+                          ' lesson rows with unreadable dates (not counted)');
+          }
+        }
+      } catch (fileError) {
+        problems.push(wb.label + ': ' + fileError.message);
+      }
+    }
+
+    // ---- 3. Billing values per month per student ----
+    var billing = {}; // monthKey -> { status, students }
+    var mk;
+    for (mk in monthKeys) {
+      var bSheet = billingSS.getSheetByName(mk);
+      if (!bSheet) {
+        billing[mk] = { status: 'missing', students: {} };
+        continue;
+      }
+      var bMap = UtilityScriptLibrary.getHeaderMap(bSheet);
+      var idCol    = bMap[norm('Student ID')];
+      var hrsCol   = bMap[norm('Current Hours Taught This Billing Cycle')];
+      var lastCol  = bMap[norm('Student Last Name')];
+      var firstCol = bMap[norm('Student First Name')];
+      if (!idCol || !hrsCol) {
+        billing[mk] = { status: 'nocolumn', students: {} };
+        continue;
+      }
+
+      billing[mk] = { status: 'ok', students: {} };
+      var bData = bSheet.getDataRange().getValues();
+      for (var br = 1; br < bData.length; br++) {
+        var bId = String(bData[br][idCol - 1] || '').trim();
+        if (!bId || bId.charAt(0) === 'G') continue;
+        if (billing[mk].students[bId]) {
+          billing[mk].students[bId].rows++;
+          continue;
+        }
+        var bName = (lastCol ? String(bData[br][lastCol - 1] || '').trim() : '') +
+                    (firstCol ? ', ' + String(bData[br][firstCol - 1] || '').trim() : '');
+        billing[mk].students[bId] = {
+          hours: parseFloat(bData[br][hrsCol - 1]) || 0,
+          name: bName,
+          rows: 1
+        };
+      }
+    }
+
+    // ---- 4. Compare (only years with roster folder coverage) ----
+    var output = [];
+    for (mk in monthKeys) {
+      var mkYear = mk.split(' ')[1];
+      if (!coveredYears[mkYear]) continue;
+
+      var attMonth  = attendance[mk] || {};
+      var billMonth = billing[mk];
+      var ids = {};
+      var id;
+      for (id in attMonth) ids[id] = true;
+      for (id in billMonth.students) ids[id] = true;
+
+      for (id in ids) {
+        var att  = attMonth[id] || { reviewed: 0, unreviewed: 0, invoicedUnreviewed: 0, teachers: {} };
+        var bill = billMonth.students[id];
+        var billHours = bill ? bill.hours : 0;
+        var diff = att.reviewed - billHours;
+        var notes = [];
+
+        if (billMonth.status === 'missing') {
+          if (att.reviewed > EPSILON || att.unreviewed > EPSILON) notes.push('No billing sheet for this month');
+        } else if (billMonth.status === 'nocolumn') {
+          notes.push('Billing sheet has no Current Hours column');
+        } else if (!bill && att.reviewed > EPSILON) {
+          notes.push('Student not on billing sheet');
+        }
+
+        if (Math.abs(diff) > EPSILON && billMonth.status === 'ok' && bill) {
+          notes.push(diff > 0 ? 'Billing LOWER than attendance' : 'Billing HIGHER than attendance');
+        }
+        if (att.invoicedUnreviewed > EPSILON) notes.push('Teacher-invoiced lessons never reviewed');
+        if (bill && bill.rows > 1) notes.push('Multiple billing rows');
+
+        if (notes.length === 0) continue;
+
+        output.push([
+          mk,
+          id,
+          bill ? bill.name : '',
+          billHours,
+          att.reviewed,
+          diff,
+          att.unreviewed,
+          att.invoicedUnreviewed,
+          Object.keys(att.teachers).join(', '),
+          notes.join('; ')
+        ]);
+      }
+    }
+
+    output.sort(function(a, b) {
+      var am = a[0].split(' '), bm = b[0].split(' ');
+      var aVal = parseInt(am[1], 10) * 12 + monthNames.indexOf(am[0]);
+      var bVal = parseInt(bm[1], 10) * 12 + monthNames.indexOf(bm[0]);
+      if (aVal !== bVal) return aVal - bVal;
+      return a[1] < b[1] ? -1 : (a[1] > b[1] ? 1 : 0);
+    });
+
+    // ---- 5. Write report ----
+    var reportName = 'Hours Audit';
+    var report = billingSS.getSheetByName(reportName);
+    if (report) {
+      report.clear();
+    } else {
+      report = billingSS.insertSheet(reportName);
+    }
+
+    var headers = ['Month', 'Student ID', 'Student Name', 'Billing Hours',
+                   'Reviewed Attendance Hours', 'Difference (Attendance - Billing)',
+                   'Unreviewed Hours', 'Invoiced but Unreviewed Hours', 'Teachers', 'Note'];
+    report.getRange(1, 1, 1, headers.length).setValues([headers])
+          .setFontWeight('bold')
+          .setBackground(UtilityScriptLibrary.STYLES.HEADER.background)
+          .setFontColor(UtilityScriptLibrary.STYLES.HEADER.text)
+          .setWrap(true);
+    report.setFrozenRows(1);
+
+    if (output.length > 0) {
+      report.getRange(2, 1, output.length, headers.length).setValues(output);
+      report.getRange(2, 4, output.length, 5).setNumberFormat('0.00');
+    } else {
+      report.getRange(2, 1).setValue('No mismatches found');
+    }
+
+    if (problems.length > 0) {
+      var problemStart = Math.max(output.length, 1) + 4;
+      report.getRange(problemStart, 1).setValue('Problems reading data').setFontWeight('bold');
+      var problemRows = problems.map(function(p) { return [p]; });
+      report.getRange(problemStart + 1, 1, problemRows.length, 1).setValues(problemRows);
+    }
+
+    UtilityScriptLibrary.debugLog('auditLessonHoursAgainstBilling', 'SUCCESS', 'Hours audit complete',
+      'Workbooks: ' + workbooksRead + ', Mismatches: ' + output.length +
+      ', Problems: ' + problems.length, '');
+
+    ui.alert('Hours Audit Complete',
+      'Teacher workbooks read: ' + workbooksRead + '\n' +
+      'Rows flagged: ' + output.length + '\n' +
+      'Problems reading data: ' + problems.length + '\n\n' +
+      'See the "Hours Audit" sheet.',
+      ui.ButtonSet.OK);
+
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('auditLessonHoursAgainstBilling', 'ERROR', 'Hours audit failed', '', error.message);
+    ui.alert('❌ Hours audit failed: ' + error.message);
+  }
+}
+
 function buildBillingContext(customToday, semesterName, billingCycleName, programConfig) {
   UtilityScriptLibrary.debugLog("buildBillingContext", "INFO", "Building billing context for new cycle",
           "Date: " + UtilityScriptLibrary.formatDateFlexible(customToday, 'M/d/yy') + ", Semester: " + semesterName, "");
@@ -1697,7 +2178,7 @@ function buildBillingRowFromForm(formRow, prevRow, context, rowIndex) {
     }
   }
 
-  setPastColumnFormulas(newRow, context, rowIndex, currencyCols);
+  // Past columns are written per row by populateCumulativeColumnsForRow
   applyLateFeeToRow(newRow, context, currencyCols, pastBalanceValue);
   applyRegistrationFeeToRow(newRow, context, currencyCols);
 
@@ -1752,7 +2233,7 @@ function buildBillingRowFromPrevious(prevRow, context, rowIndex) {
   var prevBalanceCol   = context.prevHeaderMap[norm('Current Balance')];
   var pastBalanceValue = prevBalanceCol ? (UtilityScriptLibrary.safeParseFloat(prevRow[prevBalanceCol - 1]) || 0) : 0;
 
-  setPastColumnFormulas(newRow, context, rowIndex, currencyCols);
+  // Past columns are written per row by populateCumulativeColumnsForRow
   applyLateFeeToRow(newRow, context, currencyCols, pastBalanceValue);
   // No registration fee: carryover rows are not new purchases.
   // A reregistration for this student applies the fee in applyReregistrationOverwrites.
@@ -2353,10 +2834,20 @@ function buildNewStudentMap(currentSemester) {
   }
 }
 
-function buildPastVlookupFormula(prevSheetName, prevColIndex, rowNum) {
-  // Range starts at col C (index 3), so VLOOKUP index = prevColIndex - 2
-  var lookupIndex = prevColIndex - 2;
-  return "=IFNA(VLOOKUP($C" + rowNum + ",'" + prevSheetName + "'!$C:$AZ," + lookupIndex + ",FALSE),\"\")";
+function buildPastLookupFormula(sourceSheetName, sourceHeaderMap, sourceHeader, keyCellA1) {
+  var norm      = UtilityScriptLibrary.normalizeHeader;
+  var colLetter = UtilityScriptLibrary.columnToLetter;
+
+  var idCol    = sourceHeaderMap[norm('Student ID')];
+  var valueCol = sourceHeaderMap[norm(sourceHeader)];
+  if (!idCol || !valueCol) return '';
+
+  var quotedName  = "'" + String(sourceSheetName).replace(/'/g, "''") + "'";
+  var idLetter    = colLetter(idCol);
+  var valueLetter = colLetter(valueCol);
+
+  return '=IFNA(INDEX(' + quotedName + '!$' + valueLetter + ':$' + valueLetter +
+         ', MATCH(' + keyCellA1 + ', ' + quotedName + '!$' + idLetter + ':$' + idLetter + ', 0)), "")';
 }
 
 function buildSignedFormFilename(studentId, lastName, docType) {
@@ -2889,6 +3380,63 @@ function collectPaymentsDataDetailed(paymentsWB, studentIds) {
   }
 
   return paymentsData;
+}
+
+function computeHoursChanges(billingSheet, hoursForMonth, studentFilter) {
+  // studentFilter: { studentId: true } to limit to those students, or null for all students on the sheet
+  var norm      = UtilityScriptLibrary.normalizeHeader;
+  var headerMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
+  var sheetName = billingSheet.getName();
+
+  var idCol    = headerMap[norm('Student ID')];
+  var hoursCol = headerMap[norm('Current Hours Taught This Billing Cycle')];
+  var lastCol  = headerMap[norm('Student Last Name')];
+  var firstCol = headerMap[norm('Student First Name')];
+  if (!idCol || !hoursCol) {
+    throw new Error('Required billing columns not found in ' + sheetName);
+  }
+
+  var result  = { changes: [], missingStudents: [], formulaCells: [] };
+  var onSheet = {};
+  var lastRow = billingSheet.getLastRow();
+
+  if (lastRow >= 2) {
+    var numRows    = lastRow - 1;
+    var ids        = billingSheet.getRange(2, idCol, numRows, 1).getValues();
+    var hoursRange = billingSheet.getRange(2, hoursCol, numRows, 1);
+    var existing   = hoursRange.getValues();
+    var formulas   = hoursRange.getFormulas();
+    var lastNames  = lastCol  ? billingSheet.getRange(2, lastCol, numRows, 1).getValues()  : null;
+    var firstNames = firstCol ? billingSheet.getRange(2, firstCol, numRows, 1).getValues() : null;
+
+    for (var i = 0; i < numRows; i++) {
+      var studentId = String(ids[i][0] || '').trim();
+      if (!studentId) continue;
+      onSheet[studentId] = true;
+      if (studentFilter && !studentFilter[studentId]) continue;
+
+      var newHours = Math.round((hoursForMonth[studentId] || 0) * 10000) / 10000;
+      var oldHours = parseFloat(existing[i][0]) || 0;
+      if (Math.abs(newHours - oldHours) <= 0.0001) continue;
+
+      var name = (lastNames ? String(lastNames[i][0] || '').trim() : '') +
+                 (firstNames ? ', ' + String(firstNames[i][0] || '').trim() : '');
+      var change = { row: i + 2, studentId: studentId, name: name, oldHours: oldHours, newHours: newHours };
+
+      if (formulas[i][0]) {
+        result.formulaCells.push(change);
+      } else {
+        result.changes.push(change);
+      }
+    }
+  }
+
+  for (var sid in hoursForMonth) {
+    if (studentFilter && !studentFilter[sid]) continue;
+    if (!onSheet[sid] && hoursForMonth[sid] > 0) result.missingStudents.push(sid);
+  }
+
+  return result;
 }
 
 function continueAttendanceSheetCreation(targetMonthName, targetYear) {
@@ -5376,51 +5924,6 @@ function getBillingSheet(paymentDate, shouldLog) {
   return null;
 }
 
-function getCumulativeHistory(studentId) {
-  try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var trackingSheet = ss.getSheetByName("Cumulative Tracking");
-
-    if (!trackingSheet) {
-      UtilityScriptLibrary.debugLog("getCumulativeHistory", "WARNING", "Cumulative Tracking sheet not found", "", "");
-      return null;
-    }
-
-    var trackingData      = trackingSheet.getDataRange().getValues();
-    var trackingHeaderMap = UtilityScriptLibrary.getHeaderMap(trackingSheet);
-
-    var norm       = UtilityScriptLibrary.normalizeHeader;
-    var idCol      = trackingHeaderMap[norm("Student ID")];
-    var cycleCol   = trackingHeaderMap[norm("Last Billing Cycle")];
-    var taughtCol  = trackingHeaderMap[norm("Cumulative Hours Taught")];
-    var billedCol  = trackingHeaderMap[norm("Cumulative Hours Billed")];
-    var balanceCol = trackingHeaderMap[norm("Last Balance")];
-
-    if (!idCol || !cycleCol || !taughtCol || !billedCol || !balanceCol) {
-      UtilityScriptLibrary.debugLog("getCumulativeHistory", "ERROR", "Required columns not found in tracking sheet", "", "");
-      return null;
-    }
-
-    for (var i = 1; i < trackingData.length; i++) {
-      if (trackingData[i][idCol - 1] === studentId) {
-        return {
-          lastBillingCycle:       trackingData[i][cycleCol - 1],
-          cumulativeHoursTaught:  parseFloat(trackingData[i][taughtCol - 1])  || 0,
-          cumulativeHoursBilled:  parseFloat(trackingData[i][billedCol - 1])  || 0,
-          lastBalance:            parseFloat(trackingData[i][balanceCol - 1]) || 0
-        };
-      }
-    }
-
-    return null;
-
-  } catch (error) {
-    UtilityScriptLibrary.debugLog("getCumulativeHistory", "ERROR", "Failed to get cumulative history",
-                  "Student ID: " + studentId, error.message);
-    return null;
-  }
-}
-
 function getCurrentBillingCycleDates() {
   try {
     UtilityScriptLibrary.debugLog('getCurrentBillingCycleDates', 'INFO', 'Getting current billing cycle dates', '', '');
@@ -6022,6 +6525,56 @@ function getLessonLengthFromRow(row, get) {
   else return "30";
 }
 
+function getLookupWorkbooks() {
+  // Active teachers only — their Roster URL is their current workbook.
+  // Inactive teachers' workbooks are found through the Rosters/<year> folders instead.
+  var norm = UtilityScriptLibrary.normalizeHeader;
+  var lookupSheet = UtilityScriptLibrary.getSheet('teacherRosterLookup');
+  if (!lookupSheet) throw new Error('Teacher Roster Lookup sheet not found');
+
+  var hm        = UtilityScriptLibrary.getHeaderMap(lookupSheet);
+  var idCol     = hm[norm('Teacher ID')];
+  var urlCol    = hm[norm('Roster URL')];
+  var statusCol = hm[norm('Status')];
+  if (!idCol || !urlCol || !statusCol) {
+    throw new Error('Required teacher columns not found in lookup sheet');
+  }
+
+  var data = lookupSheet.getDataRange().getValues();
+  var result = {
+    workbooks:      {},
+    activeTeachers: [],
+    lookupRowCount: data.length - 1,
+    skipped:        0,
+    errors:         []
+  };
+
+  for (var i = 1; i < data.length; i++) {
+    var teacherId = String(data[i][idCol - 1] || '').trim();
+    var rosterUrl = String(data[i][urlCol - 1] || '').trim();
+    var isActive  = data[i][statusCol - 1] === 'active';
+
+    if (!isActive || !teacherId || !rosterUrl) {
+      result.skipped++;
+      continue;
+    }
+
+    var match = rosterUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+    if (!match) {
+      result.errors.push(teacherId + ': Invalid roster URL');
+      continue;
+    }
+
+    var fileId = match[1];
+    if (!result.workbooks[fileId]) {
+      result.workbooks[fileId] = { fileId: fileId, label: teacherId, isActive: true };
+    }
+    result.activeTeachers.push({ teacherId: teacherId, rosterUrl: rosterUrl, fileId: fileId });
+  }
+
+  return result;
+}
+
 function getNextMonthName(targetDate) {
   var monthNames = UtilityScriptLibrary.getMonthNames();
   
@@ -6031,6 +6584,75 @@ function getNextMonthName(targetDate) {
   }
   
   return monthNames[nextMonth];
+}
+
+function getPastSourceCache(context) {
+  if (context.pastSourceCache) return context.pastSourceCache;
+
+  var norm       = UtilityScriptLibrary.normalizeHeader;
+  var monthNames = UtilityScriptLibrary.getMonthNames();
+  var ss         = UtilityScriptLibrary.getWorkbook('billing');
+
+  var cache = {
+    ss:               ss,
+    prevIds:          {},
+    lastCycleById:    {},
+    headerMaps:       {},
+    targetHeaderMaps: {},
+    sheetExists:      {}
+  };
+
+  if (context.previousSheetName) {
+    var prevSheet = ss.getSheetByName(context.previousSheetName);
+    if (prevSheet) {
+      var prevMap = UtilityScriptLibrary.getHeaderMap(prevSheet);
+      cache.headerMaps[context.previousSheetName] = prevMap;
+      cache.sheetExists[context.previousSheetName] = true;
+
+      var prevIdCol = prevMap[norm('Student ID')];
+      if (prevIdCol && prevSheet.getLastRow() >= 2) {
+        var prevIds = prevSheet.getRange(2, prevIdCol, prevSheet.getLastRow() - 1, 1).getValues();
+        for (var i = 0; i < prevIds.length; i++) {
+          var pid = String(prevIds[i][0] || '').trim();
+          if (pid) cache.prevIds[pid] = true;
+        }
+      }
+    }
+  }
+
+  var trackingSheet = ss.getSheetByName('Cumulative Tracking');
+  if (trackingSheet && trackingSheet.getLastRow() >= 2) {
+    var tMap       = UtilityScriptLibrary.getHeaderMap(trackingSheet);
+    var tIdCol     = tMap[norm('Student ID')];
+    var tCycleCol  = tMap[norm('Last Billing Cycle')];
+    var tTaughtCol = tMap[norm('Cumulative Hours Taught')];
+    var tBilledCol = tMap[norm('Cumulative Hours Billed')];
+    var tBalCol    = tMap[norm('Last Balance')];
+
+    if (tIdCol && tCycleCol) {
+      var tData = trackingSheet.getDataRange().getValues();
+      for (var r = 1; r < tData.length; r++) {
+        var tid = String(tData[r][tIdCol - 1] || '').trim();
+        if (!tid) continue;
+
+        // Sheet names like "October 2026" can be auto-converted to dates when stored
+        var rawCycle = tData[r][tCycleCol - 1];
+        var cycleName = UtilityScriptLibrary.isValidDate(rawCycle)
+          ? monthNames[rawCycle.getMonth()] + ' ' + rawCycle.getFullYear()
+          : String(rawCycle || '').trim();
+
+        cache.lastCycleById[tid] = {
+          cycle:   cycleName,
+          taught:  tTaughtCol ? (parseFloat(tData[r][tTaughtCol - 1]) || 0) : 0,
+          billed:  tBilledCol ? (parseFloat(tData[r][tBilledCol - 1]) || 0) : 0,
+          balance: tBalCol    ? (parseFloat(tData[r][tBalCol - 1])    || 0) : 0
+        };
+      }
+    }
+  }
+
+  context.pastSourceCache = cache;
+  return cache;
 }
 
 function getPreviousSemester(currentSemesterName) {
@@ -7073,6 +7695,15 @@ function markStudentsInactive() {
   }).data;
 }
 
+function mergeStudentHoursByMonth(target, source) {
+  for (var monthName in source) {
+    if (!target[monthName]) target[monthName] = {};
+    for (var studentId in source[monthName]) {
+      target[monthName][studentId] = (target[monthName][studentId] || 0) + source[monthName][studentId];
+    }
+  }
+}
+
 function migrateTeacherDisplayNamesToIds() {
   var ss         = SpreadsheetApp.getActiveSpreadsheet();
   var norm       = UtilityScriptLibrary.normalizeHeader;
@@ -7178,6 +7809,15 @@ function migrateTeacherDisplayNamesToIds() {
   );
 }
 
+function openAttendanceWorkbookForYears(wb, years) {
+  var ss = SpreadsheetApp.openById(wb.fileId);
+  if (!wb.isActive) {
+    var nameMatch = ss.getName().match(/^QAMP (\d{4}) /);
+    if (nameMatch && !years[nameMatch[1]]) return null;
+  }
+  return ss;
+}
+
 function parseMonthYear(monthStr) {
   var parts = monthStr.split(' ');
   var month = parts[0];
@@ -7230,7 +7870,6 @@ function populateCumulativeColumnsForRow(billingSheet, rowIndex, studentId, cont
 
     var pastCumTaughtCol    = headerMap[norm('Past Cumulative Hours Taught')];
     var pastCumBilledCol    = headerMap[norm('Past Cumulative Hours Billed')];
-    var pastBalanceCol      = headerMap[norm('Past Balance')];
     var curTaughtCycleCol   = headerMap[norm('Current Hours Taught This Billing Cycle')];
     var lessonHoursCol      = headerMap[norm('Lesson Hours')];
     var currentCumTaughtCol = headerMap[norm('Current Cumulative Hours Taught')];
@@ -7239,60 +7878,9 @@ function populateCumulativeColumnsForRow(billingSheet, rowIndex, studentId, cont
     var lessonLengthCol     = headerMap[norm('Lesson Length')];
     var lessonsRemainingCol = headerMap[norm('Lessons Remaining')];
 
-    var prevSheetName = context.previousSheetName;
-    var prevHeaderMap = context.prevHeaderMap || {};
-    var source = 'blank';
+    // All five past columns, as lookups to the student's most recent billing sheet
+    var source = writePastColumnFormulas(billingSheet, rowIndex, studentId, context);
 
-    // Check if student exists in previous billing sheet
-    var foundInPrev = false;
-    if (prevSheetName) {
-      var ss        = SpreadsheetApp.getActiveSpreadsheet();
-      var prevSheet = ss.getSheetByName(prevSheetName);
-      if (prevSheet) {
-        var prevHdrMap = UtilityScriptLibrary.getHeaderMap(prevSheet);
-        var prevSidCol = prevHdrMap[UtilityScriptLibrary.normalizeHeader('Student ID')];
-        if (prevSidCol) {
-          var prevData = prevSheet.getDataRange().getValues();
-          for (var i = 1; i < prevData.length; i++) {
-            if (String(prevData[i][prevSidCol - 1] || '').trim() === studentId) {
-              foundInPrev = true;
-              break;
-            }
-          }
-        }
-      }
-    }
-
-    if (foundInPrev) {
-      source = 'vlookup';
-      var prevTaughtIdx  = prevHeaderMap[norm('Current Cumulative Hours Taught')];
-      var prevBilledIdx  = prevHeaderMap[norm('Current Cumulative Hours Billed')];
-      var prevBalanceIdx = prevHeaderMap[norm('Current Balance')];
-
-      if (pastCumTaughtCol && prevTaughtIdx)
-        billingSheet.getRange(rowIndex, pastCumTaughtCol)
-          .setFormula(buildPastVlookupFormula(prevSheetName, prevTaughtIdx, rowIndex))
-          .setNumberFormat('0.00');
-      if (pastCumBilledCol && prevBilledIdx)
-        billingSheet.getRange(rowIndex, pastCumBilledCol)
-          .setFormula(buildPastVlookupFormula(prevSheetName, prevBilledIdx, rowIndex))
-          .setNumberFormat('0.00');
-      if (pastBalanceCol && prevBalanceIdx)
-        billingSheet.getRange(rowIndex, pastBalanceCol)
-          .setFormula(buildPastVlookupFormula(prevSheetName, prevBalanceIdx, rowIndex));
-
-    } else {
-      var history = getCumulativeHistory(studentId);
-      if (history) {
-        source = 'tracking';
-        if (pastCumTaughtCol) billingSheet.getRange(rowIndex, pastCumTaughtCol).setValue(history.cumulativeHoursTaught).setNumberFormat('0.00');
-        if (pastCumBilledCol) billingSheet.getRange(rowIndex, pastCumBilledCol).setValue(history.cumulativeHoursBilled).setNumberFormat('0.00');
-        if (pastBalanceCol)   billingSheet.getRange(rowIndex, pastBalanceCol).setValue(history.lastBalance);
-      }
-      // else: leave blank
-    }
-
-    // Always write sum formulas
     if (currentCumTaughtCol && pastCumTaughtCol && curTaughtCycleCol)
       billingSheet.getRange(rowIndex, currentCumTaughtCol)
         .setFormula('=' + colLetter(pastCumTaughtCol) + rowIndex + '+' + colLetter(curTaughtCycleCol) + rowIndex)
@@ -7989,10 +8577,13 @@ async function processSignedFormBatch(batchFileId) {
   SpreadsheetApp.getUi().showModalDialog(htmlOutput, 'Confirm Signed Forms');
 }
 
-function processTeacherAttendanceForBilling(teacherSS, targetDate) {
+function processTeacherAttendanceForBilling(teacherSS, targetDate, markableMonths) {
+  // markableMonths: { 'October 2026': true, ... } — months with a billing sheet where lessons
+  // may be marked as reviewed. Pass null to only collect hours (no marking).
   var studentHoursByMonth = {};
+  var touchedByMonth = {};
   var studentDataCurrentThrough = {};
-  var stats = { lessonsMarked: 0, lessonsCounted: 0 };
+  var stats = { lessonsMarked: 0, lessonsCounted: 0, lessonsDeferred: 0 };
   var monthNames = UtilityScriptLibrary.getMonthNames();
   var sheets = teacherSS.getSheets();
 
@@ -8006,73 +8597,80 @@ function processTeacherAttendanceForBilling(teacherSS, targetDate) {
     if (data.length < 3) continue; // header + sign-off + at least one lesson row
 
     // Read sign-off initials from C2 (data[1][2])
-  var signOff = String(data[1][2] || '').trim();
-  var sheetConfirmedDate = null;
-  if (signOff !== '') {
-    var sheetMonthIdx = monthNames.indexOf(sheetName.trim());
-    if (sheetMonthIdx !== -1) {
-      // Sheet named "April" etc. — infer year from target date
-      var targetYear = targetDate.getFullYear();
-      var targetMonth = targetDate.getMonth();
-      // If sheet month is after target month, it must be previous year
-      var sheetYear = (sheetMonthIdx > targetMonth) ? targetYear - 1 : targetYear;
-      sheetConfirmedDate = new Date(sheetYear, sheetMonthIdx + 1, 0); // last day of month
+    var signOff = String(data[1][2] || '').trim();
+    var sheetConfirmedDate = null;
+    if (signOff !== '') {
+      var sheetMonthIdx = monthNames.indexOf(sheetName.trim());
+      if (sheetMonthIdx !== -1) {
+        // Sheet named "April" etc. — infer year from target date
+        var targetYear = targetDate.getFullYear();
+        var targetMonth = targetDate.getMonth();
+        // If sheet month is after target month, it must be previous year
+        var sheetYear = (sheetMonthIdx > targetMonth) ? targetYear - 1 : targetYear;
+        sheetConfirmedDate = new Date(sheetYear, sheetMonthIdx + 1, 0); // last day of month
+      }
     }
-  }
- 
 
     var headers = data[0];
-    var studentIdCol = -1, dateCol = -1, lengthCol = -1, statusCol = -1,
-        adminReviewCol = -1, invoiceDateCol = -1;
+    var studentIdCol = -1, dateCol = -1, lengthCol = -1, statusCol = -1, adminReviewCol = -1;
 
     for (var i = 0; i < headers.length; i++) {
       var normalized = UtilityScriptLibrary.normalizeHeader(headers[i]);
-      if      (normalized === 'studentid')       studentIdCol    = i;
-      else if (normalized === 'date')            dateCol         = i;
-      else if (normalized === 'length')          lengthCol       = i;
-      else if (normalized === 'status')          statusCol       = i;
-      else if (normalized === 'adminreviewdate') adminReviewCol  = i;
-      else if (normalized === 'invoicedate')     invoiceDateCol  = i;
+      if      (normalized === 'studentid')       studentIdCol   = i;
+      else if (normalized === 'date')            dateCol        = i;
+      else if (normalized === 'length')          lengthCol      = i;
+      else if (normalized === 'status')          statusCol      = i;
+      else if (normalized === 'adminreviewdate') adminReviewCol = i;
     }
 
     if (studentIdCol === -1 || dateCol === -1 || lengthCol === -1 ||
         statusCol === -1 || adminReviewCol === -1) {
       UtilityScriptLibrary.debugLog('processTeacherAttendanceForBilling', 'WARNING',
-        'Missing required columns', sheetName, '');
+        'Missing required columns', teacherSS.getName() + ' / ' + sheetName, '');
       continue;
     }
 
     for (var rowIdx = 2; rowIdx < data.length; rowIdx++) { // start at 2 to skip sign-off row
-      var row = data[rowIdx];
-      var studentId       = row[studentIdCol];
+      var row             = data[rowIdx];
+      var studentId       = String(row[studentIdCol] || '').trim();
       var lessonDate      = row[dateCol];
       var length          = parseFloat(row[lengthCol]) || 0;
       var status          = row[statusCol];
       var adminReviewDate = row[adminReviewCol];
-      var invoiceDate     = invoiceDateCol !== -1 ? row[invoiceDateCol] : '';
 
-      if (!studentId || !lessonDate || !(lessonDate instanceof Date)) continue;
-      if (lessonDate > targetDate) continue;
+      if (!studentId || !UtilityScriptLibrary.isValidDate(lessonDate)) continue;
 
-      var billingMonthName = monthNames[lessonDate.getMonth()] + ' ' + lessonDate.getFullYear();
+      var billingMonthName   = monthNames[lessonDate.getMonth()] + ' ' + lessonDate.getFullYear();
+      var isOnOrBeforeTarget = lessonDate <= targetDate;
 
+      var hasAdminReview = UtilityScriptLibrary.isValidDate(adminReviewDate) ||
+                           (typeof adminReviewDate === 'string' && adminReviewDate.trim() !== '');
+
+      // Target date limits which lessons get marked; it never limits counting
       var isReconcilable = (
-        (status === 'Lesson' || status === 'No Show' || status === 'No Lesson') &&
-        (!adminReviewDate || adminReviewDate === '')
+        markableMonths &&
+        !hasAdminReview &&
+        isOnOrBeforeTarget &&
+        (status === 'Lesson' || status === 'No Show' || status === 'No Lesson')
       );
 
       if (isReconcilable) {
-        sheet.getRange(rowIdx + 1, adminReviewCol + 1).setValue(targetDate);
-        adminReviewDate = targetDate;
-        stats.lessonsMarked++;
+        if (markableMonths[billingMonthName]) {
+          sheet.getRange(rowIdx + 1, adminReviewCol + 1).setValue(targetDate);
+          hasAdminReview = true;
+          stats.lessonsMarked++;
+          if (!touchedByMonth[billingMonthName]) touchedByMonth[billingMonthName] = {};
+          touchedByMonth[billingMonthName][studentId] = true;
+        } else {
+          // No billing sheet for this month yet — leave unreviewed so a later run picks it up
+          stats.lessonsDeferred++;
+        }
       }
 
-      var hasAdminReview = (adminReviewDate instanceof Date) ||
-                           (typeof adminReviewDate === 'string' && adminReviewDate !== '');
+      // Every reviewed lesson counts toward the month it was taught
       var shouldSum = (
         hasAdminReview &&
-        (!invoiceDate || invoiceDate === '') &&
-        status !== 'No Lesson' &&
+        (status === 'Lesson' || status === 'No Show') &&
         length > 0
       );
 
@@ -8080,15 +8678,13 @@ function processTeacherAttendanceForBilling(teacherSS, targetDate) {
         if (!studentHoursByMonth[billingMonthName]) {
           studentHoursByMonth[billingMonthName] = {};
         }
-        if (!studentHoursByMonth[billingMonthName][studentId]) {
-          studentHoursByMonth[billingMonthName][studentId] = 0;
-        }
-        studentHoursByMonth[billingMonthName][studentId] += length / 60;
+        studentHoursByMonth[billingMonthName][studentId] =
+          (studentHoursByMonth[billingMonthName][studentId] || 0) + length / 60;
         stats.lessonsCounted++;
       }
 
       // Track last reconciliation date from signed-off sheets
-      if (sheetConfirmedDate) {
+      if (sheetConfirmedDate && isOnOrBeforeTarget) {
         if (!studentDataCurrentThrough[studentId] ||
             sheetConfirmedDate > studentDataCurrentThrough[studentId]) {
           studentDataCurrentThrough[studentId] = sheetConfirmedDate;
@@ -8099,10 +8695,12 @@ function processTeacherAttendanceForBilling(teacherSS, targetDate) {
 
   UtilityScriptLibrary.debugLog('processTeacherAttendanceForBilling', 'INFO',
     'Processed attendance',
-    'Marked: ' + stats.lessonsMarked + ', Counted: ' + stats.lessonsCounted, '');
+    teacherSS.getName() + ' - Marked: ' + stats.lessonsMarked + ', Counted: ' + stats.lessonsCounted +
+    ', Deferred (no billing sheet): ' + stats.lessonsDeferred, '');
 
   return {
     studentHoursByMonth: studentHoursByMonth,
+    touchedByMonth: touchedByMonth,
     studentDataCurrentThrough: studentDataCurrentThrough,
     stats: stats
   };
@@ -8161,41 +8759,6 @@ function processTeacherForNewAttendance(teacherId, rosterUrl, targetMonthName, t
       'Error processing teacher', teacherId, error.message);
     throw error;
   }
-}
-
-function processTeacherReconciliation(teacherId, rosterUrl, currentBillingSheet, targetDate, currentSemester) {
-  var stats = { lessonsCollected: 0, studentsUpdated: 0, warningsApplied: 0 };
-
-  var fileIdMatch = rosterUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-  if (!fileIdMatch) throw new Error('Invalid roster URL format');
-
-  var teacherSS = SpreadsheetApp.openById(fileIdMatch[1]);
-
-  var attendanceResult = processTeacherAttendanceForBilling(teacherSS, targetDate);
-  stats.lessonsCollected = attendanceResult.stats.lessonsMarked;
-
-  var billingSS = UtilityScriptLibrary.getWorkbook('billing');
-  for (var monthName in attendanceResult.studentHoursByMonth) {
-    var monthBillingSheet = billingSS.getSheetByName(monthName);
-    if (!monthBillingSheet) {
-      UtilityScriptLibrary.debugLog('processTeacherReconciliation', 'WARNING',
-        'Billing sheet not found for month', monthName, '');
-      continue;
-    }
-    updateBillingForStudents(monthBillingSheet, attendanceResult.studentHoursByMonth[monthName]);
-    UtilityScriptLibrary.debugLog('processTeacherReconciliation', 'INFO',
-      'Wrote hours to billing sheet', monthName, '');
-  }
-
-  var studentBalances = getStudentBalancesFromBilling(currentBillingSheet, teacherId);
-  updateTeacherRosterBalances(teacherSS, studentBalances, currentSemester);
-  stats.studentsUpdated = studentBalances.length;
-
-  var warningStudents = identifyWarningStudents(studentBalances);
-  applyWarningsToTeacherWorkbook(teacherSS, warningStudents, targetDate);
-  stats.warningsApplied = warningStudents.length;
-
-  return stats;
 }
 
 function promptForBillingCycleName(customToday) {
@@ -8421,6 +8984,192 @@ function protectPreviousBillingCycle() {
     UtilityScriptLibrary.debugLog("protectPreviousBillingCycle", "ERROR", "Failed to protect previous billing cycle", 
                   "", error.message);
     throw error;
+  }
+}
+
+function recalculateHoursUI() {
+  var ui = SpreadsheetApp.getUi();
+  var monthNames = UtilityScriptLibrary.getMonthNames();
+
+  var parseMonth = function(text) {
+    var match = String(text || '').trim().match(/^(\d{1,2})\/(\d{4})$/);
+    if (!match) return null;
+    var month = parseInt(match[1], 10) - 1;
+    if (month < 0 || month > 11) return null;
+    return { year: parseInt(match[2], 10), month: month };
+  };
+
+  try {
+    var startResp = ui.prompt('Recalculate Hours', 'Start month (MM/YYYY):', ui.ButtonSet.OK_CANCEL);
+    if (startResp.getSelectedButton() !== ui.Button.OK) return;
+    var start = parseMonth(startResp.getResponseText());
+    if (!start) {
+      ui.alert('❌ Invalid start month. Use MM/YYYY.');
+      return;
+    }
+
+    var endResp = ui.prompt('Recalculate Hours',
+      'End month (MM/YYYY).\nLeave blank for the current month.', ui.ButtonSet.OK_CANCEL);
+    if (endResp.getSelectedButton() !== ui.Button.OK) return;
+    var today = new Date();
+    var endText = endResp.getResponseText().trim();
+    var end = endText === '' ? { year: today.getFullYear(), month: today.getMonth() } : parseMonth(endText);
+    if (!end) {
+      ui.alert('❌ Invalid end month. Use MM/YYYY.');
+      return;
+    }
+
+    var startVal = start.year * 12 + start.month;
+    var endVal   = end.year * 12 + end.month;
+    if (endVal < startVal) {
+      ui.alert('❌ End month is before start month.');
+      return;
+    }
+
+    var idsResp = ui.prompt('Recalculate Hours',
+      'Student IDs, separated by commas.\nLeave blank for all students.', ui.ButtonSet.OK_CANCEL);
+    if (idsResp.getSelectedButton() !== ui.Button.OK) return;
+    var studentFilter = null;
+    var idsText = idsResp.getResponseText().trim();
+    if (idsText !== '') {
+      studentFilter = {};
+      var parts = idsText.split(',');
+      for (var p = 0; p < parts.length; p++) {
+        var id = parts[p].trim().toUpperCase();
+        if (id) studentFilter[id] = true;
+      }
+    }
+
+    var months = [];
+    var years = {};
+    for (var v = startVal; v <= endVal; v++) {
+      var y = Math.floor(v / 12);
+      months.push(monthNames[v % 12] + ' ' + y);
+      years[String(y)] = true;
+    }
+
+    UtilityScriptLibrary.debugLog('recalculateHoursUI', 'INFO', 'Building recalculation preview',
+      months[0] + ' to ' + months[months.length - 1] +
+      ', Students: ' + (studentFilter ? Object.keys(studentFilter).join(', ') : 'all'), '');
+
+    // Collect reviewed hours from every workbook for the years in range
+    var sources = getLookupWorkbooks();
+    var workbooks = sources.workbooks;
+    var readFailures = [];
+
+    try {
+      var foundYears = addRosterFolderWorkbooks(workbooks, years);
+      for (var yr in years) {
+        if (!foundYears[yr]) readFailures.push('No "' + yr + ' Rosters" folder found');
+      }
+    } catch (folderError) {
+      readFailures.push('Roster folders: ' + folderError.message);
+    }
+
+    var hoursByMonth = {};
+    for (var fid in workbooks) {
+      var wb = workbooks[fid];
+      try {
+        var wbSS = openAttendanceWorkbookForYears(wb, years);
+        if (!wbSS) continue;
+        var result = processTeacherAttendanceForBilling(wbSS, today, null);
+        mergeStudentHoursByMonth(hoursByMonth, result.studentHoursByMonth);
+      } catch (readError) {
+        readFailures.push(wb.label + ': ' + readError.message);
+      }
+    }
+
+    if (readFailures.length > 0) {
+      UtilityScriptLibrary.debugLog('recalculateHoursUI', 'ERROR', 'Recalculation stopped',
+        readFailures.join('; '), '');
+      ui.alert('❌ Recalculation stopped - could not read:\n\n' + readFailures.join('\n'));
+      return;
+    }
+
+    // Build preview
+    var billingSS = UtilityScriptLibrary.getWorkbook('billing');
+    var previewRows = [];
+    var changeCount = 0;
+
+    for (var m = 0; m < months.length; m++) {
+      var monthName  = months[m];
+      var monthHours = hoursByMonth[monthName] || {};
+      var monthSheet = billingSS.getSheetByName(monthName);
+
+      if (!monthSheet) {
+        for (var sid in monthHours) {
+          if (studentFilter && !studentFilter[sid]) continue;
+          if (monthHours[sid] > 0) {
+            previewRows.push([monthName, '', sid, '', '', monthHours[sid], '',
+                              'No billing sheet for this month - not changed']);
+          }
+        }
+        continue;
+      }
+
+      var cs = computeHoursChanges(monthSheet, monthHours, studentFilter);
+      var c, i;
+      for (i = 0; i < cs.changes.length; i++) {
+        c = cs.changes[i];
+        previewRows.push([monthName, c.row, c.studentId, c.name, c.oldHours, c.newHours,
+                          c.newHours - c.oldHours, 'Will change']);
+        changeCount++;
+      }
+      for (i = 0; i < cs.formulaCells.length; i++) {
+        c = cs.formulaCells[i];
+        previewRows.push([monthName, c.row, c.studentId, c.name, c.oldHours, c.newHours,
+                          c.newHours - c.oldHours, 'Cell contains a formula - not changed']);
+      }
+      for (i = 0; i < cs.missingStudents.length; i++) {
+        var missingId = cs.missingStudents[i];
+        previewRows.push([monthName, '', missingId, '', '', monthHours[missingId], '',
+                          'Has lessons but not on billing sheet - not changed']);
+      }
+    }
+
+    var previewName = 'Recalculation Preview';
+    var preview = billingSS.getSheetByName(previewName);
+    if (preview) {
+      preview.clear();
+    } else {
+      preview = billingSS.insertSheet(previewName);
+    }
+
+    var headers = ['Month', 'Row', 'Student ID', 'Student Name', 'Current Hours',
+                   'Recalculated Hours', 'Difference', 'Note'];
+    preview.getRange(1, 1, 1, headers.length).setValues([headers])
+           .setFontWeight('bold')
+           .setBackground(UtilityScriptLibrary.STYLES.HEADER.background)
+           .setFontColor(UtilityScriptLibrary.STYLES.HEADER.text)
+           .setWrap(true);
+    preview.setFrozenRows(1);
+
+    if (previewRows.length > 0) {
+      preview.getRange(2, 1, previewRows.length, headers.length).setValues(previewRows);
+      preview.getRange(2, 5, previewRows.length, 3).setNumberFormat('0.00');
+    } else {
+      preview.getRange(2, 1).setValue('No differences found');
+    }
+
+    var infoRow = Math.max(previewRows.length, 1) + 3;
+    preview.getRange(infoRow, 1, 3, 2).setValues([
+      ['Range:', months[0] + ' to ' + months[months.length - 1]],
+      ['Students:', studentFilter ? Object.keys(studentFilter).join(', ') : 'All'],
+      ['Generated:', new Date()]
+    ]);
+
+    UtilityScriptLibrary.debugLog('recalculateHoursUI', 'SUCCESS', 'Recalculation preview built',
+      'Changes: ' + changeCount + ', Rows: ' + previewRows.length, '');
+
+    ui.alert('Recalculation Preview Ready',
+      changeCount + ' change(s) found.\n\n' +
+      'Review the "Recalculation Preview" sheet. Nothing has been changed yet.\n\n' +
+      'To apply, run "Apply Recalculated Hours".',
+      ui.ButtonSet.OK);
+
+  } catch (error) {
+    UtilityScriptLibrary.debugLog('recalculateHoursUI', 'ERROR', 'Recalculation preview failed', '', error.message);
+    ui.alert('❌ Recalculation failed: ' + error.message);
   }
 }
 
@@ -8749,6 +9498,7 @@ function runPaymentsReconciliationUI() {
 function runWeeklyLessonReconciliation(customDate) {
   try {
     var targetDate = customDate || new Date();
+    var monthNames = UtilityScriptLibrary.getMonthNames();
 
     UtilityScriptLibrary.debugLog('runWeeklyLessonReconciliation', 'INFO',
       'Starting lesson reconciliation', 'Target date: ' + targetDate, '');
@@ -8763,127 +9513,141 @@ function runWeeklyLessonReconciliation(customDate) {
       throw new Error('Could not determine semester for date: ' + targetDate);
     }
 
-    var teacherLookupSheet = UtilityScriptLibrary.getSheet('teacherRosterLookup');
-    if (!teacherLookupSheet) throw new Error('Teacher Roster Lookup sheet not found');
-
-    var teacherData = teacherLookupSheet.getDataRange().getValues();
-
-    var hm   = UtilityScriptLibrary.getHeaderMap(teacherLookupSheet);
-    var norm = UtilityScriptLibrary.normalizeHeader;
-    var toIdx = function(key) {
-      return hm[norm(key)] ? hm[norm(key)] - 1 : -1;
-    };
-
-    var teacherIdCol = toIdx('Teacher ID');
-    var rosterUrlCol = toIdx('Roster URL');
-    var statusCol    = toIdx('Status');
-
-    if (teacherIdCol === -1 || rosterUrlCol === -1 || statusCol === -1) {
-      throw new Error('Required teacher columns not found in lookup sheet');
+    // Months that have a billing sheet — lessons are only marked for these
+    var billingSS = UtilityScriptLibrary.getWorkbook('billing');
+    var monthPattern = new RegExp('^(' + monthNames.join('|') + ') (\\d{4})$');
+    var markableMonths = {};
+    var billingSheets = billingSS.getSheets();
+    for (var b = 0; b < billingSheets.length; b++) {
+      var bName = billingSheets[b].getName();
+      if (monthPattern.test(bName)) markableMonths[bName] = true;
     }
+
+    var sources   = getLookupWorkbooks();
+    var workbooks = sources.workbooks;
 
     var stats = {
       teachersProcessed: 0,
-      teachersSkipped:   0,
-      teachersErrored:   0,
+      teachersSkipped:   sources.skipped,
+      teachersErrored:   sources.errors.length,
+      workbooksRead:     0,
       totalLessons:      0,
       totalStudents:     0,
-      errors:            []
+      errors:            sources.errors.slice()
     };
 
-    // Build active teacher list; parse file IDs once
-    var activeTeachers = [];
-    for (var i = 1; i < teacherData.length; i++) {
-      var row       = teacherData[i];
-      var teacherId = String(row[teacherIdCol] || '').trim();
-      var rosterUrl = row[rosterUrlCol];
-      var status    = row[statusCol];
+    var hoursByMonth = {};
+    var touchedByMonth = {};
+    var aggregatedDataCurrentThrough = {};
+    var readFailures = [];
+    var fid, wb, result, monthName, sid;
 
-      if (status !== 'active' || !teacherId || !rosterUrl) {
-        stats.teachersSkipped++;
-        continue;
-      }
+    // PASS 1 — Active teachers: mark new lessons and collect reviewed hours
+    for (fid in workbooks) {
+      wb = workbooks[fid];
+      if (!wb.isActive) continue;
 
-      var fileIdMatch = rosterUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-      if (!fileIdMatch) {
-        stats.errors.push(teacherId + ': Invalid roster URL');
-        stats.teachersErrored++;
-        continue;
-      }
-
-      activeTeachers.push({ teacherId: teacherId, rosterUrl: rosterUrl, fileId: fileIdMatch[1] });
-    }
-
-    // PASS 1 — Mark attendance and aggregate hours and reconciliation dates across all teachers
-    var aggregatedHoursByMonth        = {};
-    var aggregatedDataCurrentThrough  = {};
-
-    for (var j = 0; j < activeTeachers.length; j++) {
-      var teacher = activeTeachers[j];
-      UtilityScriptLibrary.debugLog('runWeeklyLessonReconciliation', 'INFO',
-        'Processing teacher', teacher.teacherId, '');
+      UtilityScriptLibrary.debugLog('runWeeklyLessonReconciliation', 'INFO', 'Processing teacher', wb.label, '');
 
       try {
-        var teacherSS = SpreadsheetApp.openById(teacher.fileId);
-        teacher.ss    = teacherSS; // cache for pass 3
+        wb.ss = SpreadsheetApp.openById(wb.fileId);
+        result = processTeacherAttendanceForBilling(wb.ss, targetDate, markableMonths);
+        wb.attendanceStats = result.stats;
+        stats.workbooksRead++;
+        stats.totalLessons += result.stats.lessonsMarked;
 
-        var attendanceResult    = processTeacherAttendanceForBilling(teacherSS, targetDate);
-        teacher.attendanceStats = attendanceResult.stats;
+        mergeStudentHoursByMonth(hoursByMonth, result.studentHoursByMonth);
 
-        for (var monthName in attendanceResult.studentHoursByMonth) {
-          if (!aggregatedHoursByMonth[monthName]) {
-            aggregatedHoursByMonth[monthName] = {};
-          }
-          var monthHours = attendanceResult.studentHoursByMonth[monthName];
-          for (var studentId in monthHours) {
-            aggregatedHoursByMonth[monthName][studentId] =
-              (aggregatedHoursByMonth[monthName][studentId] || 0) + monthHours[studentId];
-          }
+        for (monthName in result.touchedByMonth) {
+          if (!touchedByMonth[monthName]) touchedByMonth[monthName] = {};
+          for (sid in result.touchedByMonth[monthName]) touchedByMonth[monthName][sid] = true;
         }
 
-        // Most recent signed-off date wins per student across all teachers
-        for (var studentId in attendanceResult.studentDataCurrentThrough) {
-          var candidateDate = attendanceResult.studentDataCurrentThrough[studentId];
-          if (!aggregatedDataCurrentThrough[studentId] ||
-              candidateDate > aggregatedDataCurrentThrough[studentId]) {
-            aggregatedDataCurrentThrough[studentId] = candidateDate;
+        for (sid in result.studentDataCurrentThrough) {
+          var candidateDate = result.studentDataCurrentThrough[sid];
+          if (!aggregatedDataCurrentThrough[sid] || candidateDate > aggregatedDataCurrentThrough[sid]) {
+            aggregatedDataCurrentThrough[sid] = candidateDate;
           }
         }
-
-        stats.totalLessons += attendanceResult.stats.lessonsMarked;
 
       } catch (teacherError) {
-        teacher.attendanceError = teacherError.message;
-        stats.errors.push(teacher.teacherId + ' (attendance): ' + teacherError.message);
+        readFailures.push(wb.label + ': ' + teacherError.message);
         stats.teachersErrored++;
         UtilityScriptLibrary.debugLog('runWeeklyLessonReconciliation', 'ERROR',
-          'Failed to collect attendance for teacher', teacher.teacherId, teacherError.message);
+          'Failed to collect attendance for teacher', wb.label, teacherError.message);
       }
     }
 
-    // PASS 2 — Write aggregated hours to billing; one write per student per month
-    var billingSS = UtilityScriptLibrary.getWorkbook('billing');
-    for (var monthName in aggregatedHoursByMonth) {
-      var monthBillingSheet = billingSS.getSheetByName(monthName);
-      if (!monthBillingSheet) {
-        UtilityScriptLibrary.debugLog('runWeeklyLessonReconciliation', 'WARNING',
-          'Billing sheet not found for month', monthName, '');
-        continue;
+    var touchedMonths = Object.keys(touchedByMonth);
+
+    // PASS 2 — Collect hours from every other workbook for the touched years (multi-teacher students)
+    if (touchedMonths.length > 0) {
+      var touchedYears = {};
+      for (var t = 0; t < touchedMonths.length; t++) {
+        touchedYears[touchedMonths[t].split(' ')[1]] = true;
       }
-      var updatedCount = updateBillingForStudents(monthBillingSheet, aggregatedHoursByMonth[monthName]);
-      stats.totalStudents += updatedCount;
-      UtilityScriptLibrary.debugLog('runWeeklyLessonReconciliation', 'INFO',
-        'Wrote aggregated hours to billing sheet', monthName + ' - ' + updatedCount + ' students', '');
+
+      try {
+        addRosterFolderWorkbooks(workbooks, touchedYears);
+      } catch (folderError) {
+        readFailures.push('Roster folders: ' + folderError.message);
+      }
+
+      for (fid in workbooks) {
+        wb = workbooks[fid];
+        if (wb.isActive) continue;
+        try {
+          var otherSS = openAttendanceWorkbookForYears(wb, touchedYears);
+          if (!otherSS) continue;
+          result = processTeacherAttendanceForBilling(otherSS, targetDate, null);
+          stats.workbooksRead++;
+          mergeStudentHoursByMonth(hoursByMonth, result.studentHoursByMonth);
+        } catch (readError) {
+          readFailures.push(wb.label + ': ' + readError.message);
+          UtilityScriptLibrary.debugLog('runWeeklyLessonReconciliation', 'ERROR',
+            'Failed to read workbook', wb.label, readError.message);
+        }
+      }
+    }
+
+    // PASS 3 — Rewrite hours only for student/month pairs with newly reviewed lessons
+    if (readFailures.length > 0) {
+      stats.errors.push('Hours NOT updated - could not read: ' + readFailures.join('; '));
+      UtilityScriptLibrary.debugLog('runWeeklyLessonReconciliation', 'WARNING',
+        'Skipping hours update due to read failures', readFailures.join('; '), '');
+    } else {
+      for (var m = 0; m < touchedMonths.length; m++) {
+        monthName = touchedMonths[m];
+        var monthSheet = billingSS.getSheetByName(monthName);
+        if (!monthSheet) {
+          stats.errors.push('No billing sheet for ' + monthName + ' - hours not recorded');
+          continue;
+        }
+
+        var changeSet = computeHoursChanges(monthSheet, hoursByMonth[monthName] || {}, touchedByMonth[monthName]);
+        stats.totalStudents += applyHoursChanges(monthSheet, changeSet.changes);
+
+        if (changeSet.missingStudents.length > 0) {
+          stats.errors.push(monthName + ' - students with lessons but not on billing sheet: ' +
+                            changeSet.missingStudents.join(', '));
+        }
+        if (changeSet.formulaCells.length > 0) {
+          UtilityScriptLibrary.debugLog('runWeeklyLessonReconciliation', 'WARNING',
+            'Hours cells contain formulas - not changed', monthName + ': ' +
+            changeSet.formulaCells.map(function(c) { return c.studentId; }).join(', '), '');
+        }
+      }
     }
 
     // Write last reconciliation dates to current billing sheet
     updateLastReconciliationDate(currentBillingSheet, aggregatedDataCurrentThrough);
 
-    // PASS 3 — Update rosters and warnings per teacher
-    for (var k = 0; k < activeTeachers.length; k++) {
-      var teacher = activeTeachers[k];
+    // PASS 4 — Update rosters and warnings per active teacher
+    for (var k = 0; k < sources.activeTeachers.length; k++) {
+      var teacher = sources.activeTeachers[k];
       try {
-        var teacherSS = teacher.ss || SpreadsheetApp.openById(teacher.fileId);
+        var teacherSS = (workbooks[teacher.fileId] && workbooks[teacher.fileId].ss) ||
+                        SpreadsheetApp.openById(teacher.fileId);
 
         var studentBalances = getStudentBalancesFromBilling(currentBillingSheet, teacher.teacherId);
         updateTeacherRosterBalances(teacherSS, studentBalances, currentSemester);
@@ -8893,10 +9657,11 @@ function runWeeklyLessonReconciliation(customDate) {
 
         stats.teachersProcessed++;
 
+        var teacherStats = workbooks[teacher.fileId] && workbooks[teacher.fileId].attendanceStats;
         UtilityScriptLibrary.debugLog('runWeeklyLessonReconciliation', 'SUCCESS',
           'Completed teacher',
           teacher.teacherId +
-          ' - Lessons: ' + (teacher.attendanceStats ? teacher.attendanceStats.lessonsMarked : 0) +
+          ' - Lessons marked: ' + (teacherStats ? teacherStats.lessonsMarked : 0) +
           ', Students: ' + studentBalances.length, '');
 
       } catch (teacherError) {
@@ -8912,8 +9677,10 @@ function runWeeklyLessonReconciliation(customDate) {
 
     UtilityScriptLibrary.debugLog('runWeeklyLessonReconciliation', 'SUCCESS',
       'Reconciliation completed',
-      'Teachers: ' + stats.teachersProcessed + '/' + (teacherData.length - 1) +
-      ', Lessons: ' + stats.totalLessons + ', Students: ' + stats.totalStudents +
+      'Teachers: ' + stats.teachersProcessed + '/' + sources.lookupRowCount +
+      ', Workbooks read: ' + stats.workbooksRead +
+      ', Lessons marked: ' + stats.totalLessons +
+      ', Hours cells changed: ' + stats.totalStudents +
       (stats.errors.length > 0 ? ', Errors: ' + stats.errors.length : ''), '');
 
     if (stats.errors.length > 0) {
@@ -8994,42 +9761,6 @@ function setDeliveryPreference(newRow, sourceRow, context, sourceIsForm) {
     var prevH = context.prevHeaderMap;
     var prevDeliveryCol = prevH[UtilityScriptLibrary.normalizeHeader("Delivery Preference")];
     newRow[deliveryPrefCol - 1] = (prevDeliveryCol) ? sourceRow[prevDeliveryCol - 1] : "";
-  }
-}
-
-function setPastColumnFormulas(newRow, context, rowNum, currencyCols) {
-  var h           = context.headerMap;
-  var prevH       = context.prevHeaderMap || {};
-  var norm        = UtilityScriptLibrary.normalizeHeader;
-  var prevSheetName = context.previousSheetName;
-
-  var mappings = [
-    { pastCol: "Past Balance",                    prevCol: "Current Balance",                currency: true,  hours: false },
-    { pastCol: "Past Invoice Number",             prevCol: "Invoice Number",                 currency: false, hours: false },
-    { pastCol: "Past Hours Remaining",            prevCol: "Hours Remaining",                currency: false, hours: true  },
-    { pastCol: "Past Cumulative Hours Taught",    prevCol: "Current Cumulative Hours Taught", currency: false, hours: true  },
-    { pastCol: "Past Cumulative Hours Billed",    prevCol: "Current Cumulative Hours Billed", currency: false, hours: true  }
-  ];
-
-  for (var i = 0; i < mappings.length; i++) {
-    var m = mappings[i];
-    var pastColIndex = h[norm(m.pastCol)];
-    if (!pastColIndex) continue;
-
-    if (!prevSheetName || !prevH[norm(m.prevCol)]) {
-      newRow[pastColIndex - 1] = "";
-      continue;
-    }
-
-    newRow[pastColIndex - 1] = buildPastVlookupFormula(prevSheetName, prevH[norm(m.prevCol)], rowNum);
-
-    if (m.currency) {
-      UtilityScriptLibrary.addToCurrencyCols(currencyCols, pastColIndex, m.pastCol);
-    }
-    if (m.hours) {
-      if (!context.hoursColumnsToFormat) context.hoursColumnsToFormat = [];
-      context.hoursColumnsToFormat.push(pastColIndex);
-    }
   }
 }
 
@@ -9608,47 +10339,6 @@ function sumPayments(sheet, studentId, startDate, endDate) {
                  'Student: ' + studentId, error.message);
     return 0;
   }
-}
-
-function updateBillingForStudents(billingSheet, studentHours) {
-  var headerMap = UtilityScriptLibrary.getHeaderMap(billingSheet);
-  var lastRow   = billingSheet.getLastRow();
-
-  if (lastRow < 2) {
-    UtilityScriptLibrary.debugLog('updateBillingForStudents', 'INFO',
-      'No data rows in billing sheet', '', '');
-    return 0;
-  }
-
-  var studentIdCol      = headerMap[UtilityScriptLibrary.normalizeHeader('Student ID')];
-  var hoursThisCycleCol = headerMap[UtilityScriptLibrary.normalizeHeader('Current Hours Taught This Billing Cycle')];
-
-  if (!studentIdCol || !hoursThisCycleCol) {
-    throw new Error('Required billing columns not found');
-  }
-
-  var numDataRows   = lastRow - 1;
-  var studentIdData = billingSheet.getRange(2, studentIdCol, numDataRows, 1).getValues();
-
-  var updatedCount = 0;
-  for (var i = 0; i < numDataRows; i++) {
-    var rowStudentId = studentIdData[i][0];
-    if (studentHours[rowStudentId] !== undefined) {
-      billingSheet.getRange(i + 2, hoursThisCycleCol).setValue(studentHours[rowStudentId]);
-      updatedCount++;
-    }
-  }
-
-  if (updatedCount > 0) {
-    SpreadsheetApp.flush();
-    UtilityScriptLibrary.debugLog('updateBillingForStudents', 'SUCCESS',
-      'Updated billing hours', updatedCount + ' students updated', '');
-  } else {
-    UtilityScriptLibrary.debugLog('updateBillingForStudents', 'INFO',
-      'No students updated', '', '');
-  }
-
-  return updatedCount;
 }
 
 function updateBillingIdColumn(billingSheet, rowNumber, docType, fileId, fileName) {
@@ -10592,4 +11282,85 @@ function writeAndFormatRows(billingSheet, allStudents, context) {
       populateCumulativeColumnsForRow(billingSheet, rowIndex, allStudents[i].studentId, context);
     }
   }
+}
+
+function writePastColumnFormulas(billingSheet, rowIndex, studentId, context) {
+  var norm      = UtilityScriptLibrary.normalizeHeader;
+  var colLetter = UtilityScriptLibrary.columnToLetter;
+  var cache     = getPastSourceCache(context);
+  var sheetName = billingSheet.getName();
+  var sid       = String(studentId || '').trim();
+
+  var mappings = [
+    { pastCol: 'Past Balance',                 sourceCol: 'Current Balance',                 trackingKey: 'balance', format: '$#,##0.00' },
+    { pastCol: 'Past Invoice Number',          sourceCol: 'Invoice Number',                  trackingKey: null,      format: null },
+    { pastCol: 'Past Hours Remaining',         sourceCol: 'Hours Remaining',                 trackingKey: null,      format: '0.00' },
+    { pastCol: 'Past Cumulative Hours Taught', sourceCol: 'Current Cumulative Hours Taught', trackingKey: 'taught',  format: '0.00' },
+    { pastCol: 'Past Cumulative Hours Billed', sourceCol: 'Current Cumulative Hours Billed', trackingKey: 'billed',  format: '0.00' }
+  ];
+
+  if (!cache.targetHeaderMaps[sheetName]) {
+    cache.targetHeaderMaps[sheetName] = UtilityScriptLibrary.getHeaderMap(billingSheet);
+  }
+  var targetMap = cache.targetHeaderMaps[sheetName];
+
+  var keyCol = targetMap[norm('Student ID')];
+  if (!keyCol) throw new Error('Student ID column not found in ' + sheetName);
+  var keyCell = '$' + colLetter(keyCol) + rowIndex;
+
+  // Choose the source sheet: previous sheet, else the student's last billing sheet
+  var sourceName = null;
+  var source = 'new student';
+
+  if (sid && cache.prevIds[sid]) {
+    sourceName = context.previousSheetName;
+    source = 'previous sheet';
+  } else if (sid && cache.lastCycleById[sid] && cache.lastCycleById[sid].cycle) {
+    var candidate = cache.lastCycleById[sid].cycle;
+    if (cache.sheetExists[candidate] === undefined) {
+      cache.sheetExists[candidate] = !!cache.ss.getSheetByName(candidate);
+    }
+    if (candidate !== sheetName && cache.sheetExists[candidate]) {
+      sourceName = candidate;
+      source = 'last billing sheet (' + candidate + ')';
+    } else {
+      source = 'tracking values';
+    }
+  }
+
+  if (sourceName && !cache.headerMaps[sourceName]) {
+    cache.headerMaps[sourceName] = UtilityScriptLibrary.getHeaderMap(cache.ss.getSheetByName(sourceName));
+  }
+
+  for (var i = 0; i < mappings.length; i++) {
+    var m = mappings[i];
+    var targetCol = targetMap[norm(m.pastCol)];
+    if (!targetCol) continue;
+
+    var cell = billingSheet.getRange(rowIndex, targetCol);
+
+    if (sourceName) {
+      var formula = buildPastLookupFormula(sourceName, cache.headerMaps[sourceName], m.sourceCol, keyCell);
+      if (formula) {
+        cell.setFormula(formula);
+      } else {
+        cell.setValue('');
+      }
+    } else if (source === 'tracking values' && m.trackingKey) {
+      cell.setValue(cache.lastCycleById[sid][m.trackingKey]);
+    } else {
+      continue;
+    }
+
+    if (m.format) cell.setNumberFormat(m.format);
+  }
+
+  if (source === 'tracking values') {
+    UtilityScriptLibrary.debugLog('writePastColumnFormulas', 'WARNING',
+      'Last billing sheet not found - used fixed tracking values',
+      'Student ID: ' + sid + ', Sheet: ' + sheetName +
+      ', Last cycle: ' + cache.lastCycleById[sid].cycle, '');
+  }
+
+  return source;
 }
