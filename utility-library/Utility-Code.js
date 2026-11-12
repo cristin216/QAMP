@@ -3103,6 +3103,10 @@ function isCurrentOrFutureMonth(sheetName, targetDate) {
   return sheetMonth >= targetMonth;
 }
 
+function isValidDate(value) {
+  return Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value.getTime());
+}
+
 function isHistoricalDataInputEnabled() {
   return HISTORICAL_DATA_MODE;
 }
