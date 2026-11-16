@@ -9060,7 +9060,7 @@ function recalculateHoursUI() {
     try {
       var foundYears = addRosterFolderWorkbooks(workbooks, years);
       for (var yr in years) {
-        if (!foundYears[yr]) readFailures.push('No "' + yr + ' Rosters" folder found');
+        if (!foundYears[yr]) readFailures.push('No Roster Folder ID in Year Metadata for ' + yr);
       }
     } catch (folderError) {
       readFailures.push('Roster folders: ' + folderError.message);
@@ -9144,6 +9144,12 @@ function recalculateHoursUI() {
            .setWrap(true);
     preview.setFrozenRows(1);
 
+    var infoRow = Math.max(previewRows.length, 1) + 3;
+
+    // Month and Student ID must stay plain text - Sheets converts "March 2026" to a date otherwise
+    preview.getRange(2, 1, infoRow + 1, 1).setNumberFormat('@');
+    preview.getRange(2, 3, infoRow + 1, 1).setNumberFormat('@');
+
     if (previewRows.length > 0) {
       preview.getRange(2, 1, previewRows.length, headers.length).setValues(previewRows);
       preview.getRange(2, 5, previewRows.length, 3).setNumberFormat('0.00');
@@ -9151,7 +9157,7 @@ function recalculateHoursUI() {
       preview.getRange(2, 1).setValue('No differences found');
     }
 
-    var infoRow = Math.max(previewRows.length, 1) + 3;
+    preview.getRange(infoRow, 2, 2, 1).setNumberFormat('@');
     preview.getRange(infoRow, 1, 3, 2).setValues([
       ['Range:', months[0] + ' to ' + months[months.length - 1]],
       ['Students:', studentFilter ? Object.keys(studentFilter).join(', ') : 'All'],
